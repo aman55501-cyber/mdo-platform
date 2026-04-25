@@ -1,0 +1,52 @@
+{
+  "name": "mdo-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "next build && electron-builder"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.1",
+    "caniuse-lite": "^1.0.30001790",
+    "lucide-react": "^0.460.0",
+    "next": "^15.5.15",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "recharts": "^2.15.4",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "@types/node": "^20.19.39",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.5.15",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^5.9.3",
+    "wait-on": "^8.0.1"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.ans.mdo",
+    "productName": "ANS MDO",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

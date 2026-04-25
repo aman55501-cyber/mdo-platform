@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+.env.local
+.env*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+
+# Database files — live on Railway volume, not in repo
+*.db
+*.sqlite
+
+# Node / Next.js
+mdo-app/node_modules/
+mdo-app/.next/
+mdo-app/out/
+mdo-app/dist-electron/
+
+# OS
+.DS_Store
+Thumbs.db
