@@ -194,6 +194,17 @@ CREATE TABLE IF NOT EXISTS singhvi_calls (
     created_at TEXT DEFAULT (datetime('now')),
     executed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS whatsapp_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_name TEXT NOT NULL,
+    sender TEXT DEFAULT '',
+    text TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    jid TEXT DEFAULT '',
+    flagged INTEGER DEFAULT 0,
+    category TEXT DEFAULT 'ops',
+    created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS hdfc_session (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     access_token TEXT DEFAULT '',
@@ -1019,6 +1030,54 @@ async def briefing_generate():
     )
     await db.commit()
     return {"briefing": {"date": today, "content": content, "error": error_msg or None}}
+
+# ── WhatsApp Bridge ──────────────────────────────────────────────────────────
+
+@app.post("/api/whatsapp/message")
+async def whatsapp_message(body: dict):
+    """Receives messages forwarded from the WhatsApp bridge."""
+    db = await vdb()
+    await db.execute(
+        "INSERT INTO whatsapp_messages (group_name, sender, text, timestamp, jid) VALUES (?,?,?,?,?)",
+        (
+            str(body.get("group", ""))[:200],
+            str(body.get("sender", ""))[:100],
+            str(body.get("text", ""))[:2000],
+            str(body.get("timestamp", ""))[:50],
+            str(body.get("jid", ""))[:100],
+        )
+    )
+    await db.commit()
+    return {"received": True}
+
+@app.post("/api/whatsapp/status")
+async def whatsapp_status_update(body: dict):
+    return {"ok": True}
+
+@app.get("/api/whatsapp/messages")
+async def whatsapp_messages(group: str = "", limit: int = 100):
+    db = await vdb()
+    if group:
+        async with db.execute(
+            "SELECT * FROM whatsapp_messages WHERE group_name LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (f"%{group}%", limit)
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    else:
+        async with db.execute(
+            "SELECT * FROM whatsapp_messages ORDER BY created_at DESC LIMIT ?", (limit,)
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    return {"messages": rows, "count": len(rows)}
+
+@app.get("/api/whatsapp/groups")
+async def whatsapp_groups():
+    db = await vdb()
+    async with db.execute(
+        "SELECT group_name, COUNT(*) as msg_count, MAX(timestamp) as last_msg FROM whatsapp_messages GROUP BY group_name ORDER BY last_msg DESC"
+    ) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    return {"groups": rows}
 
 # ── VWLR Competitors ─────────────────────────────────────────────────────────
 

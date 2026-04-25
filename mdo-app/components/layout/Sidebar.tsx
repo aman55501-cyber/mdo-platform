@@ -28,6 +28,7 @@ const NAV_SECTIONS = [
     label: "Operations",
     items: [
       { href: "/ops",        icon: CheckSquare,     label: "Task Board"       },
+      { href: "/ops-feed",   icon: MessageSquare,   label: "VWLR Ops Feed"   },
       { href: "/entities",   icon: Landmark,        label: "Entities (26)"    },
       { href: "/compliance", icon: ShieldAlert,     label: "Compliance"       },
       { href: "/hotel",      icon: Building2,       label: "Hotel ANS"        },
