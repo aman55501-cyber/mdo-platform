@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends gcc \
+# ffmpeg needed by yt-dlp for audio extraction; gcc for faster-whisper build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements_server.txt ./
