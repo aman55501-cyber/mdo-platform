@@ -61,11 +61,8 @@ export default function OpsFeedPage() {
 
   const { data: qrData } = useQuery({
     queryKey: ["wa-qr"],
-    queryFn: () => WA_BRIDGE
-      ? apiFetch<{ connected: boolean; qr: string | null }>(`${WA_BRIDGE}/api/whatsapp/qr`)
-      : Promise.resolve({ connected: false, qr: null }),
+    queryFn: () => apiFetch<{ connected: boolean; qr: string | null }>(`${BASE}/api/whatsapp/qr`),
     refetchInterval: 10_000,
-    enabled: showQR || true,
   })
 
   const groups  = groupsData?.groups || []
@@ -119,7 +116,7 @@ export default function OpsFeedPage() {
           ) : (
             <div style={{ width: 220, height: 220, margin: "0 auto", background: "var(--bg3)", borderRadius: 12,
               display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)", fontSize: 13 }}>
-              {WA_BRIDGE ? "Loading QR…" : "Deploy WhatsApp bridge first"}
+              Loading QR… (takes ~10 seconds)
             </div>
           )}
           <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 12 }}>

@@ -1054,6 +1054,19 @@ async def whatsapp_message(body: dict):
 async def whatsapp_status_update(body: dict):
     return {"ok": True}
 
+@app.get("/api/whatsapp/qr")
+async def whatsapp_qr():
+    """Proxy QR code from WhatsApp bridge to avoid CORS issues."""
+    wa_url = os.environ.get("WA_BRIDGE_URL", "")
+    if not wa_url:
+        return {"connected": False, "qr": None, "message": "WA_BRIDGE_URL not set"}
+    try:
+        req = urllib.request.Request(wa_url.rstrip("/") + "/api/whatsapp/qr")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return _json.loads(r.read())
+    except Exception as e:
+        return {"connected": False, "qr": None, "message": str(e)}
+
 @app.get("/api/whatsapp/messages")
 async def whatsapp_messages(group: str = "", limit: int = 100):
     db = await vdb()
