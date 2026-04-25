@@ -172,8 +172,65 @@ CREATE TABLE IF NOT EXISTS morning_briefing (
     content TEXT NOT NULL,
     generated_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS singhvi_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    exchange TEXT DEFAULT 'NSE',
+    instrument TEXT DEFAULT 'EQ',
+    direction TEXT NOT NULL,
+    entry_price REAL DEFAULT 0,
+    stop_loss REAL DEFAULT 0,
+    target_price REAL DEFAULT 0,
+    quantity INTEGER DEFAULT 1,
+    timeframe TEXT DEFAULT 'Intraday',
+    notes TEXT DEFAULT '',
+    source TEXT DEFAULT 'manual',
+    raw_text TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    order_id TEXT DEFAULT '',
+    executed_price REAL DEFAULT 0,
+    pnl REAL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    executed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS hdfc_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    access_token TEXT DEFAULT '',
+    token_expiry TEXT DEFAULT '',
+    available_margin REAL DEFAULT 0,
+    client_id TEXT DEFAULT '45889297',
+    connected INTEGER DEFAULT 0,
+    last_updated TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS vwlr_competitors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    location TEXT DEFAULT 'CG',
+    type TEXT DEFAULT 'coal-handler',
+    tenders_won INTEGER DEFAULT 0,
+    tenders_tracked INTEGER DEFAULT 0,
+    last_seen TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """)
     await db.commit()
+    # Seed competitors if table is empty
+    async with db.execute("SELECT COUNT(*) as n FROM vwlr_competitors") as cur:
+        row = await cur.fetchone()
+    if row["n"] == 0:
+        competitors = [
+            ("Godavari Commodities",), ("Ind Synergy",), ("Hind Group",),
+            ("Harijika Logistics",), ("Vimla Infrastructure",), ("Sendoz Minerals",),
+            ("Kunal Transport",), ("Mohit Minerals",), ("RKTC",),
+            ("Anoop Road Carriers",), ("Indramani",), ("Advika Logistics",),
+            ("Omax Minerals",), ("KTC",), ("Tiwarta Coal",),
+        ]
+        await db.executemany(
+            "INSERT OR IGNORE INTO vwlr_competitors (name) VALUES (?)", competitors
+        )
+        await db.commit()
 
 def vedanta_conn() -> sqlite3.Connection:
     if not os.path.exists(VEDANTA_DB):
@@ -958,6 +1015,333 @@ async def briefing_generate():
     )
     await db.commit()
     return {"briefing": {"date": today, "content": content, "error": error_msg or None}}
+
+# ── VWLR Competitors ─────────────────────────────────────────────────────────
+
+@app.get("/api/vwlr/competitors")
+async def vwlr_competitors():
+    db = await vdb()
+    async with db.execute("SELECT * FROM vwlr_competitors ORDER BY name") as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    return {"competitors": rows}
+
+@app.put("/api/vwlr/competitors/{comp_id}")
+async def vwlr_competitor_update(comp_id: int, body: dict):
+    db = await vdb()
+    fields = {k: v for k, v in body.items() if k in ("tenders_won","tenders_tracked","last_seen","notes","location","type")}
+    if not fields:
+        raise HTTPException(400, "No valid fields")
+    sets = ", ".join(k + "=?" for k in fields)
+    await db.execute(f"UPDATE vwlr_competitors SET {sets} WHERE id=?", (*fields.values(), comp_id))
+    await db.commit()
+    return {"id": comp_id, "updated": True}
+
+# ── Singhvi Calls ────────────────────────────────────────────────────────────
+
+@app.get("/api/singhvi/today")
+async def singhvi_today():
+    db = await vdb()
+    today = __import__("datetime").date.today().isoformat()
+    async with db.execute(
+        "SELECT * FROM singhvi_calls WHERE date=? ORDER BY created_at DESC", (today,)
+    ) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    return {"calls": rows, "date": today}
+
+@app.post("/api/singhvi/calls")
+async def singhvi_add_call(body: dict):
+    db = await vdb()
+    today = __import__("datetime").date.today().isoformat()
+    await db.execute(
+        """INSERT INTO singhvi_calls
+           (date, ticker, exchange, instrument, direction, entry_price, stop_loss,
+            target_price, quantity, timeframe, notes, source, raw_text, status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            today,
+            str(body.get("ticker", "")).upper(),
+            str(body.get("exchange", "NSE")),
+            str(body.get("instrument", "EQ")),
+            str(body.get("direction", "BUY")),
+            float(body.get("entry_price", 0) or 0),
+            float(body.get("stop_loss", 0) or 0),
+            float(body.get("target_price", 0) or 0),
+            int(body.get("quantity", 1) or 1),
+            str(body.get("timeframe", "Intraday")),
+            str(body.get("notes", "")),
+            str(body.get("source", "manual")),
+            str(body.get("raw_text", "")),
+            str(body.get("status", "pending")),
+        )
+    )
+    await db.commit()
+    async with db.execute("SELECT last_insert_rowid() as id") as cur:
+        row = await cur.fetchone()
+    return {"id": row["id"], "status": "created"}
+
+@app.post("/api/singhvi/calls/{call_id}/approve")
+async def singhvi_approve(call_id: int):
+    db = await vdb()
+    await db.execute("UPDATE singhvi_calls SET status='approved' WHERE id=?", (call_id,))
+    await db.commit()
+    return {"id": call_id, "status": "approved"}
+
+@app.post("/api/singhvi/calls/{call_id}/reject")
+async def singhvi_reject(call_id: int):
+    db = await vdb()
+    await db.execute("UPDATE singhvi_calls SET status='rejected' WHERE id=?", (call_id,))
+    await db.commit()
+    return {"id": call_id, "status": "rejected"}
+
+@app.delete("/api/singhvi/calls/{call_id}")
+async def singhvi_delete(call_id: int):
+    db = await vdb()
+    await db.execute("DELETE FROM singhvi_calls WHERE id=?", (call_id,))
+    await db.commit()
+    return {"id": call_id, "deleted": True}
+
+@app.post("/api/singhvi/extract")
+async def singhvi_extract():
+    """Trigger YouTube audio extraction from Zee Business live stream.
+    Runs yt-dlp + faster-whisper + Grok in background thread.
+    Returns immediately; calls appear in /api/singhvi/today as they are parsed."""
+    import threading
+    def _run():
+        try:
+            _extract_singhvi_calls()
+        except Exception as ex:
+            print("Singhvi extract error:", ex)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"started": True, "message": "Extraction started. Calls will appear in 2-3 minutes."}
+
+def _extract_singhvi_calls():
+    """Pull Zee Business live audio, transcribe, parse with Grok, insert calls."""
+    import subprocess, tempfile, os, json as _j, sqlite3, datetime as _dt
+    grok_key = os.environ.get("GROK_API_KEY", "")
+
+    # Step 1: Download ~10 min of Zee Business live audio via yt-dlp
+    ZEE_URL = "https://www.youtube.com/@ZeeBusiness/streams"
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf:
+        audio_path = tf.name
+
+    try:
+        subprocess.run([
+            "yt-dlp", "--no-playlist", "-x", "--audio-format", "mp3",
+            "--audio-quality", "0", "--match-filter", "is_live",
+            "-o", audio_path, "--max-filesize", "20M",
+            "--no-warnings", "--quiet",
+            ZEE_URL,
+        ], timeout=120, check=False)
+
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+            print("Singhvi: no audio downloaded")
+            return
+
+        # Step 2: Transcribe with faster-whisper
+        try:
+            from faster_whisper import WhisperModel
+            model = WhisperModel("small", device="cpu", compute_type="int8")
+            segments, _ = model.transcribe(audio_path, language="hi", beam_size=1)
+            transcript = " ".join(seg.text for seg in segments)
+        except ImportError:
+            transcript = "[faster-whisper not installed — install on server]"
+
+        if not transcript or len(transcript) < 50:
+            print("Singhvi: transcript too short")
+            return
+
+        # Step 3: Send to Grok to extract stock calls
+        if not grok_key:
+            print("Singhvi: no GROK_API_KEY")
+            return
+
+        prompt = (
+            "Extract every stock/futures/options call from this Zee Business / Anil Singhvi transcript.\n"
+            "Return a JSON array. Each object must have:\n"
+            "  ticker (NSE symbol, uppercase), direction (BUY/SELL/AVOID),\n"
+            "  entry_price (number or 0), stop_loss (number or 0), target_price (number or 0),\n"
+            "  instrument (EQ/FUT/OPT-CE/OPT-PE), timeframe (Intraday/Swing/Positional),\n"
+            "  confidence (0-100), raw_quote (exact words from transcript).\n"
+            "If no calls found, return [].\n"
+            "Transcript:\n" + transcript[:3000]
+        )
+
+        payload = _j.dumps({
+            "model": "grok-3-mini",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1000,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.x.ai/v1/chat/completions", data=payload,
+            headers={"Authorization": "Bearer " + grok_key, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            resp = _j.loads(r.read())
+        text = resp["choices"][0]["message"]["content"].strip()
+
+        # Parse JSON from Grok response
+        start = text.find("[")
+        end   = text.rfind("]") + 1
+        if start < 0 or end <= start:
+            print("Singhvi: Grok returned no JSON array")
+            return
+        calls = _j.loads(text[start:end])
+
+        # Step 4: Insert into DB
+        today = _dt.date.today().isoformat()
+        conn = sqlite3.connect(VEGA_DB)
+        for c in calls:
+            conn.execute(
+                """INSERT INTO singhvi_calls
+                   (date,ticker,exchange,instrument,direction,entry_price,stop_loss,
+                    target_price,timeframe,notes,source,raw_text,status)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    today,
+                    str(c.get("ticker","")).upper(),
+                    "NSE",
+                    str(c.get("instrument","EQ")),
+                    str(c.get("direction","BUY")),
+                    float(c.get("entry_price",0) or 0),
+                    float(c.get("stop_loss",0) or 0),
+                    float(c.get("target_price",0) or 0),
+                    str(c.get("timeframe","Intraday")),
+                    "Confidence: " + str(c.get("confidence","—")) + "%",
+                    "youtube",
+                    str(c.get("raw_quote",""))[:500],
+                    "pending",
+                )
+            )
+        conn.commit()
+        conn.close()
+        print("Singhvi: inserted", len(calls), "calls")
+    finally:
+        try: os.unlink(audio_path)
+        except: pass
+
+@app.post("/api/singhvi/execute")
+async def singhvi_execute():
+    """Move all approved singhvi_calls to trading_signals for HDFC execution."""
+    db = await vdb()
+    today = __import__("datetime").date.today().isoformat()
+    async with db.execute(
+        "SELECT * FROM singhvi_calls WHERE date=? AND status='approved'", (today,)
+    ) as cur:
+        approved = [dict(r) for r in await cur.fetchall()]
+
+    inserted = []
+    for c in approved:
+        await db.execute(
+            """INSERT INTO trading_signals
+               (ticker, action, instrument_type, entry_price, target_price, stop_loss,
+                quantity, strategy, rationale, status)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                c["ticker"], c["direction"], c["instrument"],
+                c["entry_price"], c["target_price"], c["stop_loss"],
+                c["quantity"], "singhvi",
+                "Singhvi call: " + (c["notes"] or c["raw_text"] or "")[:200],
+                "pending",
+            )
+        )
+        await db.execute(
+            "UPDATE singhvi_calls SET status='executed' WHERE id=?", (c["id"],)
+        )
+        inserted.append(c["ticker"])
+    await db.commit()
+    return {"executed": len(inserted), "tickers": inserted}
+
+# ── HDFC Auth ────────────────────────────────────────────────────────────────
+
+HDFC_CLIENT_ID     = "45889297"
+HDFC_API_KEY_VAL   = os.environ.get("HDFC_API_KEY", "f0ff26190ea94acb87593ce2ad556d02")
+HDFC_API_SECRET    = os.environ.get("HDFC_API_SECRET", "815f56e54ea84c58923fd7c187ef7c29")
+HDFC_REDIRECT_URL  = os.environ.get("HDFC_REDIRECT_URL", "https://localhost/callback")
+HDFC_AUTH_BASE     = "https://developer.hdfcsec.com"
+
+@app.get("/api/hdfc/status")
+async def hdfc_status():
+    db = await vdb()
+    async with db.execute("SELECT * FROM hdfc_session ORDER BY id DESC LIMIT 1") as cur:
+        row = await cur.fetchone()
+    if not row or not row["connected"]:
+        return {"connected": False}
+    return {
+        "connected": bool(row["connected"]),
+        "client_id": row["client_id"],
+        "available_margin": row["available_margin"],
+        "token_expiry": row["token_expiry"],
+    }
+
+@app.post("/api/hdfc/auth/init")
+async def hdfc_auth_init():
+    """Return the HDFC OAuth login URL for the user to complete in browser."""
+    import urllib.parse as _up
+    params = _up.urlencode({
+        "apiKey": HDFC_API_KEY_VAL,
+        "redirect_uri": HDFC_REDIRECT_URL,
+        "response_type": "code",
+    })
+    login_url = HDFC_AUTH_BASE + "/oauth2/auth?" + params
+    return {"login_url": login_url, "client_id": HDFC_CLIENT_ID}
+
+@app.post("/api/hdfc/auth/callback")
+async def hdfc_auth_callback(body: dict):
+    """Exchange auth code for access token and store in DB."""
+    code = body.get("code", "")
+    if not code:
+        raise HTTPException(400, "Missing code")
+
+    payload = _json.dumps({
+        "apiKey": HDFC_API_KEY_VAL,
+        "apiSecret": HDFC_API_SECRET,
+        "code": code,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        HDFC_AUTH_BASE + "/oauth2/token",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            resp = _json.loads(r.read())
+        token = resp.get("access_token", "")
+        expiry = resp.get("expires_in", 86400)
+        import datetime as _dtt
+        expiry_str = (_dtt.datetime.now() + _dtt.timedelta(seconds=expiry)).isoformat()
+
+        db = await vdb()
+        await db.execute("DELETE FROM hdfc_session")
+        await db.execute(
+            "INSERT INTO hdfc_session (access_token,token_expiry,connected,client_id) VALUES (?,?,1,?)",
+            (token, expiry_str, HDFC_CLIENT_ID)
+        )
+        await db.commit()
+        return {"connected": True, "expiry": expiry_str}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.get("/api/hdfc/funds")
+async def hdfc_funds():
+    db = await vdb()
+    async with db.execute("SELECT access_token FROM hdfc_session WHERE connected=1 LIMIT 1") as cur:
+        row = await cur.fetchone()
+    if not row or not row["access_token"]:
+        raise HTTPException(401, "Not authenticated — use /api/hdfc/auth/init first")
+    token = row["access_token"]
+    req = urllib.request.Request(
+        HDFC_AUTH_BASE + "/v2.0/funds",
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return _json.loads(r.read())
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
 # ── run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

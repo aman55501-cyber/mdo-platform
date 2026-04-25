@@ -1,0 +1,94 @@
+# VWLR / Aditi Investments — Pre-loaded price levels.
+# Updated: 2026-04-24
+# Format: ticker, direction (BUY/SELL), price, sl, target, expiry (optional)
+# Note: These are reference levels only — confirm with /brief before trading.
+
+levels:
+  # --- NIFTY 50 ---
+  - ticker: NIFTY
+    direction: BUY
+    price: 24200
+    sl: 23950
+    target: 24700
+    expiry: 30MAY
+    notes: "Support zone 24000-24200. Strong demand visible on daily chart."
+
+  - ticker: NIFTY
+    direction: SELL
+    price: 25000
+    sl: 25300
+    target: 24400
+    expiry: 30MAY
+    notes: "Key resistance 25000. Multiple rejections from this level."
+
+  # --- BANKNIFTY ---
+  - ticker: BANKNIFTY
+    direction: BUY
+    price: 52500
+    sl: 51800
+    target: 54000
+    expiry: 30MAY
+    notes: "Demand zone 52000-52500. HDFCBANK + ICICIBANK support."
+
+  # --- RELIANCE ---
+  - ticker: RELIANCE
+    direction: BUY
+    price: 1280
+    sl: 1250
+    target: 1360
+    notes: "Consolidation breakout level. Jio + Retail EBITDA improving."
+
+  - ticker: RELIANCE
+    direction: SELL
+    price: 1400
+    sl: 1430
+    target: 1320
+    notes: "Resistance near 1400 — three failed breakouts in last 6 months."
+
+  # --- HDFCBANK ---
+  - ticker: HDFCBANK
+    direction: BUY
+    price: 1760
+    sl: 1720
+    target: 1880
+    notes: "Strong demand at 1750-1760. Post-merger normalisation complete."
+
+  # --- ICICIBANK ---
+  - ticker: ICICIBANK
+    direction: BUY
+    price: 1380
+    sl: 1340
+    target: 1480
+    notes: "Earnings momentum strong. ROA >2%. Support at 1380."
+
+  # --- TCS ---
+  - ticker: TCS
+    direction: BUY
+    price: 3550
+    sl: 3450
+    target: 3800
+    notes: "Long-term demand zone. Order book recovery in FY27."
+
+  # --- INFY ---
+  - ticker: INFY
+    direction: BUY
+    price: 1460
+    sl: 1420
+    target: 1580
+    notes: "Consolidated support at 1450-1460. Attrition normalised."
+
+  # --- COAL INDIA (sector play for VWLR context) ---
+  - ticker: COALINDIA
+    direction: BUY
+    price: 390
+    sl: 370
+    target: 430
+    notes: "Coal demand strong. Dividend yield >6%. Support at 390."
+
+  # --- JSPL (VWLR buyer — monitor for coal demand signals) ---
+  - ticker: JSWSTEEL
+    direction: BUY
+    price: 930
+    sl: 895
+    target: 1020
+    notes: "Steel upcycle. Raigarh plant at full utilisation. VWLR opportunity."

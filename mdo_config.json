@@ -1,0 +1,230 @@
+{
+  "root": {
+    "label": "MDO — Aman Agrawal",
+    "icon": "🗺",
+    "children": ["aditi", "vwlr", "hotel", "compliance", "wealth", "brief"],
+    "locked": true
+  },
+
+  "aditi": {
+    "label": "Aditi Investments",
+    "icon": "📊",
+    "children": ["vega_trading", "vega_levels", "vega_singhvi", "vega_portfolio"]
+  },
+  "vega_trading": {
+    "label": "VEGA — Trading Engine",
+    "icon": "🤖",
+    "commands": [
+      ["/testbroker",  "Connect HDFC Securities",      "cmd_testbroker"],
+      ["/positions",   "Open positions",               "cmd_positions"],
+      ["/funds",       "Available funds & margin",     "cmd_funds"],
+      ["/pnl",         "Today P&L summary",            "cmd_pnl"],
+      ["/health",      "System health",                "cmd_health"],
+      ["/status",      "VEGA engine status",           "cmd_status"]
+    ]
+  },
+  "vega_levels": {
+    "label": "Price Levels",
+    "icon": "📐",
+    "commands": [
+      ["/level TICKER BUY 2500 SL 2450 TGT 2600", "Add price level",   "cmd_level"],
+      ["/levels",      "List all active levels",      "cmd_levels"],
+      ["/removelevel", "Remove level by ID",          "cmd_removelevel"]
+    ]
+  },
+  "vega_singhvi": {
+    "label": "Anil Singhvi Signals",
+    "icon": "📡",
+    "commands": [
+      ["/singhvi",            "Latest calls (live X)",    "cmd_singhvi"],
+      ["/autosinghvi on",     "Enable auto-execute",      "cmd_autosinghvi"],
+      ["/autosinghvi off",    "Disable auto-execute"],
+      ["/autosinghvi status", "Current setting"]
+    ]
+  },
+  "vega_portfolio": {
+    "label": "Sentiment & Watchlist",
+    "icon": "🔍",
+    "commands": [
+      ["/sentiment TICKER",  "Live X sentiment",         "cmd_sentiment"],
+      ["/brief",             "Morning market brief",     "cmd_brief"],
+      ["/grok <question>",   "Ask Grok anything",        "cmd_grok"],
+      ["/watchlist",         "View watchlist",           "cmd_watchlist"],
+      ["/add TICKER",        "Add to watchlist",         "cmd_add"],
+      ["/remove TICKER",     "Remove from watchlist",    "cmd_remove"]
+    ]
+  },
+
+  "vwlr": {
+    "label": "VWLR — Vedanta Sales",
+    "icon": "🏭",
+    "children": ["vwlr_tenders", "vwlr_leads", "vwlr_pricing", "vwlr_competitors", "vwlr_compliance"]
+  },
+  "vwlr_tenders": {
+    "label": "Live Tenders & Auctions",
+    "icon": "📋",
+    "commands": [
+      ["/tenders",          "Live tender pipeline (all buyers)", "cmd_tenders"],
+      ["/tenders SECL",     "Filter by buyer (SECL / NTPC / JSPL)"],
+      ["/tenders hot",      "Tenders closing in 7 days"],
+      ["/tender_watch on",  "Enable real-time Grok tender alerts", "cmd_tender_watch"],
+      ["/tender_watch off", "Disable tender alerts"]
+    ]
+  },
+  "vwlr_leads": {
+    "label": "Lead Pipeline (CRM)",
+    "icon": "👥",
+    "commands": [
+      ["/leads",        "Hot leads (High priority)",         "cmd_leads"],
+      ["/leads all",    "Full CRM pipeline"],
+      ["/lead COMPANY", "Lead detail + interaction log",    "cmd_lead"],
+      ["/followups",    "Leads needing follow-up today",    "cmd_followups"]
+    ]
+  },
+  "vwlr_pricing": {
+    "label": "Bid Optimizer",
+    "icon": "💰",
+    "commands": [
+      ["/bid NTPC 50000 VWLR-Sipat", "Calculate bid (buyer, vol MT, route)", "cmd_bid"],
+      ["/pricing",                    "Current market gate price"],
+      ["/routes",                     "FOIS freight rates by route"]
+    ]
+  },
+  "vwlr_competitors": {
+    "label": "Competitor Intel",
+    "icon": "🎯",
+    "commands": [
+      ["/competitors",         "All competitor profiles",        "cmd_competitors"],
+      ["/competitors threat",  "Sort by threat level"],
+      ["/competitor NAME",     "Detail for one competitor"]
+    ]
+  },
+  "vwlr_compliance": {
+    "label": "VWLR Compliance",
+    "icon": "⚖",
+    "commands": [
+      ["/compliance vwlr",      "Washery compliance items"],
+      ["Environment clearances", "Pollution Board, CTO renewal"],
+      ["Royalty & cess",         "CG Mineral Royalty filings"],
+      ["Labour law",             "Factories Act, ESI, PF"]
+    ]
+  },
+
+  "hotel": {
+    "label": "Hotel ANS",
+    "icon": "🏨",
+    "children": ["hotel_ops", "hotel_compliance"]
+  },
+  "hotel_ops": {
+    "label": "Operations",
+    "icon": "📋",
+    "commands": [
+      ["Occupancy tracker",     "(coming — L5)"],
+      ["Revenue dashboard",     "(coming — L5)"],
+      ["Staff management",      "(coming — L5)"],
+      ["Vendor / procurement",  "(coming — L5)"]
+    ]
+  },
+  "hotel_compliance": {
+    "label": "Hotel Compliance",
+    "icon": "⚖",
+    "commands": [
+      ["FSSAI license",            "Food safety renewal"],
+      ["Fire NOC",                 "Annual renewal"],
+      ["Trade license",            "Municipal corp renewal"],
+      ["GST — hospitality rate",   "12% / 18% slab compliance"]
+    ]
+  },
+
+  "compliance": {
+    "label": "Compliance & Legal",
+    "icon": "⚖",
+    "children": ["ozone_steel", "rashi_steel", "group_filings"]
+  },
+  "ozone_steel": {
+    "label": "🔴 Ozone Steel & Power",
+    "icon": "🔴",
+    "commands": [
+      ["§454(8) RISK — NO ITR PDF filed",  "CRITICAL — ROC strike-off risk"],
+      ["Action: File ITR PDF via CA",       "CA Vimal Agrawal 9755220259"],
+      ["Status: UNRESOLVED Apr 2026",       "Immediate action required"]
+    ]
+  },
+  "rashi_steel": {
+    "label": "🔴 Rashi Steel",
+    "icon": "🔴",
+    "commands": [
+      ["§454(8) CJM Bilaspur — Case 3616/2026", "ACTIVE court case"],
+      ["Court: Chief Judicial Magistrate, Bilaspur CG", ""],
+      ["Action: Legal counsel + CA response",    "CA: Vimal Agrawal 9755220259"]
+    ]
+  },
+  "group_filings": {
+    "label": "Group Annual Filings",
+    "icon": "📂",
+    "commands": [
+      ["ROC annual returns — 26 entities",  "MCA21 filings due"],
+      ["GST — all entities",               "GSTR-1, GSTR-3B monthly"],
+      ["Income Tax — all entities",        "ITR due Jul 31 / Sep 30"],
+      ["TDS returns",                      "Quarterly 24Q / 26Q"]
+    ]
+  },
+
+  "wealth": {
+    "label": "ANS Wealth OS",
+    "icon": "💎",
+    "children": ["pool_a", "pool_b", "pool_c", "pool_d"]
+  },
+  "pool_a": {
+    "label": "Pool A — Operating Cash",
+    "icon": "🏢",
+    "commands": [
+      ["VWLR working capital",     "Coal purchase, processing, transport"],
+      ["Hotel ANS ops float",      "Day-to-day hospitality ops"],
+      ["Group payroll & overhead", "HR, admin, utilities"],
+      ["Receivables management",   "Outstanding from buyers"]
+    ]
+  },
+  "pool_b": {
+    "label": "Pool B — Liquid (Aditi) ₹16–20Cr",
+    "icon": "📈",
+    "commands": [
+      ["/funds",     "Current margin & available capital",  "cmd_funds"],
+      ["/positions", "Open NSE positions",                  "cmd_positions"],
+      ["/pnl",       "Today P&L",                          "cmd_pnl"],
+      ["/brief",     "Morning brief (Grok live)",           "cmd_brief"],
+      ["Broker: HDFC Securities InvestRight", "API connected"]
+    ]
+  },
+  "pool_c": {
+    "label": "Pool C — Strategic Illiquid",
+    "icon": "🏗",
+    "commands": [
+      ["Real estate holdings",     "Land parcels, commercial property"],
+      ["Unlisted equity stakes",   "Private co holdings"],
+      ["Long gestation projects",  "2–5 year horizon"]
+    ]
+  },
+  "pool_d": {
+    "label": "Pool D — Freedom Capital",
+    "icon": "🔒",
+    "commands": [
+      ["Long-term wealth corpus",  "No-touch, compounding"],
+      ["MFs, bonds, fixed income", "Diversified passive"],
+      ["Review: quarterly only",   "No active management"]
+    ]
+  },
+
+  "brief": {
+    "label": "Daily / Weekly Brief",
+    "icon": "📋",
+    "commands": [
+      ["/brief",           "Morning brief (Grok live 08:50 IST)", "cmd_brief"],
+      ["/grok <question>", "Ask Grok anything (live X + news)",   "cmd_grok"],
+      ["/status",          "VEGA engine status",                  "cmd_status"],
+      ["/singhvi",         "Anil Singhvi latest calls",           "cmd_singhvi"],
+      ["/tenders hot",     "VWLR tenders closing this week"],
+      ["/leads",           "Hot CRM leads needing action",        "cmd_leads"]
+    ]
+  }
+}

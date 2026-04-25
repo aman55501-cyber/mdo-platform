@@ -25,6 +25,11 @@ mdo-app/.next/
 mdo-app/out/
 mdo-app/dist-electron/
 
+# Claude / IDE
+.claude/
+.cursor/
+.vscode/
+
 # OS
 .DS_Store
 Thumbs.db

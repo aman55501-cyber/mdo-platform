@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VEGA Trading Dashboard</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e1e4ea;
+  --muted: #8b8fa3;
+  --green: #22c55e;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --yellow: #eab308;
+  --purple: #a855f7;
+  --accent: #6366f1;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+.header { background:var(--card); border-bottom:1px solid var(--border); padding:12px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; position:sticky; top:0; z-index:100; }
+.header h1 { font-size:20px; font-weight:700; letter-spacing:1px; }
+.header h1 span { color:var(--accent); }
+.status-badges { display:flex; gap:8px; flex-wrap:wrap; }
+.badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.badge-green { background:rgba(34,197,94,0.15); color:var(--green); }
+.badge-red { background:rgba(239,68,68,0.15); color:var(--red); }
+.badge-yellow { background:rgba(234,179,8,0.15); color:var(--yellow); }
+.clock { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px; max-width:1400px; margin:0 auto; }
+@media(max-width:768px) { .grid { grid-template-columns:1fr; padding:10px; } }
+
+.card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+.card-title { font-size:14px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; }
+.card-full { grid-column:1/-1; }
+
+/* PnL cards */
+.pnl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
+.pnl-item { text-align:center; padding:10px; background:var(--bg); border-radius:8px; }
+.pnl-value { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+.pnl-label { font-size:11px; color:var(--muted); margin-top:2px; }
+
+/* Table */
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; color:var(--muted); font-weight:500; padding:6px 8px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; }
+td { padding:8px; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums; }
+tr:last-child td { border-bottom:none; }
+.pos { color:var(--green); }
+.neg { color:var(--red); }
+.neutral { color:var(--muted); }
+
+/* Sentiment bar */
+.sent-bar { display:inline-block; width:60px; height:8px; background:var(--bg); border-radius:4px; overflow:hidden; vertical-align:middle; }
+.sent-fill { height:100%; border-radius:4px; transition:width 0.3s; }
+
+/* Signals feed */
+.signal-item { padding:10px; margin-bottom:8px; background:var(--bg); border-radius:8px; border-left:3px solid var(--green); }
+.signal-item.sell { border-left-color:var(--red); }
+.signal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+.signal-ticker { font-weight:700; font-size:15px; }
+.signal-action { font-size:12px; font-weight:700; padding:2px 8px; border-radius:4px; }
+.signal-action.buy { background:rgba(34,197,94,0.15); color:var(--green); }
+.signal-action.sell { background:rgba(239,68,68,0.15); color:var(--red); }
+.signal-details { font-size:12px; color:var(--muted); }
+.signal-rationale { font-size:12px; color:var(--text); margin-top:4px; font-style:italic; }
+
+/* Upload */
+.upload-area { border:2px dashed var(--border); border-radius:8px; padding:20px; text-align:center; cursor:pointer; transition:border-color 0.2s; }
+.upload-area:hover { border-color:var(--accent); }
+.upload-area input { display:none; }
+.upload-btn { background:var(--accent); color:#fff; border:none; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+.upload-btn:hover { opacity:0.9; }
+.upload-status { margin-top:8px; font-size:12px; color:var(--muted); }
+
+/* Responsive */
+@media(max-width:480px) {
+  .header h1 { font-size:16px; }
+  .pnl-value { font-size:18px; }
+  table { font-size:12px; }
+  td, th { padding:5px 4px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>VEGA</span> Trading Dashboard</h1>
+  <div class="status-badges">
+    <span class="badge" id="badge-market">--</span>
+    <span class="badge" id="badge-broker">--</span>
+  </div>
+  <div class="clock" id="clock">--</div>
+</div>
+
+<div class="grid">
+
+  <!-- PnL Summary -->
+  <div class="card card-full">
+    <div class="card-title">Daily P&L</div>
+    <div class="pnl-grid">
+      <div class="pnl-item">
+        <div class="pnl-value" id="pnl-realized">--</div>
+        <div class="pnl-label">Realized</div>
+      </div>
+      <div class="pnl-item">
+        <div class="pnl-value" id="pnl-unrealized">--</div>
+        <div class="pnl-label">Unrealized</div>
+      </div>
+      <div class="pnl-item">
+        <div class="pnl-value" id="pnl-trades">--</div>
+        <div class="pnl-label">Trades</div>
+      </div>
+      <div class="pnl-item">
+        <div class="pnl-value" id="pnl-winrate">--</div>
+        <div class="pnl-label">Win Rate</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watchlist -->
+  <div class="card">
+    <div class="card-title">Watchlist</div>
+    <table>
+      <thead><tr><th>Ticker</th><th>LTP</th><th>Sentiment</th></tr></thead>
+      <tbody id="watchlist-body"><tr><td colspan="3" class="neutral">Loading...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Positions -->
+  <div class="card">
+    <div class="card-title">Open Positions</div>
+    <table>
+      <thead><tr><th>Ticker</th><th>Qty</th><th>Entry</th><th>LTP</th><th>P&L</th></tr></thead>
+      <tbody id="positions-body"><tr><td colspan="5" class="neutral">No positions</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Signals Feed -->
+  <div class="card">
+    <div class="card-title">Trade Signals <span id="signal-count" style="font-size:11px;color:var(--accent)"></span></div>
+    <div id="signals-feed" style="max-height:300px;overflow-y:auto;">
+      <div class="neutral" style="font-size:13px;padding:10px;">No signals yet</div>
+    </div>
+  </div>
+
+  <!-- Sentiment -->
+  <div class="card">
+    <div class="card-title">Sentiment Analysis</div>
+    <table>
+      <thead><tr><th>Ticker</th><th>Score</th><th>Confidence</th><th>Summary</th></tr></thead>
+      <tbody id="sentiment-body"><tr><td colspan="4" class="neutral">Waiting for data...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Upload Portfolio -->
+  <div class="card card-full">
+    <div class="card-title">Upload Portfolio</div>
+    <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+      <p style="margin-bottom:10px;font-size:14px;">Drop your portfolio CSV/Excel file here or click to browse</p>
+      <button class="upload-btn">Choose File</button>
+      <div class="upload-status" id="upload-status">Accepted: .csv, .xlsx (columns: ticker/symbol, quantity, average_price)</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = window.location.origin;
+const fmt = (n) => n == null ? '--' : '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtPct = (n) => n == null ? '--' : (n*100).toFixed(0) + '%';
+const pnlClass = (n) => n > 0 ? 'pos' : n < 0 ? 'neg' : 'neutral';
+
+// State
+let sentimentData = {};
+let signalsList = [];
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+  document.getElementById('clock').textContent = ist.toLocaleString('en-IN', {
+    day:'2-digit', month:'short', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true
+  }) + ' IST';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Fetch helpers
+async function fetchJSON(path) {
+  try {
+    const r = await fetch(API + path);
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+// Update Status
+async function updateStatus() {
+  const d = await fetchJSON('/api/status');
+  if (!d) return;
+  const bm = document.getElementById('badge-market');
+  bm.textContent = 'Market: ' + d.market;
+  bm.className = 'badge ' + (d.market === 'OPEN' ? 'badge-green' : d.market === 'PRE-MARKET' ? 'badge-yellow' : 'badge-red');
+  const bb = document.getElementById('badge-broker');
+  bb.textContent = 'Broker: ' + (d.broker_authenticated ? 'Connected' : 'Disconnected');
+  bb.className = 'badge ' + (d.broker_authenticated ? 'badge-green' : 'badge-red');
+}
+
+// Update PnL
+async function updatePnL() {
+  const d = await fetchJSON('/api/pnl');
+  if (!d) return;
+  const re = document.getElementById('pnl-realized');
+  re.textContent = fmt(d.realized_pnl);
+  re.className = 'pnl-value ' + pnlClass(d.realized_pnl);
+  const ur = document.getElementById('pnl-unrealized');
+  ur.textContent = fmt(d.unrealized_pnl);
+  ur.className = 'pnl-value ' + pnlClass(d.unrealized_pnl);
+  document.getElementById('pnl-trades').textContent = d.total_trades || 0;
+  document.getElementById('pnl-winrate').textContent = fmtPct(d.win_rate);
+}
+
+// Update Watchlist
+async function updateWatchlist() {
+  const d = await fetchJSON('/api/watchlist');
+  if (!d) return;
+  const tbody = document.getElementById('watchlist-body');
+  if (!d.watchlist.length) { tbody.innerHTML='<tr><td colspan="3" class="neutral">Empty watchlist</td></tr>'; return; }
+  tbody.innerHTML = d.watchlist.map(w => {
+    const sentBar = w.sentiment_score != null ? makeSentBar(w.sentiment_score) : '<span class="neutral">--</span>';
+    return `<tr>
+      <td><strong>${w.ticker}</strong></td>
+      <td>${w.ltp != null ? fmt(w.ltp) : '--'}</td>
+      <td>${sentBar} ${w.sentiment_score != null ? (w.sentiment_score > 0 ? '+' : '') + w.sentiment_score.toFixed(2) : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function makeSentBar(score) {
+  const pct = ((score + 1) / 2 * 100).toFixed(0);
+  const color = score > 0.3 ? 'var(--green)' : score < -0.2 ? 'var(--red)' : 'var(--yellow)';
+  return `<span class="sent-bar"><span class="sent-fill" style="width:${pct}%;background:${color}"></span></span>`;
+}
+
+// Update Positions
+async function updatePositions() {
+  const d = await fetchJSON('/api/positions');
+  if (!d) return;
+  const tbody = document.getElementById('positions-body');
+  if (!d.positions.length) { tbody.innerHTML='<tr><td colspan="5" class="neutral">No positions</td></tr>'; return; }
+  tbody.innerHTML = d.positions.map(p => {
+    const pnl = p.pnl || ((p.last_price - p.average_price) * p.quantity);
+    return `<tr>
+      <td><strong>${p.ticker}</strong></td>
+      <td>${p.quantity}</td>
+      <td>${fmt(p.average_price)}</td>
+      <td>${fmt(p.last_price)}</td>
+      <td class="${pnlClass(pnl)}">${fmt(pnl)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Update Sentiment Table
+function updateSentimentTable() {
+  const tbody = document.getElementById('sentiment-body');
+  const entries = Object.values(sentimentData);
+  if (!entries.length) { tbody.innerHTML='<tr><td colspan="4" class="neutral">Waiting for data...</td></tr>'; return; }
+  tbody.innerHTML = entries.map(s => {
+    const cls = s.score > 0.3 ? 'pos' : s.score < -0.2 ? 'neg' : 'neutral';
+    return `<tr>
+      <td><strong>${s.ticker}</strong></td>
+      <td class="${cls}">${s.score > 0 ? '+' : ''}${s.score.toFixed(2)}</td>
+      <td>${(s.confidence * 100).toFixed(0)}%</td>
+      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.summary || '--'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Add Signal to Feed
+function addSignal(s) {
+  signalsList.unshift(s);
+  if (signalsList.length > 50) signalsList.pop();
+  renderSignals();
+}
+
+function renderSignals() {
+  const feed = document.getElementById('signals-feed');
+  const count = document.getElementById('signal-count');
+  count.textContent = signalsList.length ? `(${signalsList.length})` : '';
+  if (!signalsList.length) { feed.innerHTML='<div class="neutral" style="font-size:13px;padding:10px;">No signals yet</div>'; return; }
+  feed.innerHTML = signalsList.map(s => `
+    <div class="signal-item ${s.action === 'SELL' ? 'sell' : ''}">
+      <div class="signal-header">
+        <span class="signal-ticker">${s.ticker}</span>
+        <span class="signal-action ${s.action.toLowerCase()}">${s.action}</span>
+      </div>
+      <div class="signal-details">
+        Entry: ${fmt(s.entry_price)} | Target: ${fmt(s.target_price)} | SL: ${fmt(s.stop_loss)} | Qty: ${s.quantity}
+      </div>
+      <div class="signal-details">
+        Score: ${s.combined_score?.toFixed(2) || '--'} (Tech: ${s.technical_score?.toFixed(2)} | Sent: ${s.sentiment_score?.toFixed(2)})
+      </div>
+      <div class="signal-rationale">${s.rationale || ''}</div>
+    </div>
+  `).join('');
+}
+
+// Load historical signals
+async function loadSignals() {
+  const d = await fetchJSON('/api/signals');
+  if (d && d.signals) {
+    signalsList = d.signals.slice(0, 50);
+    renderSignals();
+  }
+}
+
+// SSE Stream
+function connectSSE() {
+  const evtSource = new EventSource(API + '/api/stream');
+
+  evtSource.addEventListener('market', (e) => {
+    const d = JSON.parse(e.data);
+    // Update watchlist LTP inline
+    const rows = document.querySelectorAll('#watchlist-body tr');
+    rows.forEach(row => {
+      const ticker = row.querySelector('strong');
+      if (ticker && ticker.textContent === d.ticker) {
+        row.children[1].textContent = fmt(d.ltp);
+      }
+    });
+  });
+
+  evtSource.addEventListener('sentiment', (e) => {
+    const d = JSON.parse(e.data);
+    sentimentData[d.ticker] = d;
+    updateSentimentTable();
+    updateWatchlist();
+  });
+
+  evtSource.addEventListener('signal', (e) => {
+    const d = JSON.parse(e.data);
+    addSignal(d);
+  });
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+// File upload
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('upload-status');
+  status.textContent = `Uploading ${file.name}...`;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const r = await fetch(API + '/api/portfolio/upload', { method:'POST', body: formData });
+    const d = await r.json();
+    if (r.ok) {
+      status.textContent = `${d.message}. Added to watchlist: ${d.added_to_watchlist.join(', ') || 'none new'}`;
+      status.style.color = 'var(--green)';
+      updatePositions();
+      updateWatchlist();
+    } else {
+      status.textContent = `Error: ${d.detail}`;
+      status.style.color = 'var(--red)';
+    }
+  } catch(err) {
+    status.textContent = `Upload failed: ${err}`;
+    status.style.color = 'var(--red)';
+  }
+});
+
+// Drag & drop
+const uploadArea = document.getElementById('upload-area');
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.borderColor='var(--accent)'; });
+uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor='var(--border)'; });
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.style.borderColor='var(--border)';
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('file-input').files = dt.files;
+    document.getElementById('file-input').dispatchEvent(new Event('change'));
+  }
+});
+
+// Initial load + polling
+async function refresh() {
+  await Promise.all([updateStatus(), updatePnL(), updateWatchlist(), updatePositions()]);
+}
+refresh();
+loadSignals();
+connectSSE();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

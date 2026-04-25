@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Brain, TrendingUp, MessageSquare, ShieldAlert,
-  Wifi, WifiOff, Building2, Rss, CheckSquare, Landmark, ExternalLink
+  Wifi, WifiOff, Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun
 } from "lucide-react"
 import { useLiveStore } from "@/lib/store"
 
@@ -36,6 +36,7 @@ const NAV_SECTIONS = [
   {
     label: "Capital",
     items: [
+      { href: "/morning",    icon: Sun,             label: "Morning Setup"    },
       { href: "/aditi",      icon: TrendingUp,      label: "Aditi Investments"},
     ]
   },
