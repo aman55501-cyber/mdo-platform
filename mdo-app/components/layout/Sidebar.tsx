@@ -41,8 +41,9 @@ const NAV_SECTIONS = [
     ]
   },
   {
-    label: "AI",
+    label: "Intelligence",
     items: [
+      { href: "/news",       icon: Rss,             label: "Portfolio News"   },
       { href: "/grok",       icon: MessageSquare,   label: "Grok AI"          },
     ]
   },

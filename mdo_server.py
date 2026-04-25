@@ -214,6 +214,19 @@ CREATE TABLE IF NOT EXISTS vwlr_competitors (
     notes TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS portfolio_news (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    headline TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    url TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    sentiment TEXT DEFAULT 'neutral',
+    impact TEXT DEFAULT 'medium',
+    fetched_at TEXT DEFAULT (datetime('now')),
+    read INTEGER DEFAULT 0,
+    UNIQUE(ticker, headline)
+);
 """)
     await db.commit()
     # Seed competitors if table is empty
@@ -630,17 +643,8 @@ async def vwlr_pipeline_update(tender_id: int, body: dict):
     rows = await db.execute_fetchall("SELECT * FROM vwlr_tender_pipeline WHERE id=?", (tender_id,))
     return dict(rows[0]) if rows else {}
 
-# _"__"_ VWLR Competitors (from Vedanta CRM) _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
-@app.get("/api/vwlr/competitors")
-async def vwlr_competitors():
-    try:
-        conn = vedanta_conn()
-        rows = conn.execute(
-            "SELECT * FROM competitors ORDER BY CASE threat_level WHEN 'VERY HIGH' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END"
-        ).fetchall()
-        return {"competitors": [dict(r) for r in rows]}
-    except Exception as e:
-        return {"competitors": [], "error": str(e)}
+# _"__"_ VWLR Competitors (legacy Vedanta CRM read — superseded by vwlr_competitors table below) _"__"__"__"__"__"__"__"__"_
+# NOTE: endpoint kept for reference but route is overridden by the vwlr_competitors function further below.
 
 # _"__"_ Hotel ANS _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
 @app.get("/api/hotel/daily")
@@ -1341,6 +1345,113 @@ async def hdfc_funds():
             return _json.loads(r.read())
     except Exception as e:
         raise HTTPException(502, str(e))
+
+# ── Portfolio News ───────────────────────────────────────────────────────────
+
+import xml.etree.ElementTree as _ET
+
+_NEWS_DEFAULT_TICKERS = [
+    "RELIANCE", "HDFCBANK", "COALINDIA", "NTPC", "JSPL", "SAIL",
+    "HAL", "TATAMOTORS", "MSTC", "NALCO", "VEDL", "ADANIPOWER",
+    "JSWENERGY", "IRCON", "RITES",
+]
+
+def _fetch_rss_news(ticker: str) -> list[dict]:
+    """Fetch Yahoo Finance RSS for one ticker. Returns list of item dicts."""
+    url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}.NS&region=IN&lang=en-IN"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read()
+        root = _ET.fromstring(raw)
+        ns = {"media": "http://search.yahoo.com/mrss/"}
+        items = []
+        for item in root.findall(".//item"):
+            title_el = item.find("title")
+            link_el  = item.find("link")
+            pub_el   = item.find("pubDate")
+            title = title_el.text.strip() if title_el is not None and title_el.text else ""
+            link  = link_el.text.strip()  if link_el  is not None and link_el.text  else ""
+            pub   = pub_el.text.strip()   if pub_el   is not None and pub_el.text   else ""
+            if title:
+                items.append({"ticker": ticker, "headline": title, "url": link,
+                              "source": "Yahoo Finance", "pub_date": pub})
+        return items
+    except Exception as e:
+        return []
+
+async def _store_news_items(db, items: list[dict]) -> int:
+    """Insert items into portfolio_news, skip duplicates. Returns count of new rows."""
+    new_count = 0
+    for it in items:
+        try:
+            await db.execute(
+                """INSERT OR IGNORE INTO portfolio_news
+                   (ticker, headline, url, source)
+                   VALUES (?, ?, ?, ?)""",
+                (it["ticker"], it["headline"], it["url"], it["source"]),
+            )
+            if db.total_changes > 0:
+                new_count += 1
+        except Exception:
+            pass
+    await db.commit()
+    return new_count
+
+@app.get("/api/news/portfolio")
+async def portfolio_news_get(tickers: str | None = None):
+    """Return last 50 portfolio news items. Optional ?tickers=RELIANCE,HDFCBANK"""
+    db = await vdb()
+    ticker_list = [t.strip().upper() for t in tickers.split(",")] if tickers else _NEWS_DEFAULT_TICKERS
+
+    # Fetch fresh in background — non-blocking best-effort
+    loop = asyncio.get_event_loop()
+    def _fetch_all():
+        results = []
+        for t in ticker_list:
+            results.extend(_fetch_rss_news(t))
+        return results
+
+    try:
+        items = await loop.run_in_executor(None, _fetch_all)
+        await _store_news_items(db, items)
+    except Exception:
+        pass
+
+    # Build WHERE clause
+    placeholders = ",".join("?" * len(ticker_list))
+    rows = await db.execute_fetchall(
+        f"SELECT * FROM portfolio_news WHERE ticker IN ({placeholders}) ORDER BY fetched_at DESC LIMIT 50",
+        ticker_list,
+    )
+    return {"news": [dict(r) for r in rows], "tickers": ticker_list}
+
+@app.post("/api/news/portfolio/refresh")
+async def portfolio_news_refresh(tickers: str | None = None):
+    """Force-fetch Yahoo Finance RSS for all tickers concurrently. Returns new item count."""
+    db = await vdb()
+    ticker_list = [t.strip().upper() for t in tickers.split(",")] if tickers else _NEWS_DEFAULT_TICKERS
+
+    loop = asyncio.get_event_loop()
+
+    async def fetch_one(ticker: str):
+        return await loop.run_in_executor(None, _fetch_rss_news, ticker)
+
+    results = await asyncio.gather(*[fetch_one(t) for t in ticker_list])
+    all_items: list[dict] = []
+    for batch in results:
+        all_items.extend(batch)
+
+    new_count = await _store_news_items(db, all_items)
+    return {"new_items": new_count, "total_fetched": len(all_items), "tickers": ticker_list}
+
+@app.post("/api/news/{news_id}/read")
+async def portfolio_news_mark_read(news_id: int):
+    """Mark a news item as read."""
+    db = await vdb()
+    await db.execute("UPDATE portfolio_news SET read=1 WHERE id=?", (news_id,))
+    await db.commit()
+    return {"id": news_id, "read": True}
 
 # ── run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -58,16 +58,6 @@ interface Tender {
   tender_id?: string
 }
 
-interface Competitor {
-  id: string | number
-  name: string
-  type?: string
-  locations?: string
-  threat_level?: "High" | "Medium" | "Low"
-  strengths?: string
-  recent_activity?: string
-}
-
 interface BidResult {
   gate_price?: number
   fois_freight?: number
@@ -730,53 +720,257 @@ function BidCalcTab() {
 // ---------------------------------------------------------------------------
 // TAB 5: COMPETITORS
 // ---------------------------------------------------------------------------
+interface CompetitorV2 {
+  id: string | number
+  name: string
+  tenders_won: number
+  tenders_tracked: number
+  last_seen?: string
+  notes?: string
+  location?: string
+  type?: string
+}
+
+function threatBadge(won: number): { color: string; label: string } {
+  if (won > 3) return { color: "var(--red)", label: "Threat" }
+  if (won >= 1) return { color: "var(--amber)", label: "Watch" }
+  return { color: "var(--green)", label: "Low" }
+}
+
+function tender247Url(name: string): string {
+  const slug = name.toLowerCase().replace(/\s+/g, "+")
+  return `https://tender247.com/keyword/${slug}+rcr+coal`
+}
+
 function CompetitorsTab() {
+  const queryClient = useQueryClient()
+
+  // Data
   const { data: competitors = [], isLoading, error } = useQuery({
-    queryKey: ["competitors"],
-    queryFn: () => apiFetch<{ competitors: Competitor[] }>("/api/vwlr/competitors").then(r => r.competitors).catch(() => [] as Competitor[]),
+    queryKey: ["competitorsV2"],
+    queryFn: () => apiFetch<{ competitors: CompetitorV2[] }>("/api/vwlr/competitors").then(r => r.competitors).catch(() => [] as CompetitorV2[]),
   })
+
+  // Inline edit state: { [id]: { field: value } }
+  const [editing, setEditing] = useState<Record<string | number, Partial<CompetitorV2>>>({})
+  const [saving, setSaving] = useState<string | number | null>(null)
+
+  // Quick intel form
+  const [intel, setIntel] = useState("")
+  const [intelStatus, setIntelStatus] = useState<"idle" | "ok" | "err">("idle")
+
+  // PUT mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | number; body: Partial<CompetitorV2> }) =>
+      apiFetch(`/api/vwlr/competitors/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: (_, { id }) => {
+      setSaving(null)
+      setEditing(prev => { const n = { ...prev }; delete n[id]; return n })
+      queryClient.invalidateQueries({ queryKey: ["competitorsV2"] })
+    },
+    onError: () => setSaving(null),
+  })
+
+  function startEdit(c: CompetitorV2) {
+    setEditing(prev => ({
+      ...prev,
+      [c.id]: { tenders_won: c.tenders_won, tenders_tracked: c.tenders_tracked, notes: c.notes || "", last_seen: c.last_seen || "" },
+    }))
+  }
+
+  function saveEdit(c: CompetitorV2) {
+    const body = editing[c.id]
+    if (!body) return
+    setSaving(c.id)
+    updateMutation.mutate({ id: c.id, body })
+  }
+
+  function cancelEdit(id: string | number) {
+    setEditing(prev => { const n = { ...prev }; delete n[id]; return n })
+  }
+
+  // Quick intel submit — posts as a notes update to the matching competitor
+  async function submitIntel() {
+    if (!intel.trim()) return
+    // Try to match a competitor name in the text
+    const lower = intel.toLowerCase()
+    const match = competitors.find(c => lower.includes(c.name.toLowerCase()))
+    if (match) {
+      const existing = match.notes ? match.notes + "\n" : ""
+      const today = new Date().toISOString().slice(0, 10)
+      const newNotes = existing + `[${today}] ${intel.trim()}`
+      try {
+        await apiFetch(`/api/vwlr/competitors/${match.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ notes: newNotes, last_seen: today }),
+        })
+        queryClient.invalidateQueries({ queryKey: ["competitorsV2"] })
+        setIntel("")
+        setIntelStatus("ok")
+        setTimeout(() => setIntelStatus("idle"), 3000)
+      } catch {
+        setIntelStatus("err")
+      }
+    } else {
+      setIntelStatus("err")
+    }
+  }
+
+  // Summary stats
+  const totalTracked = competitors.length
+  const avgWon = competitors.length > 0
+    ? (competitors.reduce((s, c) => s + (c.tenders_won || 0), 0) / competitors.length).toFixed(1)
+    : "0"
+  const biggest = competitors.reduce<CompetitorV2 | null>((best, c) => (!best || c.tenders_won > best.tenders_won) ? c : best, null)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Summary bar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+        {[
+          { label: "Competitors Tracked", value: totalTracked, color: "var(--accent)" },
+          { label: "Avg Tenders Won", value: avgWon, color: "var(--amber)" },
+          { label: "Biggest Threat", value: biggest?.name || "—", color: "var(--red)" },
+        ].map(s => (
+          <div key={s.label} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--text2)", marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick Intel form */}
+      <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text2)", marginBottom: 8 }}>QUICK INTEL — LOG A SIGHTING</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            style={{ ...inputStyle, flex: 1 }}
+            value={intel}
+            onChange={e => setIntel(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && submitIntel()}
+            placeholder='e.g. "Saw Godavari Commodities in SECL tender on 25-Apr"'
+          />
+          <button
+            onClick={submitIntel}
+            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--accent)", color: "#fff", fontSize: 13, border: "none", cursor: "pointer", whiteSpace: "nowrap" }}>
+            Log Intel
+          </button>
+        </div>
+        {intelStatus === "ok" && <div style={{ fontSize: 12, color: "var(--green)", marginTop: 6 }}>Intel logged to competitor notes.</div>}
+        {intelStatus === "err" && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 6 }}>Could not match a competitor name — mention their exact name in the note.</div>}
+      </div>
+
+      {/* Competitor cards grid */}
       <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 14 }}>COMPETITOR LANDSCAPE</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text2)", marginBottom: 14 }}>COMPETITOR GRID</div>
 
         {isLoading && <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text2)", fontSize: 13 }}>Loading…</div>}
         {error && <div style={{ fontSize: 12, color: "var(--red)" }}>Error loading competitors.</div>}
 
-        {!isLoading && competitors.length === 0 && (
-          <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text2)", fontSize: 13 }}>No competitor data yet.</div>
-        )}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+          {competitors.map(c => {
+            const badge = threatBadge(c.tenders_won || 0)
+            const isEdit = !!editing[c.id]
+            const ed = editing[c.id] || {}
+            return (
+              <div key={c.id} style={{
+                background: "var(--bg3)",
+                border: `1px solid ${badge.color}44`,
+                borderRadius: 10,
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{c.name}</div>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: badge.color + "22", color: badge.color, flexShrink: 0 }}>
+                    {badge.label}
+                  </span>
+                </div>
 
-        {competitors.length > 0 && (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Name", "Type", "Locations", "Threat", "Strengths", "Recent Activity"].map(h => (
-                    <th key={h} style={{ textAlign: "left", padding: "6px 8px", fontSize: 11, color: "var(--text2)", fontWeight: 600 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {competitors.map(c => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "9px 8px", fontWeight: 600 }}>{c.name}</td>
-                    <td style={{ padding: "9px 8px", color: "var(--text2)" }}>{c.type || "—"}</td>
-                    <td style={{ padding: "9px 8px", color: "var(--text2)" }}>{c.locations || "—"}</td>
-                    <td style={{ padding: "9px 8px" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: threatColor(c.threat_level) + "22", color: threatColor(c.threat_level) }}>
-                        {c.threat_level || "—"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "9px 8px", color: "var(--text2)", fontSize: 12 }}>{c.strengths || "—"}</td>
-                    <td style={{ padding: "9px 8px", color: "var(--text2)", fontSize: 12 }}>{c.recent_activity || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                {/* Stats */}
+                {!isEdit && (
+                  <>
+                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--text2)" }}>
+                      <span>Won: <strong style={{ color: "var(--text)" }}>{c.tenders_won ?? 0}</strong></span>
+                      <span>Tracked: <strong style={{ color: "var(--text)" }}>{c.tenders_tracked ?? 0}</strong></span>
+                    </div>
+                    {c.last_seen && (
+                      <div style={{ fontSize: 11, color: "var(--text2)" }}>Last seen: {fmtDate(c.last_seen)}</div>
+                    )}
+                    {c.notes && (
+                      <div style={{ fontSize: 11, color: "var(--text2)", fontStyle: "italic", borderTop: "1px solid var(--border)", paddingTop: 6, lineHeight: 1.4 }}>
+                        {c.notes.split("\n").slice(-1)[0]}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Inline edit form */}
+                {isEdit && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: "var(--text2)", display: "block", marginBottom: 2 }}>Won</label>
+                        <input style={{ ...inputStyle, padding: "4px 7px", fontSize: 12 }} type="number"
+                          value={ed.tenders_won ?? 0}
+                          onChange={e => setEditing(prev => ({ ...prev, [c.id]: { ...prev[c.id], tenders_won: Number(e.target.value) } }))} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: "var(--text2)", display: "block", marginBottom: 2 }}>Tracked</label>
+                        <input style={{ ...inputStyle, padding: "4px 7px", fontSize: 12 }} type="number"
+                          value={ed.tenders_tracked ?? 0}
+                          onChange={e => setEditing(prev => ({ ...prev, [c.id]: { ...prev[c.id], tenders_tracked: Number(e.target.value) } }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, color: "var(--text2)", display: "block", marginBottom: 2 }}>Last Seen (date)</label>
+                      <input style={{ ...inputStyle, padding: "4px 7px", fontSize: 12 }} type="date"
+                        value={ed.last_seen || ""}
+                        onChange={e => setEditing(prev => ({ ...prev, [c.id]: { ...prev[c.id], last_seen: e.target.value } }))} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, color: "var(--text2)", display: "block", marginBottom: 2 }}>Notes</label>
+                      <textarea style={{ ...inputStyle, padding: "4px 7px", fontSize: 11, height: 52, resize: "vertical" }}
+                        value={ed.notes || ""}
+                        onChange={e => setEditing(prev => ({ ...prev, [c.id]: { ...prev[c.id], notes: e.target.value } }))} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  {!isEdit ? (
+                    <>
+                      <button onClick={() => startEdit(c)}
+                        style={{ flex: 1, padding: "4px 0", borderRadius: 6, background: "var(--bg2)", color: "var(--text2)", fontSize: 11, border: "1px solid var(--border)", cursor: "pointer" }}>
+                        Edit
+                      </button>
+                      <a href={tender247Url(c.name)} target="_blank" rel="noreferrer"
+                        style={{ flex: 2, padding: "4px 6px", borderRadius: 6, background: "var(--accent)", color: "#fff", fontSize: 11, border: "none", cursor: "pointer", textDecoration: "none", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
+                        <ExternalLink size={10} /> Tender247
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => saveEdit(c)} disabled={saving === c.id}
+                        style={{ flex: 1, padding: "4px 0", borderRadius: 6, background: "var(--accent)", color: "#fff", fontSize: 11, border: "none", cursor: "pointer", opacity: saving === c.id ? 0.7 : 1 }}>
+                        {saving === c.id ? "Saving…" : "Save"}
+                      </button>
+                      <button onClick={() => cancelEdit(c.id)}
+                        style={{ flex: 1, padding: "4px 0", borderRadius: 6, background: "var(--bg2)", color: "var(--text2)", fontSize: 11, border: "1px solid var(--border)", cursor: "pointer" }}>
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
