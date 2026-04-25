@@ -2,5 +2,5 @@
 buildCommand = "npm ci && npm run build"
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "npx next start -p ${PORT:-3000}"
 restartPolicyType = "always"
