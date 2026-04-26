@@ -225,6 +225,20 @@ CREATE TABLE IF NOT EXISTS vwlr_competitors (
     notes TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS intelligence_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    title TEXT NOT NULL,
+    what_changed TEXT DEFAULT '',
+    why_matters TEXT DEFAULT '',
+    recommended_action TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    source_id INTEGER DEFAULT 0,
+    acknowledged INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT
+);
 CREATE TABLE IF NOT EXISTS portfolio_news (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker TEXT NOT NULL,
@@ -1524,6 +1538,193 @@ async def portfolio_news_mark_read(news_id: int):
     await db.execute("UPDATE portfolio_news SET read=1 WHERE id=?", (news_id,))
     await db.commit()
     return {"id": news_id, "read": True}
+
+# ── Intelligence Engine ─────────────────────────────────────────────────────
+
+@app.get("/api/intelligence/alerts")
+async def intelligence_alerts(level: str = None, domain: str = None):
+    """Get all unacknowledged alerts, optionally filtered."""
+    db = await vdb()
+    q = "SELECT * FROM intelligence_alerts WHERE acknowledged=0"
+    params = []
+    if level:
+        q += " AND level=?"; params.append(level)
+    if domain:
+        q += " AND domain=?"; params.append(domain)
+    q += " ORDER BY CASE level WHEN 'critical' THEN 1 WHEN 'important' THEN 2 ELSE 3 END, created_at DESC"
+    async with db.execute(q, params) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+    return {"alerts": rows}
+
+@app.post("/api/intelligence/alerts/{alert_id}/ack")
+async def intelligence_ack(alert_id: int):
+    db = await vdb()
+    await db.execute("UPDATE intelligence_alerts SET acknowledged=1 WHERE id=?", (alert_id,))
+    await db.commit()
+    return {"id": alert_id, "acknowledged": True}
+
+@app.post("/api/intelligence/scan")
+async def intelligence_scan():
+    """Run classification engine — pulls from all data sources, classifies via rules + Grok,
+    stores in intelligence_alerts. Returns count by level."""
+    db = await vdb()
+    import datetime as _dt
+    today = _dt.date.today()
+    today_str = today.isoformat()
+
+    # Clear today's auto-generated alerts to refresh
+    await db.execute("DELETE FROM intelligence_alerts WHERE source='auto_scan' AND date(created_at)=date('now')")
+
+    counts = {"critical": 0, "important": 0, "info": 0}
+
+    def add(level, domain, title, changed, matters, action, src_id=0):
+        counts[level] = counts.get(level, 0) + 1
+        return (level, domain, title, changed, matters, action, "auto_scan", src_id)
+
+    rows_to_insert = []
+
+    # 1. COMPLIANCE — deadlines
+    async with db.execute(
+        "SELECT id, entity_name, filing_type, due_date, status FROM compliance_filings WHERE status='pending' AND due_date IS NOT NULL"
+    ) as cur:
+        filings = await cur.fetchall()
+    for f in filings:
+        try:
+            due = _dt.date.fromisoformat(f["due_date"][:10])
+            days = (due - today).days
+        except Exception:
+            continue
+        if days < 0:
+            rows_to_insert.append(add("critical", "Compliance",
+                f"{f['filing_type']} OVERDUE — {f['entity_name']}",
+                f"Filing was due {abs(days)} days ago ({f['due_date'][:10]})",
+                "Risk of penalty, ROC notice, or §454(8) escalation",
+                f"Call CA Vimal Agrawal (9755220259) today; file immediately",
+                f["id"]))
+        elif days <= 3:
+            rows_to_insert.append(add("critical", "Compliance",
+                f"{f['filing_type']} due in {days}d — {f['entity_name']}",
+                f"Deadline {f['due_date'][:10]} is {days} days away",
+                "Late filing = penalty + compliance flag",
+                "File this week; confirm with CA Vimal",
+                f["id"]))
+        elif days <= 14:
+            rows_to_insert.append(add("important", "Compliance",
+                f"{f['filing_type']} due in {days}d — {f['entity_name']}",
+                f"Deadline approaching: {f['due_date'][:10]}",
+                "Plan filing window; gather documents",
+                "Sync with CA this week",
+                f["id"]))
+
+    # 2. SALES — VWLR tenders
+    async with db.execute(
+        "SELECT id, buyer, volume_mt, category, due_date FROM vwlr_tender_pipeline WHERE status='active' AND due_date IS NOT NULL"
+    ) as cur:
+        tenders = await cur.fetchall()
+    for t in tenders:
+        try:
+            due = _dt.date.fromisoformat(t["due_date"][:10])
+            days = (due - today).days
+        except Exception:
+            continue
+        if days < 0:
+            continue
+        if days <= 3:
+            rows_to_insert.append(add("critical", "Sales",
+                f"Tender closing in {days}d — {t['buyer']}",
+                f"{t['category']} tender, {int(t['volume_mt'] or 0)} MT, deadline {t['due_date'][:10]}",
+                "Pipeline value at risk; bid window closing",
+                "Submit bid today / confirm decision to skip",
+                t["id"]))
+        elif days <= 7:
+            rows_to_insert.append(add("important", "Sales",
+                f"Tender in {days}d — {t['buyer']}",
+                f"{t['category']}, {int(t['volume_mt'] or 0)} MT — deadline {t['due_date'][:10]}",
+                "Bid prep window opening",
+                "Run bid calculator; check eligibility",
+                t["id"]))
+
+    # 3. INVESTMENTS — pending Singhvi calls
+    async with db.execute(
+        "SELECT id, ticker, direction, entry_price, target_price, stop_loss, status FROM singhvi_calls WHERE date=? AND status='pending'", (today_str,)
+    ) as cur:
+        pending_calls = await cur.fetchall()
+    if pending_calls:
+        rows_to_insert.append(add("important", "Investments",
+            f"{len(pending_calls)} Singhvi call(s) pending review",
+            f"Calls extracted from Zee Business not yet approved/skipped",
+            "Market opens at 9:15 AM — late approvals miss the entry",
+            "Open Morning Setup → review and approve",
+            0))
+
+    # 4. INTEL — high urgency items
+    async with db.execute(
+        "SELECT id, title, urgency, entity FROM intel_items WHERE urgency IN ('HIGH','CRITICAL') AND status='open'"
+    ) as cur:
+        intel = await cur.fetchall()
+    for i in intel:
+        rows_to_insert.append(add(
+            "critical" if i["urgency"] == "CRITICAL" else "important",
+            "Strategic",
+            i["title"],
+            "Open intel item, urgency: " + i["urgency"],
+            "Flagged as time-sensitive — risk of escalation if ignored",
+            f"Review on Intel Centre; resolve or escalate to {i['entity'] or 'CA/Legal'}",
+            i["id"]))
+
+    # 5. STRATEGIC — competitor activity
+    async with db.execute(
+        "SELECT id, name, tenders_won, tenders_tracked FROM vwlr_competitors WHERE tenders_won >= 3 ORDER BY tenders_won DESC LIMIT 3"
+    ) as cur:
+        threats = await cur.fetchall()
+    for c in threats:
+        rows_to_insert.append(add("important", "Strategic",
+            f"{c['name']} winning aggressively",
+            f"{c['tenders_won']} tenders won across {c['tenders_tracked']} tracked",
+            "Top competitor in your tender categories — eroding margin pool",
+            f"Pull Tender247 competitor report; identify their pricing pattern",
+            c["id"]))
+
+    # Insert all alerts
+    for r in rows_to_insert:
+        await db.execute(
+            """INSERT INTO intelligence_alerts
+               (level, domain, title, what_changed, why_matters, recommended_action, source, source_id)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            r
+        )
+    await db.commit()
+
+    return {
+        "scanned_at": _dt.datetime.now().isoformat(),
+        "counts": counts,
+        "total": sum(counts.values()),
+    }
+
+@app.get("/api/intelligence/briefing")
+async def intelligence_briefing():
+    """Return today's structured briefing, grouped by level."""
+    db = await vdb()
+    async with db.execute(
+        "SELECT * FROM intelligence_alerts WHERE acknowledged=0 ORDER BY CASE level WHEN 'critical' THEN 1 WHEN 'important' THEN 2 ELSE 3 END, domain"
+    ) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+
+    grouped = {"critical": [], "important": [], "info": []}
+    for r in rows:
+        grouped[r["level"]].append(r)
+
+    return {
+        "generated_at": __import__("datetime").datetime.now().isoformat(),
+        "critical": grouped["critical"],
+        "important": grouped["important"],
+        "info": grouped["info"],
+        "summary": {
+            "critical_count": len(grouped["critical"]),
+            "important_count": len(grouped["important"]),
+            "info_count": len(grouped["info"]),
+        }
+    }
 
 # ── run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

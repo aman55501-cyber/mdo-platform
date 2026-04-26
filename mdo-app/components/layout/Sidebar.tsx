@@ -14,6 +14,7 @@ const NAV_SECTIONS = [
     label: "Command",
     items: [
       { href: "/",           icon: LayoutDashboard, label: "Dashboard"        },
+      { href: "/briefing",   icon: ShieldAlert,     label: "Daily Briefing"   },
       { href: "/feeds",      icon: Rss,             label: "Live Feeds"       },
       { href: "/intel",      icon: Brain,           label: "Intel Centre"     },
     ]
