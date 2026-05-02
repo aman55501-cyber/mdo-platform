@@ -19,11 +19,19 @@ venv/
 *.db
 *.sqlite
 
-# Node / Next.js
+# Node / Next.js / pnpm workspaces
+node_modules/
 mdo-app/node_modules/
 mdo-app/.next/
 mdo-app/out/
 mdo-app/dist-electron/
+apps/*/node_modules/
+apps/*/dist/
+packages/*/node_modules/
+packages/*/dist/
+agents/*/node_modules/
+.turbo/
+pnpm-lock.yaml
 
 # Claude / IDE
 .claude/

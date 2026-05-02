@@ -1,0 +1,21 @@
+{
+  "name": "mdo-platform",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "workers:dev": "pnpm --filter @mdo/workers dev",
+    "db:generate": "pnpm --filter @mdo/db generate",
+    "db:migrate": "pnpm --filter @mdo/db migrate",
+    "db:seed": "pnpm --filter @mdo/db seed",
+    "db:check": "pnpm --filter @mdo/db check",
+    "replay": "pnpm --filter @mdo/workers replay"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.9.3"
+  }
+}
