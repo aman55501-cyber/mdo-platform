@@ -1,0 +1,1403 @@
+From 3669ca89c33bf8b92787d70ebbff019228a5b774 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 2 May 2026 16:51:40 +0000
+Subject: [PATCH 1/2] =?UTF-8?q?feat:=20orchestrator=20skeleton=20=E2=80=94?=
+ =?UTF-8?q?=20scheduler,=20queue,=20dispatcher,=20audit,=20kill-switch,=20?=
+ =?UTF-8?q?replay,=20test=20agent?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds the Phase 0 orchestrator foundation alongside the existing MDO platform:
+
+- packages/db: Drizzle ORM schema with 11 Supabase tables (agents, alerts,
+  agent_actions, agent_inputs_raw, approvals, kill_state, events,
+  source_quarantine, baselines, agent_runs, canary_deployments) + pgvector
+  columns for future embedding pipeline. Migration, seed, and health-check scripts.
+
+- apps/workers: TypeScript orchestrator service
+  - scheduler/: node-cron reads agents table, enqueues jobs on schedule
+  - orchestrator/queue.ts: BullMQ queue + worker factory
+  - orchestrator/priority.ts: priority scoring (severity + freshness + IST business-hours multiplier)
+  - orchestrator/dispatcher.ts: dequeues jobs, checks kill switch, loads agent module, writes run record
+  - audit/logger.ts: writes every action to agent_actions (non-negotiable)
+  - kill-switch/enforcer.ts: pause/resume per-agent and global; read before every run
+  - replay/recorder.ts: records raw inputs to agent_inputs_raw before processing
+  - replay/cli.ts: `pnpm replay --agent <id> --hours <n>` compares replay vs original outputs
+
+- agents/_test-agent: Phase 0 hello-world agent — fires every 5 min, emits
+  an alert to the alerts table, proving the full scheduler→queue→dispatch→audit pipeline
+
+- pnpm workspaces + Turborepo wiring; CLAUDE.md with architecture + runbook
+
+https://claude.ai/code/session_01KrTtttFTdE9MMM277FWccC
+---
+ .gitignore                                  |  10 +-
+ .npmrc                                      |   1 +
+ CLAUDE.md                                   |  90 ++++++++
+ agents/_test-agent/index.ts                 |  49 +++++
+ agents/_test-agent/package.json             |  15 ++
+ apps/workers/.env.example                   |   2 +
+ apps/workers/package.json                   |  28 +++
+ apps/workers/src/audit/logger.ts            |  30 +++
+ apps/workers/src/index.ts                   |  29 +++
+ apps/workers/src/kill-switch/enforcer.ts    |  83 +++++++
+ apps/workers/src/orchestrator/dispatcher.ts |  71 ++++++
+ apps/workers/src/orchestrator/priority.ts   |  30 +++
+ apps/workers/src/orchestrator/queue.ts      |  50 +++++
+ apps/workers/src/replay/cli.ts              |  93 ++++++++
+ apps/workers/src/replay/recorder.ts         |  18 ++
+ apps/workers/src/scheduler/index.ts         |  52 +++++
+ apps/workers/tsconfig.json                  |  10 +
+ package.json                                |  21 ++
+ packages/db/drizzle.config.ts               |  10 +
+ packages/db/package.json                    |  26 +++
+ packages/db/src/check.ts                    |  42 ++++
+ packages/db/src/client.ts                   |  10 +
+ packages/db/src/index.ts                    |   4 +
+ packages/db/src/migrate.ts                  |  14 ++
+ packages/db/src/schema.ts                   | 228 ++++++++++++++++++++
+ packages/db/src/seed.ts                     |  32 +++
+ packages/db/tsconfig.json                   |   8 +
+ pnpm-workspace.yaml                         |   4 +
+ tsconfig.base.json                          |  16 ++
+ turbo.json                                  |  17 ++
+ 30 files changed, 1092 insertions(+), 1 deletion(-)
+ create mode 100644 .npmrc
+ create mode 100644 CLAUDE.md
+ create mode 100644 agents/_test-agent/index.ts
+ create mode 100644 agents/_test-agent/package.json
+ create mode 100644 apps/workers/.env.example
+ create mode 100644 apps/workers/package.json
+ create mode 100644 apps/workers/src/audit/logger.ts
+ create mode 100644 apps/workers/src/index.ts
+ create mode 100644 apps/workers/src/kill-switch/enforcer.ts
+ create mode 100644 apps/workers/src/orchestrator/dispatcher.ts
+ create mode 100644 apps/workers/src/orchestrator/priority.ts
+ create mode 100644 apps/workers/src/orchestrator/queue.ts
+ create mode 100644 apps/workers/src/replay/cli.ts
+ create mode 100644 apps/workers/src/replay/recorder.ts
+ create mode 100644 apps/workers/src/scheduler/index.ts
+ create mode 100644 apps/workers/tsconfig.json
+ create mode 100644 package.json
+ create mode 100644 packages/db/drizzle.config.ts
+ create mode 100644 packages/db/package.json
+ create mode 100644 packages/db/src/check.ts
+ create mode 100644 packages/db/src/client.ts
+ create mode 100644 packages/db/src/index.ts
+ create mode 100644 packages/db/src/migrate.ts
+ create mode 100644 packages/db/src/schema.ts
+ create mode 100644 packages/db/src/seed.ts
+ create mode 100644 packages/db/tsconfig.json
+ create mode 100644 pnpm-workspace.yaml
+ create mode 100644 tsconfig.base.json
+ create mode 100644 turbo.json
+
+diff --git a/.gitignore b/.gitignore
+index 06ffda9..6fc8f5b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,11 +19,19 @@ venv/
+ *.db
+ *.sqlite
+ 
+-# Node / Next.js
++# Node / Next.js / pnpm workspaces
++node_modules/
+ mdo-app/node_modules/
+ mdo-app/.next/
+ mdo-app/out/
+ mdo-app/dist-electron/
++apps/*/node_modules/
++apps/*/dist/
++packages/*/node_modules/
++packages/*/dist/
++agents/*/node_modules/
++.turbo/
++pnpm-lock.yaml
+ 
+ # Claude / IDE
+ .claude/
+diff --git a/.npmrc b/.npmrc
+new file mode 100644
+index 0000000..6c59086
+--- /dev/null
++++ b/.npmrc
+@@ -0,0 +1 @@
++enable-pre-post-scripts=true
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..176ae67
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,90 @@
++# MDO Platform — CLAUDE.md
++
++## Architecture overview
++
++Monorepo managed with pnpm workspaces + Turborepo.
++
++```
++mdo-platform/
++├── apps/
++│   ├── workers/        # TypeScript orchestrator — BullMQ, cron, dispatch
++│   └── (web future)    # Next.js dashboard (Phase 1)
++├── packages/
++│   └── db/             # Drizzle ORM schema + migrations for Supabase
++├── agents/
++│   └── _test-agent/    # Phase 0 hello-world agent (proves pipeline)
++└── mdo-app/            # Existing Next.js frontend (pre-orchestrator)
++```
++
++## Key rules
++
++1. **Every agent action is audited.** Call `logAction()` from `apps/workers/src/audit/logger.ts` before returning from any agent execution path.
++2. **Kill switch is checked first.** Call `isPaused(agentId)` from `enforcer.ts` before running any agent logic. Never bypass this.
++3. **All raw inputs are recorded before processing.** Call `recordInput()` from `replay/recorder.ts` at the top of every agent `run()` function.
++4. **Never commit secrets.** All credentials go in `.env` (git-ignored). Use `.env.example` for templates.
++5. **Drizzle migrations only.** Never edit tables directly in Supabase Dashboard. Always go through `pnpm db:generate` → `pnpm db:migrate`.
++
++## Environment variables required
++
++| Variable | Where | Description |
++|---|---|---|
++| `DATABASE_URL` | `apps/workers/.env` | Supabase PostgreSQL connection string |
++| `REDIS_URL` | `apps/workers/.env` | Railway Redis connection string |
++
++## Common commands
++
++```bash
++# Install all workspace deps
++pnpm install
++
++# Start orchestrator workers in dev mode (requires DATABASE_URL + REDIS_URL)
++pnpm workers:dev
++
++# Generate a Drizzle migration after schema changes
++pnpm db:generate
++
++# Apply pending migrations to Supabase
++pnpm db:migrate
++
++# Seed the database (inserts test-agent + kill_state rows)
++pnpm db:seed
++
++# Verify all 11 tables exist with RLS + pgvector
++pnpm db:check
++
++# Replay an agent's last 24h of inputs
++pnpm replay --agent _test-agent --hours 24
++
++# Typecheck the workers package
++pnpm --filter @mdo/workers typecheck
++```
++
++## Database (Supabase)
++
++- Project ID: `gogtdnlknbmhdvunpeqo`
++- Region: `ap-south-1`
++- 11 core tables: `agents`, `alerts`, `agent_actions`, `agent_inputs_raw`, `approvals`, `kill_state`, `events`, `source_quarantine`, `baselines`, `agent_runs`, `canary_deployments`
++- pgvector extension required (`CREATE EXTENSION vector;` in Supabase SQL editor before first migration)
++- Realtime enabled on: `alerts`, `approvals`, `kill_state`
++
++## Adding a new agent
++
++1. Create `agents/<agent-id>/index.ts` with an exported `run(payload, ctx)` function
++2. Insert a row in the `agents` table (via seed or migration)
++3. Insert a row in `kill_state` with `id = '<agent-id>'`
++4. The scheduler picks it up automatically on next workers restart
++
++## Phase 0 delivery
++
++Branch: `claude/orchestrator-skeleton-setup-bsM0V`
++
++Components delivered:
++- Drizzle schema (11 tables) in `packages/db/src/schema.ts`
++- Scheduler (`apps/workers/src/scheduler/`) — node-cron, reads `agents` table
++- BullMQ queue + worker (`apps/workers/src/orchestrator/queue.ts`)
++- Priority scoring (`apps/workers/src/orchestrator/priority.ts`)
++- Dispatcher (`apps/workers/src/orchestrator/dispatcher.ts`)
++- Audit logger (`apps/workers/src/audit/logger.ts`)
++- Kill-switch enforcer (`apps/workers/src/kill-switch/enforcer.ts`)
++- Replay recorder + CLI (`apps/workers/src/replay/`)
++- Test agent (`agents/_test-agent/index.ts`)
+diff --git a/agents/_test-agent/index.ts b/agents/_test-agent/index.ts
+new file mode 100644
+index 0000000..fb1028b
+--- /dev/null
++++ b/agents/_test-agent/index.ts
+@@ -0,0 +1,49 @@
++import { db, alerts, agentRuns } from "@mdo/db";
++import { eq } from "drizzle-orm";
++import { recordInput } from "../../apps/workers/src/replay/recorder.js";
++import { computePriorityScore } from "../../apps/workers/src/orchestrator/priority.js";
++
++export interface RunContext {
++  runId: string;
++  isReplay: boolean;
++}
++
++export interface AgentOutput {
++  alertId: string;
++  message: string;
++  priorityScore: number;
++}
++
++export async function run(
++  payload: unknown,
++  ctx: RunContext
++): Promise<AgentOutput> {
++  // Record raw input before doing anything — enables replay
++  await recordInput("test-agent", ctx.runId, payload);
++
++  const message = "Hello, AMAN — Phase 0 alert";
++  const priorityScore = computePriorityScore("info", 0);
++
++  const [alert] = await db
++    .insert(alerts)
++    .values({
++      agentId: "test-agent",
++      title: "Phase 0 Hello World",
++      body: message,
++      severity: "info",
++      status: "pending",
++      priorityScore,
++      metadata: { runId: ctx.runId, isReplay: ctx.isReplay },
++    })
++    .returning({ id: alerts.id });
++
++  // Update run alert count
++  await db
++    .update(agentRuns)
++    .set({ alertsEmitted: 1 })
++    .where(eq(agentRuns.id, ctx.runId as any));
++
++  console.log(`[test-agent] Alert emitted: ${alert.id} (score=${priorityScore})`);
++
++  return { alertId: alert.id, message, priorityScore };
++}
+diff --git a/agents/_test-agent/package.json b/agents/_test-agent/package.json
+new file mode 100644
+index 0000000..ad21580
+--- /dev/null
++++ b/agents/_test-agent/package.json
+@@ -0,0 +1,15 @@
++{
++  "name": "@mdo/agent-test",
++  "version": "0.0.1",
++  "private": true,
++  "type": "module",
++  "main": "index.ts",
++  "dependencies": {
++    "@mdo/db": "workspace:*",
++    "drizzle-orm": "^0.44.2"
++  },
++  "devDependencies": {
++    "typescript": "^5.9.3",
++    "@types/node": "^20.19.39"
++  }
++}
+diff --git a/apps/workers/.env.example b/apps/workers/.env.example
+new file mode 100644
+index 0000000..00c2361
+--- /dev/null
++++ b/apps/workers/.env.example
+@@ -0,0 +1,2 @@
++DATABASE_URL=postgresql://postgres:<password>@db.gogtdnlknbmhdvunpeqo.supabase.co:5432/postgres
++REDIS_URL=redis://:<password>@your-railway-redis-host:6379
+diff --git a/apps/workers/package.json b/apps/workers/package.json
+new file mode 100644
+index 0000000..68daabf
+--- /dev/null
++++ b/apps/workers/package.json
+@@ -0,0 +1,28 @@
++{
++  "name": "@mdo/workers",
++  "version": "0.0.1",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "tsx watch src/index.ts",
++    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js --format=esm",
++    "start": "node dist/index.js",
++    "typecheck": "tsc --noEmit",
++    "replay": "tsx src/replay/cli.ts"
++  },
++  "dependencies": {
++    "@mdo/db": "workspace:*",
++    "bullmq": "^5.53.1",
++    "node-cron": "^3.0.3",
++    "drizzle-orm": "^0.44.2",
++    "postgres": "^3.4.7",
++    "dotenv": "^16.5.0"
++  },
++  "devDependencies": {
++    "tsx": "^4.19.4",
++    "esbuild": "^0.25.4",
++    "typescript": "^5.9.3",
++    "@types/node": "^20.19.39",
++    "@types/node-cron": "^3.0.11"
++  }
++}
+diff --git a/apps/workers/src/audit/logger.ts b/apps/workers/src/audit/logger.ts
+new file mode 100644
+index 0000000..05df279
+--- /dev/null
++++ b/apps/workers/src/audit/logger.ts
+@@ -0,0 +1,30 @@
++import { db, agentActions } from "@mdo/db";
++
++export interface ActionLogEntry {
++  agentId: string;
++  runId?: string;
++  action: string;
++  input?: Record<string, unknown>;
++  output?: Record<string, unknown>;
++  durationMs?: number;
++  costUsd?: number;
++  isReplay?: boolean;
++}
++
++export async function logAction(entry: ActionLogEntry): Promise<string> {
++  const [row] = await db
++    .insert(agentActions)
++    .values({
++      agentId: entry.agentId,
++      runId: entry.runId ? (entry.runId as any) : undefined,
++      action: entry.action,
++      input: entry.input ?? {},
++      output: entry.output ?? {},
++      durationMs: entry.durationMs,
++      costUsd: entry.costUsd,
++      isReplay: entry.isReplay ?? false,
++    })
++    .returning({ id: agentActions.id });
++
++  return row.id;
++}
+diff --git a/apps/workers/src/index.ts b/apps/workers/src/index.ts
+new file mode 100644
+index 0000000..87bc021
+--- /dev/null
++++ b/apps/workers/src/index.ts
+@@ -0,0 +1,29 @@
++import "dotenv/config";
++import { startScheduler } from "./scheduler/index.js";
++import { createAgentWorker } from "./orchestrator/queue.js";
++import { dispatch } from "./orchestrator/dispatcher.js";
++
++console.log("MDO Orchestrator starting…");
++
++// Launch the BullMQ worker that processes enqueued agent jobs
++const worker = createAgentWorker(dispatch, 5);
++
++worker.on("completed", (job) => {
++  console.log(`[worker] Job ${job.id} (${job.data.agentId}) completed`);
++});
++
++worker.on("failed", (job, err) => {
++  console.error(`[worker] Job ${job?.id} (${job?.data.agentId}) failed: ${err.message}`);
++});
++
++// Seed and then start the cron scheduler
++await startScheduler();
++
++console.log("MDO Orchestrator ready.");
++
++// Graceful shutdown
++process.on("SIGTERM", async () => {
++  console.log("Shutting down…");
++  await worker.close();
++  process.exit(0);
++});
+diff --git a/apps/workers/src/kill-switch/enforcer.ts b/apps/workers/src/kill-switch/enforcer.ts
+new file mode 100644
+index 0000000..e51ddb6
+--- /dev/null
++++ b/apps/workers/src/kill-switch/enforcer.ts
+@@ -0,0 +1,83 @@
++import { db, killState, eq } from "@mdo/db";
++import { logAction } from "../audit/logger.js";
++
++// Returns true if this agent (or globally) is paused
++export async function isPaused(agentId: string): Promise<boolean> {
++  const [global, agent] = await Promise.all([
++    db.query.killState.findFirst({ where: eq(killState.id, "global") }),
++    db.query.killState.findFirst({ where: eq(killState.id, agentId) }),
++  ]);
++  return (global?.isPaused ?? false) || (agent?.isPaused ?? false);
++}
++
++export async function pauseAgent(agentId: string, by: string): Promise<void> {
++  const now = new Date();
++  await db
++    .insert(killState)
++    .values({ id: agentId, isPaused: true, pausedAt: now, pausedBy: by })
++    .onConflictDoUpdate({
++      target: killState.id,
++      set: { isPaused: true, pausedAt: now, pausedBy: by, updatedAt: now },
++    });
++
++  await logAction({
++    agentId,
++    action: "kill_switch.paused",
++    input: { by },
++    output: { agentId },
++  });
++}
++
++export async function resumeAgent(agentId: string, by: string): Promise<void> {
++  const now = new Date();
++  await db
++    .insert(killState)
++    .values({ id: agentId, isPaused: false, resumedAt: now, resumedBy: by })
++    .onConflictDoUpdate({
++      target: killState.id,
++      set: { isPaused: false, resumedAt: now, resumedBy: by, updatedAt: now },
++    });
++
++  await logAction({
++    agentId,
++    action: "kill_switch.resumed",
++    input: { by },
++    output: { agentId },
++  });
++}
++
++export async function pauseAll(by: string): Promise<void> {
++  const now = new Date();
++  await db
++    .insert(killState)
++    .values({ id: "global", isPaused: true, pausedAt: now, pausedBy: by })
++    .onConflictDoUpdate({
++      target: killState.id,
++      set: { isPaused: true, pausedAt: now, pausedBy: by, updatedAt: now },
++    });
++
++  await logAction({
++    agentId: "system",
++    action: "kill_switch.paused_all",
++    input: { by },
++    output: {},
++  });
++}
++
++export async function resumeAll(by: string): Promise<void> {
++  const now = new Date();
++  await db
++    .insert(killState)
++    .values({ id: "global", isPaused: false, resumedAt: now, resumedBy: by })
++    .onConflictDoUpdate({
++      target: killState.id,
++      set: { isPaused: false, resumedAt: now, resumedBy: by, updatedAt: now },
++    });
++
++  await logAction({
++    agentId: "system",
++    action: "kill_switch.resumed_all",
++    input: { by },
++    output: {},
++  });
++}
+diff --git a/apps/workers/src/orchestrator/dispatcher.ts b/apps/workers/src/orchestrator/dispatcher.ts
+new file mode 100644
+index 0000000..b933d1a
+--- /dev/null
++++ b/apps/workers/src/orchestrator/dispatcher.ts
+@@ -0,0 +1,71 @@
++import type { Job } from "bullmq";
++import type { AgentJob } from "./queue.js";
++import { isPaused } from "../kill-switch/enforcer.js";
++import { logAction } from "../audit/logger.js";
++import { db, agentRuns, eq } from "@mdo/db";
++
++type AgentModule = {
++  run: (payload: unknown, ctx: { runId: string; isReplay: boolean }) => Promise<unknown>;
++};
++
++const agentModuleCache = new Map<string, AgentModule>();
++
++async function loadAgent(agentId: string): Promise<AgentModule> {
++  if (agentModuleCache.has(agentId)) return agentModuleCache.get(agentId)!;
++  const mod = (await import(`../../../agents/${agentId}/index.js`)) as AgentModule;
++  agentModuleCache.set(agentId, mod);
++  return mod;
++}
++
++export async function dispatch(job: Job<AgentJob>): Promise<void> {
++  const { agentId, runId, triggeredBy, payload } = job.data;
++
++  if (await isPaused(agentId)) {
++    console.log(`[dispatcher] ${agentId} is paused — skipping run ${runId}`);
++    await logAction({ agentId, runId, action: "dispatch.skipped_paused" });
++    return;
++  }
++
++  await db.insert(agentRuns).values({ id: runId as any, agentId, status: "running" });
++
++  const t0 = Date.now();
++
++  try {
++    const mod = await loadAgent(agentId);
++    const output = await mod.run(payload ?? {}, { runId, isReplay: false });
++    const durationMs = Date.now() - t0;
++
++    await db
++      .update(agentRuns)
++      .set({ status: "completed", completedAt: new Date(), durationMs })
++      .where(eq(agentRuns.id, runId as any));
++
++    await logAction({
++      agentId,
++      runId,
++      action: "dispatch.completed",
++      input: { triggeredBy },
++      output: output as Record<string, unknown>,
++      durationMs,
++    });
++  } catch (err) {
++    const durationMs = Date.now() - t0;
++    const errorMsg = err instanceof Error ? err.message : String(err);
++
++    await db
++      .update(agentRuns)
++      .set({ status: "failed", completedAt: new Date(), durationMs, error: errorMsg })
++      .where(eq(agentRuns.id, runId as any));
++
++    await logAction({
++      agentId,
++      runId,
++      action: "dispatch.failed",
++      input: { triggeredBy },
++      output: { error: errorMsg },
++      durationMs,
++    });
++
++    throw err;
++  }
++}
+diff --git a/apps/workers/src/orchestrator/priority.ts b/apps/workers/src/orchestrator/priority.ts
+new file mode 100644
+index 0000000..e79ac7f
+--- /dev/null
++++ b/apps/workers/src/orchestrator/priority.ts
+@@ -0,0 +1,30 @@
++// Priority scoring — higher score = higher urgency in the queue
++// Formula: severity weight + freshness bonus + business-hours multiplier
++
++const SEVERITY_WEIGHTS: Record<string, number> = {
++  critical: 100,
++  high: 70,
++  medium: 40,
++  low: 15,
++  info: 5,
++};
++
++const BUSINESS_HOURS_MULTIPLIER = 1.3; // 07:00–22:00 IST
++
++export function computePriorityScore(
++  severity: string,
++  ageMs: number,
++  metadata?: Record<string, unknown>
++): number {
++  const base = SEVERITY_WEIGHTS[severity] ?? 5;
++
++  // Freshness: decays from 20 → 0 over 24 hours
++  const freshness = Math.max(0, 20 - (ageMs / (24 * 60 * 60 * 1000)) * 20);
++
++  // Business hours boost (IST = UTC+5:30)
++  const istHour = (new Date().getUTCHours() + 5.5) % 24;
++  const businessHours = istHour >= 7 && istHour <= 22;
++  const multiplier = businessHours ? BUSINESS_HOURS_MULTIPLIER : 1.0;
++
++  return Math.round((base + freshness) * multiplier);
++}
+diff --git a/apps/workers/src/orchestrator/queue.ts b/apps/workers/src/orchestrator/queue.ts
+new file mode 100644
+index 0000000..d6e53e7
+--- /dev/null
++++ b/apps/workers/src/orchestrator/queue.ts
+@@ -0,0 +1,50 @@
++import { Queue, Worker, Job } from "bullmq";
++
++export interface AgentJob {
++  agentId: string;
++  runId: string;
++  triggeredBy: "cron" | "manual" | "replay";
++  payload?: unknown;
++}
++
++function redisConnection(): Record<string, unknown> {
++  const url = process.env.REDIS_URL;
++  if (!url) throw new Error("REDIS_URL is required");
++  // BullMQ accepts a plain connection string via `connection` ioredis options
++  return { lazyConnect: true, ...parseRedisUrl(url) };
++}
++
++function parseRedisUrl(url: string): Record<string, unknown> {
++  const u = new URL(url);
++  return {
++    host: u.hostname,
++    port: u.port ? parseInt(u.port) : 6379,
++    password: u.password || undefined,
++    username: u.username || undefined,
++    tls: u.protocol === "rediss:" ? {} : undefined,
++  };
++}
++
++export const agentQueue = new Queue<AgentJob>("agent-jobs", {
++  connection: redisConnection(),
++  defaultJobOptions: {
++    attempts: 3,
++    backoff: { type: "exponential", delay: 2000 },
++    removeOnComplete: { count: 500 },
++    removeOnFail: { count: 200 },
++  },
++});
++
++export async function enqueueAgent(job: AgentJob, priority: number = 5): Promise<void> {
++  await agentQueue.add(job.agentId, job, { priority: Math.max(1, 100 - priority) });
++}
++
++export function createAgentWorker(
++  processor: (job: Job<AgentJob>) => Promise<void>,
++  concurrency = 5
++): Worker<AgentJob> {
++  return new Worker<AgentJob>("agent-jobs", processor, {
++    connection: redisConnection(),
++    concurrency,
++  });
++}
+diff --git a/apps/workers/src/replay/cli.ts b/apps/workers/src/replay/cli.ts
+new file mode 100644
+index 0000000..de00db6
+--- /dev/null
++++ b/apps/workers/src/replay/cli.ts
+@@ -0,0 +1,93 @@
++#!/usr/bin/env tsx
++import "dotenv/config";
++import { db, agentInputsRaw, agentActions, eq, and, gte, sql } from "@mdo/db";
++import { randomUUID } from "crypto";
++import { logAction } from "../audit/logger.js";
++
++const args = process.argv.slice(2);
++const agentFlag = args.indexOf("--agent");
++const hoursFlag = args.indexOf("--hours");
++
++if (agentFlag === -1) {
++  console.error("Usage: pnpm replay --agent <name> --hours <n>");
++  process.exit(1);
++}
++
++const agentId = args[agentFlag + 1];
++const hours = hoursFlag !== -1 ? parseInt(args[hoursFlag + 1], 10) : 24;
++const since = new Date(Date.now() - hours * 60 * 60 * 1000);
++
++console.log(`Replaying ${agentId} — last ${hours}h (since ${since.toISOString()})`);
++
++const inputs = await db.query.agentInputsRaw.findMany({
++  where: and(
++    eq(agentInputsRaw.agentId, agentId),
++    gte(agentInputsRaw.capturedAt, since)
++  ),
++  orderBy: (t, { asc }) => [asc(t.capturedAt)],
++});
++
++if (inputs.length === 0) {
++  console.log("No inputs found for that window.");
++  process.exit(0);
++}
++
++console.log(`Found ${inputs.length} input(s). Running replay…`);
++
++// Dynamically load the agent
++let agentModule: { run: (payload: unknown, ctx: { runId: string; isReplay: boolean }) => Promise<unknown> };
++try {
++  agentModule = await import(`../../../agents/${agentId}/index.js`);
++} catch {
++  console.error(`Could not load agent: agents/${agentId}/index.ts`);
++  process.exit(1);
++}
++
++let matched = 0;
++let diffed = 0;
++
++for (const input of inputs) {
++  const replayRunId = randomUUID();
++  const t0 = Date.now();
++
++  const replayOutput = await agentModule.run(input.payload, {
++    runId: replayRunId,
++    isReplay: true,
++  });
++
++  const durationMs = Date.now() - t0;
++
++  // Fetch original output for the same run
++  const origActions = await db.query.agentActions.findMany({
++    where: and(
++      eq(agentActions.agentId, agentId),
++      sql`${agentActions.runId}::text = ${input.runId}`
++    ),
++  });
++
++  const origOutput = origActions[0]?.output ?? null;
++  const replayJson = JSON.stringify(replayOutput);
++  const origJson = JSON.stringify(origOutput);
++
++  if (replayJson === origJson) {
++    matched++;
++  } else {
++    diffed++;
++    console.log(`\nDIFF for input ${input.id}:`);
++    console.log("  original:", origJson?.slice(0, 200));
++    console.log("  replay:  ", replayJson?.slice(0, 200));
++  }
++
++  await logAction({
++    agentId,
++    runId: replayRunId,
++    action: "replay.run",
++    input: { sourceRunId: input.runId, inputId: input.id },
++    output: replayOutput as any,
++    durationMs,
++    isReplay: true,
++  });
++}
++
++console.log(`\nReplay complete — ${matched} matched, ${diffed} diffed`);
++process.exit(0);
+diff --git a/apps/workers/src/replay/recorder.ts b/apps/workers/src/replay/recorder.ts
+new file mode 100644
+index 0000000..ebad6fa
+--- /dev/null
++++ b/apps/workers/src/replay/recorder.ts
+@@ -0,0 +1,18 @@
++import { db, agentInputsRaw } from "@mdo/db";
++import { createHash } from "crypto";
++
++export async function recordInput(
++  agentId: string,
++  runId: string,
++  payload: unknown
++): Promise<void> {
++  const json = JSON.stringify(payload);
++  const sourceHash = createHash("sha256").update(json).digest("hex");
++
++  await db.insert(agentInputsRaw).values({
++    agentId,
++    runId: runId as any,
++    payload: payload as any,
++    sourceHash,
++  });
++}
+diff --git a/apps/workers/src/scheduler/index.ts b/apps/workers/src/scheduler/index.ts
+new file mode 100644
+index 0000000..9a28ddd
+--- /dev/null
++++ b/apps/workers/src/scheduler/index.ts
+@@ -0,0 +1,52 @@
++import cron from "node-cron";
++import { randomUUID } from "crypto";
++import { db, agents, eq } from "@mdo/db";
++import { enqueueAgent } from "../orchestrator/queue.js";
++import { computePriorityScore } from "../orchestrator/priority.js";
++import { logAction } from "../audit/logger.js";
++
++// Validate cron expressions and register one cron task per active agent
++export async function startScheduler(): Promise<void> {
++  const activeAgents = await db.query.agents.findMany({
++    where: eq(agents.status, "active"),
++  });
++
++  for (const agent of activeAgents) {
++    if (!agent.cronExpression) continue;
++
++    const expr = agent.cronExpression;
++
++    if (!cron.validate(expr)) {
++      console.error(`[scheduler] Invalid cron for ${agent.id}: "${expr}"`);
++      continue;
++    }
++
++    cron.schedule(expr, async () => {
++      const runId = randomUUID();
++      console.log(`[scheduler] Triggering ${agent.id} — run ${runId}`);
++
++      const priority = computePriorityScore("info", 0);
++
++      await enqueueAgent(
++        { agentId: agent.id, runId, triggeredBy: "cron" },
++        priority
++      );
++
++      await db
++        .update(agents)
++        .set({ lastRun: new Date() })
++        .where(eq(agents.id, agent.id));
++
++      await logAction({
++        agentId: agent.id,
++        runId,
++        action: "scheduler.triggered",
++        input: { cronExpression: expr },
++      });
++    });
++
++    console.log(`[scheduler] Registered ${agent.id} with cron "${expr}"`);
++  }
++
++  console.log(`[scheduler] Started — ${activeAgents.length} agent(s) scheduled`);
++}
+diff --git a/apps/workers/tsconfig.json b/apps/workers/tsconfig.json
+new file mode 100644
+index 0000000..3503f29
+--- /dev/null
++++ b/apps/workers/tsconfig.json
+@@ -0,0 +1,10 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "dist",
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext"
++  },
++  "include": ["src"]
++}
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..8fbe0c6
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,21 @@
++{
++  "name": "mdo-platform",
++  "version": "0.0.0",
++  "private": true,
++  "scripts": {
++    "dev": "turbo dev",
++    "build": "turbo build",
++    "lint": "turbo lint",
++    "typecheck": "turbo typecheck",
++    "workers:dev": "pnpm --filter @mdo/workers dev",
++    "db:generate": "pnpm --filter @mdo/db generate",
++    "db:migrate": "pnpm --filter @mdo/db migrate",
++    "db:seed": "pnpm --filter @mdo/db seed",
++    "db:check": "pnpm --filter @mdo/db check",
++    "replay": "pnpm --filter @mdo/workers replay"
++  },
++  "devDependencies": {
++    "turbo": "^2.5.4",
++    "typescript": "^5.9.3"
++  }
++}
+diff --git a/packages/db/drizzle.config.ts b/packages/db/drizzle.config.ts
+new file mode 100644
+index 0000000..fddaef3
+--- /dev/null
++++ b/packages/db/drizzle.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from "drizzle-kit";
++
++export default defineConfig({
++  schema: "./src/schema.ts",
++  out: "./drizzle",
++  dialect: "postgresql",
++  dbCredentials: {
++    url: process.env.DATABASE_URL!,
++  },
++});
+diff --git a/packages/db/package.json b/packages/db/package.json
+new file mode 100644
+index 0000000..118f3d2
+--- /dev/null
++++ b/packages/db/package.json
+@@ -0,0 +1,26 @@
++{
++  "name": "@mdo/db",
++  "version": "0.0.1",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "generate": "drizzle-kit generate",
++    "migrate": "tsx src/migrate.ts",
++    "seed": "tsx src/seed.ts",
++    "check": "tsx src/check.ts"
++  },
++  "exports": {
++    ".": "./src/index.ts",
++    "./schema": "./src/schema.ts"
++  },
++  "dependencies": {
++    "drizzle-orm": "^0.44.2",
++    "postgres": "^3.4.7"
++  },
++  "devDependencies": {
++    "drizzle-kit": "^0.31.1",
++    "tsx": "^4.19.4",
++    "typescript": "^5.9.3",
++    "@types/node": "^20.19.39"
++  }
++}
+diff --git a/packages/db/src/check.ts b/packages/db/src/check.ts
+new file mode 100644
+index 0000000..b129567
+--- /dev/null
++++ b/packages/db/src/check.ts
+@@ -0,0 +1,42 @@
++import { db } from "./client.js";
++import { sql } from "drizzle-orm";
++
++const tableNames = [
++  "agents",
++  "alerts",
++  "agent_actions",
++  "agent_inputs_raw",
++  "approvals",
++  "kill_state",
++  "events",
++  "source_quarantine",
++  "baselines",
++  "agent_runs",
++  "canary_deployments",
++];
++
++const rows = await db.execute(
++  sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
++);
++const existing = rows.map((r: any) => r.tablename as string);
++const missing = tableNames.filter((t) => !existing.includes(t));
++
++const rlsRows = await db.execute(
++  sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true`
++);
++const rlsEnabled = rlsRows.map((r: any) => r.tablename as string);
++
++const vectorRows = await db.execute(
++  sql`SELECT extname FROM pg_extension WHERE extname = 'vector'`
++);
++const pgvectorReady = vectorRows.length > 0;
++
++if (missing.length > 0) {
++  console.error(`Missing tables: ${missing.join(", ")}`);
++  process.exit(1);
++}
++
++console.log(
++  `${tableNames.length} tables ✓, RLS enabled on ${rlsEnabled.length} table(s), pgvector ${pgvectorReady ? "ready ✓" : "NOT enabled — run: CREATE EXTENSION vector;"}`
++);
++process.exit(0);
+diff --git a/packages/db/src/client.ts b/packages/db/src/client.ts
+new file mode 100644
+index 0000000..1941d67
+--- /dev/null
++++ b/packages/db/src/client.ts
+@@ -0,0 +1,10 @@
++import { drizzle } from "drizzle-orm/postgres-js";
++import postgres from "postgres";
++import * as schema from "./schema.js";
++
++const connectionString = process.env.DATABASE_URL;
++if (!connectionString) throw new Error("DATABASE_URL is required");
++
++const sql = postgres(connectionString, { max: 10 });
++export const db = drizzle(sql, { schema });
++export type Db = typeof db;
+diff --git a/packages/db/src/index.ts b/packages/db/src/index.ts
+new file mode 100644
+index 0000000..9a301e1
+--- /dev/null
++++ b/packages/db/src/index.ts
+@@ -0,0 +1,4 @@
++export { db } from "./client.js";
++export * from "./schema.js";
++// Re-export drizzle operators so consumers share a single drizzle-orm instance
++export { eq, and, or, gte, lte, gt, lt, sql, asc, desc, inArray } from "drizzle-orm";
+diff --git a/packages/db/src/migrate.ts b/packages/db/src/migrate.ts
+new file mode 100644
+index 0000000..7e40e5d
+--- /dev/null
++++ b/packages/db/src/migrate.ts
+@@ -0,0 +1,14 @@
++import { drizzle } from "drizzle-orm/postgres-js";
++import { migrate } from "drizzle-orm/postgres-js/migrator";
++import postgres from "postgres";
++
++const connectionString = process.env.DATABASE_URL;
++if (!connectionString) throw new Error("DATABASE_URL is required");
++
++const sql = postgres(connectionString, { max: 1 });
++const db = drizzle(sql);
++
++console.log("Running migrations…");
++await migrate(db, { migrationsFolder: "./drizzle" });
++console.log("Migrations complete.");
++await sql.end();
+diff --git a/packages/db/src/schema.ts b/packages/db/src/schema.ts
+new file mode 100644
+index 0000000..5682e81
+--- /dev/null
++++ b/packages/db/src/schema.ts
+@@ -0,0 +1,228 @@
++import {
++  pgTable,
++  text,
++  timestamp,
++  boolean,
++  integer,
++  real,
++  jsonb,
++  uuid,
++  varchar,
++  pgEnum,
++  index,
++  vector,
++} from "drizzle-orm/pg-core";
++
++export const agentStatusEnum = pgEnum("agent_status", [
++  "active",
++  "paused",
++  "error",
++  "retired",
++]);
++
++export const alertSeverityEnum = pgEnum("alert_severity", [
++  "critical",
++  "high",
++  "medium",
++  "low",
++  "info",
++]);
++
++export const alertStatusEnum = pgEnum("alert_status", [
++  "pending",
++  "delivered",
++  "acknowledged",
++  "dismissed",
++  "failed",
++]);
++
++export const approvalStatusEnum = pgEnum("approval_status", [
++  "pending",
++  "approved",
++  "rejected",
++  "expired",
++]);
++
++// Core agent registry — one row per agent
++export const agents = pgTable("agents", {
++  id: varchar("id", { length: 64 }).primaryKey(),
++  name: text("name").notNull(),
++  description: text("description"),
++  status: agentStatusEnum("status").notNull().default("active"),
++  cronExpression: text("cron_expression"),
++  nextRun: timestamp("next_run", { withTimezone: true }),
++  lastRun: timestamp("last_run", { withTimezone: true }),
++  version: integer("version").notNull().default(1),
++  config: jsonb("config").default({}),
++  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
++});
++
++// Alerts emitted by agents — delivered via WhatsApp/email/dashboard
++export const alerts = pgTable(
++  "alerts",
++  {
++    id: uuid("id").primaryKey().defaultRandom(),
++    agentId: varchar("agent_id", { length: 64 })
++      .notNull()
++      .references(() => agents.id),
++    title: text("title").notNull(),
++    body: text("body").notNull(),
++    severity: alertSeverityEnum("severity").notNull().default("info"),
++    status: alertStatusEnum("status").notNull().default("pending"),
++    priorityScore: real("priority_score").notNull().default(0),
++    metadata: jsonb("metadata").default({}),
++    // populated after embedding pipeline runs
++    bodyEmbedding: vector("body_embedding", { dimensions: 1024 }),
++    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
++    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
++    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++  },
++  (t) => [index("alerts_agent_id_idx").on(t.agentId), index("alerts_created_at_idx").on(t.createdAt)]
++);
++
++// Audit trail — every action taken by the orchestrator or an agent
++export const agentActions = pgTable(
++  "agent_actions",
++  {
++    id: uuid("id").primaryKey().defaultRandom(),
++    agentId: varchar("agent_id", { length: 64 })
++      .notNull()
++      .references(() => agents.id),
++    runId: uuid("run_id"),
++    action: text("action").notNull(),
++    input: jsonb("input").default({}),
++    output: jsonb("output").default({}),
++    durationMs: integer("duration_ms"),
++    costUsd: real("cost_usd"),
++    isReplay: boolean("is_replay").notNull().default(false),
++    outputEmbedding: vector("output_embedding", { dimensions: 1024 }),
++    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++  },
++  (t) => [
++    index("agent_actions_agent_id_idx").on(t.agentId),
++    index("agent_actions_run_id_idx").on(t.runId),
++  ]
++);
++
++// Every raw input stored before processing — enables replay
++export const agentInputsRaw = pgTable(
++  "agent_inputs_raw",
++  {
++    id: uuid("id").primaryKey().defaultRandom(),
++    agentId: varchar("agent_id", { length: 64 })
++      .notNull()
++      .references(() => agents.id),
++    runId: uuid("run_id").notNull(),
++    payload: jsonb("payload").notNull(),
++    sourceHash: text("source_hash"),
++    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
++  },
++  (t) => [
++    index("agent_inputs_raw_agent_id_idx").on(t.agentId),
++    index("agent_inputs_raw_run_id_idx").on(t.runId),
++  ]
++);
++
++// Human approval requests — used for high-stakes agent actions
++export const approvals = pgTable("approvals", {
++  id: uuid("id").primaryKey().defaultRandom(),
++  agentId: varchar("agent_id", { length: 64 })
++    .notNull()
++    .references(() => agents.id),
++  actionId: uuid("action_id").references(() => agentActions.id),
++  description: text("description").notNull(),
++  status: approvalStatusEnum("status").notNull().default("pending"),
++  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
++  respondedAt: timestamp("responded_at", { withTimezone: true }),
++  respondedBy: text("responded_by"),
++  expiresAt: timestamp("expires_at", { withTimezone: true }),
++});
++
++// Per-agent and global kill switch state
++export const killState = pgTable("kill_state", {
++  id: varchar("id", { length: 64 }).primaryKey(),
++  isPaused: boolean("is_paused").notNull().default(false),
++  pausedAt: timestamp("paused_at", { withTimezone: true }),
++  pausedBy: text("paused_by"),
++  resumedAt: timestamp("resumed_at", { withTimezone: true }),
++  resumedBy: text("resumed_by"),
++  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
++});
++
++// Generic system events log — infra events, deployments, errors
++export const events = pgTable(
++  "events",
++  {
++    id: uuid("id").primaryKey().defaultRandom(),
++    type: text("type").notNull(),
++    source: text("source").notNull(),
++    payload: jsonb("payload").default({}),
++    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
++  },
++  (t) => [index("events_type_idx").on(t.type), index("events_created_at_idx").on(t.createdAt)]
++);
++
++// Quarantine list — sources flagged as unreliable
++export const sourceQuarantine = pgTable("source_quarantine", {
++  id: uuid("id").primaryKey().defaultRandom(),
++  sourceId: text("source_id").notNull().unique(),
++  reason: text("reason").notNull(),
++  flaggedAt: timestamp("flagged_at", { withTimezone: true }).notNull().defaultNow(),
++  flaggedBy: text("flagged_by"),
++  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
++});
++
++// Statistical baselines per agent metric — used for anomaly detection
++export const baselines = pgTable("baselines", {
++  id: uuid("id").primaryKey().defaultRandom(),
++  agentId: varchar("agent_id", { length: 64 })
++    .notNull()
++    .references(() => agents.id),
++  metric: text("metric").notNull(),
++  mean: real("mean"),
++  stddev: real("stddev"),
++  p50: real("p50"),
++  p95: real("p95"),
++  sampleCount: integer("sample_count").notNull().default(0),
++  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
++});
++
++// One record per agent execution run — cost, duration, outcome
++export const agentRuns = pgTable(
++  "agent_runs",
++  {
++    id: uuid("id").primaryKey().defaultRandom(),
++    agentId: varchar("agent_id", { length: 64 })
++      .notNull()
++      .references(() => agents.id),
++    version: integer("version").notNull().default(1),
++    status: text("status").notNull().default("running"),
++    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
++    completedAt: timestamp("completed_at", { withTimezone: true }),
++    durationMs: integer("duration_ms"),
++    totalCostUsd: real("total_cost_usd"),
++    anthropicTokensIn: integer("anthropic_tokens_in"),
++    anthropicTokensOut: integer("anthropic_tokens_out"),
++    alertsEmitted: integer("alerts_emitted").notNull().default(0),
++    isReplay: boolean("is_replay").notNull().default(false),
++    error: text("error"),
++  },
++  (t) => [index("agent_runs_agent_id_idx").on(t.agentId), index("agent_runs_started_at_idx").on(t.startedAt)]
++);
++
++// Canary deployment tracking — run two agent versions in parallel
++export const canaryDeployments = pgTable("canary_deployments", {
++  id: uuid("id").primaryKey().defaultRandom(),
++  agentId: varchar("agent_id", { length: 64 })
++    .notNull()
++    .references(() => agents.id),
++  v1Version: integer("v1_version").notNull(),
++  v2Version: integer("v2_version").notNull(),
++  trafficSplitPct: integer("traffic_split_pct").notNull().default(10),
++  status: text("status").notNull().default("active"),
++  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
++  completedAt: timestamp("completed_at", { withTimezone: true }),
++  winnerVersion: integer("winner_version"),
++  metrics: jsonb("metrics").default({}),
++});
+diff --git a/packages/db/src/seed.ts b/packages/db/src/seed.ts
+new file mode 100644
+index 0000000..15a6ed8
+--- /dev/null
++++ b/packages/db/src/seed.ts
+@@ -0,0 +1,32 @@
++import { db } from "./client.js";
++import { agents, killState } from "./schema.js";
++
++console.log("Seeding database…");
++
++await db
++  .insert(agents)
++  .values({
++    id: "test-agent",
++    name: "Test Agent",
++    description: "Phase 0 hello-world agent — proves end-to-end pipeline",
++    status: "active",
++    cronExpression: "*/5 * * * *",
++    version: 1,
++    config: { message: "Hello, AMAN — Phase 0 alert" },
++  })
++  .onConflictDoNothing();
++
++// Global kill switch — starts unpaused
++await db
++  .insert(killState)
++  .values({ id: "global", isPaused: false })
++  .onConflictDoNothing();
++
++// Per-agent kill switch
++await db
++  .insert(killState)
++  .values({ id: "test-agent", isPaused: false })
++  .onConflictDoNothing();
++
++console.log("Seed complete.");
++process.exit(0);
+diff --git a/packages/db/tsconfig.json b/packages/db/tsconfig.json
+new file mode 100644
+index 0000000..5285d28
+--- /dev/null
++++ b/packages/db/tsconfig.json
+@@ -0,0 +1,8 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "rootDir": "src",
++    "outDir": "dist"
++  },
++  "include": ["src"]
++}
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+new file mode 100644
+index 0000000..b44d596
+--- /dev/null
++++ b/pnpm-workspace.yaml
+@@ -0,0 +1,4 @@
++packages:
++  - "apps/*"
++  - "packages/*"
++  - "agents/*"
+diff --git a/tsconfig.base.json b/tsconfig.base.json
+new file mode 100644
+index 0000000..b603602
+--- /dev/null
++++ b/tsconfig.base.json
+@@ -0,0 +1,16 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "lib": ["ES2022"],
++    "strict": true,
++    "skipLibCheck": true,
++    "esModuleInterop": true,
++    "resolveJsonModule": true,
++    "declaration": true,
++    "declarationMap": true,
++    "sourceMap": true,
++    "outDir": "dist"
++  }
++}
+diff --git a/turbo.json b/turbo.json
+new file mode 100644
+index 0000000..732e050
+--- /dev/null
++++ b/turbo.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://turbo.build/schema.json",
++  "tasks": {
++    "build": {
++      "dependsOn": ["^build"],
++      "outputs": ["dist/**"]
++    },
++    "dev": {
++      "cache": false,
++      "persistent": true
++    },
++    "lint": {},
++    "typecheck": {
++      "dependsOn": ["^build"]
++    }
++  }
++}
+-- 
+2.43.0
+
+
+From 2a72375fbc8d5b579536d9a5e21f75535290e50e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 2 May 2026 16:56:44 +0000
+Subject: [PATCH 2/2] chore: add pnpmfile.cjs placeholder
+
+https://claude.ai/code/session_01KrTtttFTdE9MMM277FWccC
+---
+ .pnpmfile.cjs | 2 ++
+ 1 file changed, 2 insertions(+)
+ create mode 100644 .pnpmfile.cjs
+
+diff --git a/.pnpmfile.cjs b/.pnpmfile.cjs
+new file mode 100644
+index 0000000..860104a
+--- /dev/null
++++ b/.pnpmfile.cjs
+@@ -0,0 +1,2 @@
++// Allow native build scripts for dev dependencies
++module.exports = {};
+-- 
+2.43.0
+
