@@ -1,7 +1,11 @@
 [build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+builder = "nixpacks"
+buildCommand = "npm install -g pnpm && pnpm install && pnpm --filter @mdo/workers build"
 
 [deploy]
+startCommand = "node apps/workers/dist/index.js"
 restartPolicyType = "always"
 restartPolicyMaxRetries = 10
+
+[[services]]
+name = "mdo-workers"
