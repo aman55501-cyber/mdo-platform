@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- simple mine->plant glyph -->
+    <path android:fillColor="#1E7A80" android:pathData="M34,46m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0"/>
+    <path android:strokeColor="#E9B44C" android:strokeWidth="4"
+        android:strokeLineCap="round" android:pathData="M40,50 L68,62"/>
+    <path android:fillColor="#C88A2E" android:pathData="M66,58h16v16h-16z"/>
+</vector>
