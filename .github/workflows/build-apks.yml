@@ -1,0 +1,54 @@
+name: Build APKs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "claude/gifted-cannon-obw66r", "main", "master" ]
+
+jobs:
+  native-android:
+    name: Coal Tender Map (native Kotlin/Compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Build debug APK (installable)
+        working-directory: coal_tender_map
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: coal-tender-map-debug-apk
+          path: coal_tender_map/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  flutter-android:
+    name: VWLR Tender Map (Flutter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+      - name: Build release APK
+        working-directory: vwlr_tender_map
+        run: |
+          flutter pub get
+          flutter build apk --release
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vwlr-tender-map-release-apk
+          path: vwlr_tender_map/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
