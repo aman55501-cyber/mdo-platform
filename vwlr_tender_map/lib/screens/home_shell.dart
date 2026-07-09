@@ -23,6 +23,7 @@ class _HomeShellState extends State<HomeShell> {
   OrgProfile? _org;
   List<Tender> _tenders = [];
   Set<String> _eligibleIds = {};
+  Set<String> _relevantIds = {};
 
   @override
   void initState() {
@@ -39,15 +40,20 @@ class _HomeShellState extends State<HomeShell> {
       final org = await _repo.orgProfile();
       final tenders = await _repo.tenders();
       final eligible = <String>{};
+      final relevant = <String>{};
       for (final t in tenders) {
         final e = assess(t, org);
         if (e.eligible) eligible.add(t.id);
+        // Relevant = you're eligible, or there's no published PQC to rule you
+        // out. Only tenders with a real gap vs your profile are excluded.
+        if (e.eligible || e.noPublishedCriteria) relevant.add(t.id);
       }
       await Notifications.syncFor(tenders);
       setState(() {
         _org = org;
         _tenders = tenders;
         _eligibleIds = eligible;
+        _relevantIds = relevant;
         _loading = false;
       });
     } catch (e) {
@@ -114,7 +120,7 @@ class _HomeShellState extends State<HomeShell> {
       ListScreen(
           tenders: _tenders,
           org: _org!,
-          eligibleIds: _eligibleIds,
+          relevantIds: _relevantIds,
           onOpen: _open,
           onHeart: _heart),
       DashboardScreen(

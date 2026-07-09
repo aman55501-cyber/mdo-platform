@@ -1,0 +1,56 @@
+name: Deploy VWLR Tender Map (web) to GitHub Pages
+
+# Publishes the Flutter web build so the app is reachable on any phone at
+#   https://<owner>.github.io/mdo-platform/
+#
+# One-time setup: repo Settings -> Pages -> Build and deployment ->
+# Source: "GitHub Actions". (Pages for a private repo needs GitHub Pro; a
+# public repo works on the free plan.) Then this runs on every push.
+
+on:
+  push:
+    branches:
+      - claude/vwlr-tender-map-flutter-ah6zxy
+      - main
+    paths:
+      - 'vwlr_tender_map/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vwlr_tender_map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter --version
+      - run: flutter pub get
+      - name: Build web (canvaskit bundled, base href for project pages)
+        run: flutter build web --release --no-web-resources-cdn --base-href "/mdo-platform/"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: vwlr_tender_map/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

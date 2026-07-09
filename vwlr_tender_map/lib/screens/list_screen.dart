@@ -3,19 +3,19 @@ import '../models/org_profile.dart';
 import '../models/tender.dart';
 import '../widgets/tender_card.dart';
 
-enum ListFilter { all, live, hearted, eligible }
+enum ListFilter { all, live, hearted, relevant }
 
 class ListScreen extends StatefulWidget {
   final List<Tender> tenders;
   final OrgProfile org;
-  final Set<String> eligibleIds;
+  final Set<String> relevantIds;
   final void Function(Tender) onOpen;
   final void Function(Tender) onHeart;
   const ListScreen(
       {super.key,
       required this.tenders,
       required this.org,
-      required this.eligibleIds,
+      required this.relevantIds,
       required this.onOpen,
       required this.onHeart});
 
@@ -34,9 +34,9 @@ class _ListScreenState extends State<ListScreen> {
             .toList();
       case ListFilter.hearted:
         return widget.tenders.where((t) => t.hearted).toList();
-      case ListFilter.eligible:
+      case ListFilter.relevant:
         return widget.tenders
-            .where((t) => widget.eligibleIds.contains(t.id))
+            .where((t) => widget.relevantIds.contains(t.id))
             .toList();
       case ListFilter.all:
         return widget.tenders;
@@ -60,7 +60,7 @@ class _ListScreenState extends State<ListScreen> {
                     ListFilter.all => 'All',
                     ListFilter.live => 'Live',
                     ListFilter.hearted => 'Watching',
-                    ListFilter.eligible => 'Eligible',
+                    ListFilter.relevant => 'Relevant',
                   }),
                   selected: _f == f,
                   onSelected: (_) => setState(() => _f = f),
