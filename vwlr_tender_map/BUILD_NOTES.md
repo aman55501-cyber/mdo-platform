@@ -33,7 +33,29 @@ work; only the Google-hosted Android artifacts are unreachable.
 Per the sandbox proxy policy, policy denials must not be routed around
 (mirrors, etc.). Allowlisting the host is the correct fix.
 
-## How to finish the build (either after allowlisting, or on a normal machine)
+## Runnable *today* without the Android toolchain: Flutter web
+
+The **same Dart codebase builds for the web**, whose engine assets come from
+`storage.googleapis.com` (allowed) rather than `dl.google.com`:
+
+```bash
+flutter build web --release
+# -> build/web/  (static site; open index.html via any web server)
+```
+
+This succeeds in the sandbox. Serve `build/web/` on any static host (GitHub
+Pages, Netlify, `python3 -m http.server`, etc.) and open it on a phone or
+laptop — where `*.supabase.co` is reachable over the public internet, so the
+app loads live tender data, and the list / dashboard / detail / eligibility /
+heart+status write-back all work. The Map tab needs a "Maps JavaScript API"
+browser key pasted into `web/index.html` (placeholder is wired in); without it
+only the map tile stays blank.
+
+> Note: inside the Claude Code sandbox both `dl.google.com` **and**
+> `*.supabase.co` are denied by the egress policy, so the app can't be
+> exercised end-to-end *here* — but it runs anywhere with normal internet.
+
+## How to finish the Android build (either after allowlisting, or on a normal machine)
 
 1. Ensure network access to `dl.google.com` and `maven.google.com`
    (in Claude Code on the web: choose/adjust the environment's network policy).
