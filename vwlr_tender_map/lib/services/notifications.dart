@@ -14,15 +14,20 @@ class Notifications {
     // flutter_local_notifications has no web implementation; skip so the
     // app runs in a browser (deadline reminders are an Android feature).
     if (kIsWeb || _ready) return;
-    tzdata.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await _plugin.initialize(const InitializationSettings(android: android));
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-    _ready = true;
+    try {
+      tzdata.initializeTimeZones();
+      tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      await _plugin.initialize(const InitializationSettings(android: android));
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+      _ready = true;
+    } catch (_) {
+      // Notifications are a non-critical enhancement — never let setup break
+      // the app (e.g. missing OS permission or scheduling capability).
+    }
   }
 
   static const _details = NotificationDetails(
@@ -35,33 +40,42 @@ class Notifications {
 
   static Future<void> syncFor(List<Tender> tenders) async {
     if (kIsWeb) return;
-    await init();
-    await _plugin.cancelAll();
-    var id = 0;
-    for (final t in tenders) {
-      if (t.deadline == null) continue;
-      if (t.status == TenderStatus.closed ||
-          t.status == TenderStatus.won ||
-          t.status == TenderStatus.lost) {
-        continue;
-      }
-      for (final lead in [3, 1]) {
-        final when = tz.TZDateTime.from(
-            t.deadline!.subtract(Duration(days: lead)), tz.local);
-        if (when.isBefore(tz.TZDateTime.now(tz.local))) {
+    try {
+      await init();
+      await _plugin.cancelAll();
+      var id = 0;
+      for (final t in tenders) {
+        if (t.deadline == null) continue;
+        if (t.status == TenderStatus.closed ||
+            t.status == TenderStatus.won ||
+            t.status == TenderStatus.lost) {
           continue;
         }
-        await _plugin.zonedSchedule(
-          id++,
-          '$lead day${lead > 1 ? 's' : ''} to bid: ${t.authority ?? t.title}',
-          '${t.title} closes ${_d(t.deadline!)}',
-          when,
-          _details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-        );
+        for (final lead in [3, 1]) {
+          final when = tz.TZDateTime.from(
+              t.deadline!.subtract(Duration(days: lead)), tz.local);
+          if (when.isBefore(tz.TZDateTime.now(tz.local))) {
+            continue;
+          }
+          try {
+            await _plugin.zonedSchedule(
+              id++,
+              '$lead day${lead > 1 ? 's' : ''} to bid: ${t.authority ?? t.title}',
+              '${t.title} closes ${_d(t.deadline!)}',
+              when,
+              _details,
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  UILocalNotificationDateInterpretation.absoluteTime,
+            );
+          } catch (_) {
+            // One tender's reminder failing must not stop the others.
+          }
+        }
       }
+    } catch (_) {
+      // Reminders are best-effort; a scheduling failure must never surface as
+      // "could not load tenders". The tender data has already loaded fine.
     }
   }
 
