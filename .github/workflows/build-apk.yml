@@ -46,3 +46,5 @@ jobs:
             Download **app-release.apk** below and install on your phone
             (enable "Install unknown apps" for your browser when prompted).
           files: vwlr_tender_map/build/app/outputs/flutter-apk/app-release.apk
+
+# retrigger build (previous run got no runner and auto-cancelled)
