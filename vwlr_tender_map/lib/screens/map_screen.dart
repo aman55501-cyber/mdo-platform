@@ -4,6 +4,7 @@ import '../models/org_profile.dart';
 import '../models/tender.dart';
 import '../models/tender_location.dart';
 import '../services/format.dart';
+import '../theme.dart';
 
 class MapScreen extends StatefulWidget {
   final OrgProfile org;
@@ -30,8 +31,15 @@ class _MapScreenState extends State<MapScreen> {
         LocRole.siding => BitmapDescriptor.hueYellow,
       };
 
+  Color _routeColor(LocRole r) => switch (r) {
+        LocRole.plant => const Color(0xFF7B61FF),
+        LocRole.mine => const Color(0xFFD8871F),
+        _ => const Color(0xFF1F6FEB),
+      };
+
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final base = LatLng(widget.org.lat, widget.org.lng);
     final markers = <Marker>{
       Marker(
@@ -43,6 +51,7 @@ class _MapScreenState extends State<MapScreen> {
             snippet: widget.org.address),
       ),
     };
+    final polylines = <Polyline>{};
 
     for (final t in widget.tenders) {
       for (final l in t.locations) {
@@ -57,6 +66,12 @@ class _MapScreenState extends State<MapScreen> {
                 '${t.authority ?? ''} · ${inr(t.valueInr)} · tap for details',
             onTap: () => widget.onOpen(t),
           ),
+        ));
+        polylines.add(Polyline(
+          polylineId: PolylineId('route_${t.id}_${l.id}'),
+          points: [base, LatLng(l.lat, l.lng)],
+          color: _routeColor(l.role).withValues(alpha: 0.55),
+          width: 3,
         ));
       }
     }
@@ -79,33 +94,29 @@ class _MapScreenState extends State<MapScreen> {
           initialCameraPosition: CameraPosition(target: base, zoom: 7),
           markers: markers,
           circles: circles,
+          polylines: polylines,
           myLocationButtonEnabled: false,
-          onMapCreated: (c) => _c = c,
+          onMapCreated: (ctrl) => _c = ctrl,
         ),
-        Positioned(
-          top: 12,
-          left: 12,
-          right: 12,
-          child: _legend(),
-        ),
+        Positioned(top: 12, left: 12, right: 12, child: _legend(context)),
         Positioned(
           bottom: 20,
           right: 12,
           child: Column(children: [
             FloatingActionButton.small(
               heroTag: 'radius',
-              backgroundColor: Colors.white,
-              foregroundColor: _showRadius ? Colors.blue : Colors.black45,
+              backgroundColor: c.surface,
+              foregroundColor: _showRadius ? c.brand : c.faint,
               onPressed: () => setState(() => _showRadius = !_showRadius),
               child: const Icon(Icons.radar),
             ),
             const SizedBox(height: 8),
             FloatingActionButton.small(
               heroTag: 'recenter',
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black87,
-              onPressed: () => _c?.animateCamera(
-                  CameraUpdate.newLatLngZoom(base, 7)),
+              backgroundColor: c.surface,
+              foregroundColor: c.muted,
+              onPressed: () =>
+                  _c?.animateCamera(CameraUpdate.newLatLngZoom(base, 7)),
               child: const Icon(Icons.my_location),
             ),
           ]),
@@ -114,17 +125,19 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _legend() => const Card(
-        color: Colors.white,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Wrap(spacing: 14, runSpacing: 4, children: [
-            _Dot(Colors.blue, 'VWLR base'),
-            _Dot(Colors.orange, 'Mine'),
-            _Dot(Color(0xFF7B61FF), 'Plant'),
-          ]),
-        ),
-      );
+  Widget _legend(BuildContext context) {
+    final c = context.colors;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Wrap(spacing: 14, runSpacing: 4, children: [
+          _Dot(c.brand, 'VWLR base'),
+          const _Dot(Color(0xFFD8871F), 'Mine'),
+          _Dot(c.violet, 'Plant'),
+        ]),
+      ),
+    );
+  }
 }
 
 class _Dot extends StatelessWidget {
@@ -132,8 +145,8 @@ class _Dot extends StatelessWidget {
   final String label;
   const _Dot(this.color, this.label);
   @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min,
-      children: [
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.location_on, color: color, size: 16),
         const SizedBox(width: 3),
         Text(label, style: const TextStyle(fontSize: 12)),

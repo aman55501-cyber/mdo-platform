@@ -42,7 +42,9 @@ class Notifications {
       if (t.deadline == null) continue;
       if (t.status == TenderStatus.closed ||
           t.status == TenderStatus.won ||
-          t.status == TenderStatus.lost) continue;
+          t.status == TenderStatus.lost) {
+        continue;
+      }
       for (final lead in [3, 1]) {
         final when = tz.TZDateTime.from(
             t.deadline!.subtract(Duration(days: lead)), tz.local);

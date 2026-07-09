@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/org_profile.dart';
 import '../models/tender.dart';
 import '../widgets/tender_card.dart';
 
@@ -6,12 +7,14 @@ enum ListFilter { all, live, hearted, eligible }
 
 class ListScreen extends StatefulWidget {
   final List<Tender> tenders;
+  final OrgProfile org;
   final Set<String> eligibleIds;
   final void Function(Tender) onOpen;
   final void Function(Tender) onHeart;
   const ListScreen(
       {super.key,
       required this.tenders,
+      required this.org,
       required this.eligibleIds,
       required this.onOpen,
       required this.onHeart});
@@ -74,6 +77,7 @@ class _ListScreenState extends State<ListScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (_, i) => TenderCard(
                     tender: items[i],
+                    org: widget.org,
                     onTap: () => widget.onOpen(items[i]),
                     onHeart: () => widget.onHeart(items[i]),
                   ),

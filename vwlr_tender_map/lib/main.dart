@@ -22,7 +22,9 @@ class VwlrApp extends StatelessWidget {
     return MaterialApp(
       title: 'VWLR Tender Map',
       debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      themeMode: ThemeMode.system,
       home: const HomeShell(),
     );
   }

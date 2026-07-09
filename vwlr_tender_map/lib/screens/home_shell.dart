@@ -113,6 +113,7 @@ class _HomeShellState extends State<HomeShell> {
       MapScreen(org: _org!, tenders: _tenders, onOpen: _open),
       ListScreen(
           tenders: _tenders,
+          org: _org!,
           eligibleIds: _eligibleIds,
           onOpen: _open,
           onHeart: _heart),
