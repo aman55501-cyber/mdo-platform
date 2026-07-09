@@ -18,7 +18,10 @@
 var SUPABASE_URL  = 'https://sysicrpylpnzpcuvpvjc.supabase.co';
 var ANON_KEY      = 'sb_publishable_-nuAQ96NVJqLQNc9wr6DpA_p6nLz0u7';
 var INGEST_SECRET = '016c545fdf6b7c144d2ed6683fa7e805f2fb';
-var GMAIL_QUERY   = 'from:admin@bidsnrfp.com subject:"New Tender/s" newer_than:14d';
+// newer_than:30d gives a one-run month-long backfill; the daily trigger then
+// only ever finds the day's new (unlabeled) alerts. Widen to 60d/90d once if
+// you want to sweep further back.
+var GMAIL_QUERY   = 'from:admin@bidsnrfp.com subject:"New Tender/s" newer_than:30d';
 var DONE_LABEL    = 'Tender247-Ingested';
 
 // Matches one tender block in a Tender247 alert email.
