@@ -1,0 +1,48 @@
+name: Build VWLR Tender Map APK
+
+# Builds the release APK and publishes it to a GitHub Release so it can be
+# downloaded and installed on an Android phone (no Play Store needed).
+# Download from: repo → Releases → "app-latest" → app-release.apk
+
+on:
+  push:
+    branches:
+      - claude/vwlr-tender-map-flutter-ah6zxy
+      - main
+    paths:
+      - 'vwlr_tender_map/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vwlr_tender_map
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter --version
+      - run: flutter pub get
+      - name: Build release APK
+        run: flutter build apk --release
+      - name: Publish APK to a GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-latest
+          name: VWLR Tender Map (latest)
+          body: |
+            Latest Android build of VWLR Tender Map.
+            Download **app-release.apk** below and install on your phone
+            (enable "Install unknown apps" for your browser when prompted).
+          files: vwlr_tender_map/build/app/outputs/flutter-apk/app-release.apk
