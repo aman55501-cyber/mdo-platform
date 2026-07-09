@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -10,7 +11,9 @@ class Notifications {
   static bool _ready = false;
 
   static Future<void> init() async {
-    if (_ready) return;
+    // flutter_local_notifications has no web implementation; skip so the
+    // app runs in a browser (deadline reminders are an Android feature).
+    if (kIsWeb || _ready) return;
     tzdata.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -31,6 +34,7 @@ class Notifications {
   );
 
   static Future<void> syncFor(List<Tender> tenders) async {
+    if (kIsWeb) return;
     await init();
     await _plugin.cancelAll();
     var id = 0;

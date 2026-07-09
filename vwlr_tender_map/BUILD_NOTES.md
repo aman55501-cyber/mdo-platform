@@ -10,8 +10,8 @@ VWLR, Kharsia, Chhattisgarh). Backend is a live, seeded Supabase project
 |---|---|
 | `flutter analyze` = 0 errors | ✅ Passing (Flutter 3.44.5, Dart 3.12.2). Only info-level deprecation lints remain (`anonKey`, `withOpacity`). |
 | `flutter build apk --release` succeeds | ⛔ Blocked in the current environment — see below. |
-| App reads live Supabase data, 3 tabs + detail work | Code complete; runtime verification needs an emulator/device (blocked with the build). |
-| Deadline notifications schedule without error | Code complete (`lib/services/notifications.dart`). |
+| App reads live Supabase data, 3 tabs + detail work | ✅ **Verified by running the web build** headlessly against the real seed data — Map, Tenders (+ filters/hearts), Detail (eligibility, facts, locations, status chips), Dashboard, and heart/status write-back (`PATCH → 204`) all work. See `tool/web_run/`. |
+| Deadline notifications schedule without error | Code complete (`lib/services/notifications.dart`); guarded with `kIsWeb` so the web build doesn't crash (the plugin has no web implementation). |
 
 ## Why the APK build is blocked here
 
@@ -39,9 +39,15 @@ The **same Dart codebase builds for the web**, whose engine assets come from
 `storage.googleapis.com` (allowed) rather than `dl.google.com`:
 
 ```bash
-flutter build web --release
+flutter build web --release --no-web-resources-cdn
 # -> build/web/  (static site; open index.html via any web server)
+# --no-web-resources-cdn bundles CanvasKit under canvaskit/ instead of loading
+# it from gstatic.com, so the app also works on locked-down/offline hosts.
 ```
+
+To verify it without a device, `tool/web_run/` runs the built app headlessly
+against a local mock of the Supabase API seeded with the real rows, and drives
+every screen (see that folder's README).
 
 This succeeds in the sandbox. Serve `build/web/` on any static host (GitHub
 Pages, Netlify, `python3 -m http.server`, etc.) and open it on a phone or
