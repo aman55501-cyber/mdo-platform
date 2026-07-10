@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../config.dart';
 import '../models/org_profile.dart';
 import '../models/tender.dart';
 import '../models/tender_location.dart';
@@ -37,9 +38,13 @@ class _MapScreenState extends State<MapScreen> {
         _ => const Color(0xFF1F6FEB),
       };
 
+  bool get _hasMapsKey =>
+      Config.googleMapsApiKey != 'PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY';
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    if (!_hasMapsKey) return _needsKey(context);
     final base = LatLng(widget.org.lat, widget.org.lng);
     final markers = <Marker>{
       Marker(
@@ -122,6 +127,54 @@ class _MapScreenState extends State<MapScreen> {
           ]),
         ),
       ],
+    );
+  }
+
+  Widget _needsKey(BuildContext context) {
+    final c = context.colors;
+    final sites = widget.tenders
+        .expand((t) => t.locations)
+        .where((l) => l.role != LocRole.base)
+        .length;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                  color: c.brandBg, borderRadius: BorderRadius.circular(18)),
+              child: Icon(Icons.map_outlined, size: 32, color: c.brand),
+            ),
+            const SizedBox(height: 16),
+            const Text('Map preview',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(
+              '${widget.org.name} (${widget.org.railwayCode}) · '
+              '$sites tender site${sites == 1 ? '' : 's'} within '
+              '${widget.org.operatingRadiusKm} km',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.muted, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                  color: c.surfaceAlt, borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                'Add a free Google Maps key to see mines, plants and haul '
+                'routes on a live map. The Tenders and Dashboard tabs work now.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.5, color: c.muted, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

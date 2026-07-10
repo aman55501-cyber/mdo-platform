@@ -17,7 +17,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _repo = TenderRepository();
-  int _tab = 0;
+  int _tab = 1; // land on the Tenders list (Map needs a Google Maps key)
   bool _loading = true;
   String? _error;
   OrgProfile? _org;
