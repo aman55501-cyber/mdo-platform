@@ -34,6 +34,17 @@ jobs:
           channel: stable
       - run: flutter --version
       - run: flutter pub get
+      - name: Inject Google Maps API key
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          if [ -n "$MAPS_API_KEY" ]; then
+            sed -i "s|PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY|$MAPS_API_KEY|g" \
+              android/app/src/main/AndroidManifest.xml lib/config.dart
+            echo "Google Maps key injected — Map tab will render a live map."
+          else
+            echo "No MAPS_API_KEY secret set — building with the map placeholder card."
+          fi
       - name: Build release APK
         run: flutter build apk --release
       - name: Publish APK to a GitHub Release
