@@ -17,10 +17,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.vwlr.vwlr_tender_map"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         // google_maps_flutter requires minSdk 21.
         minSdk = maxOf(21, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
@@ -30,9 +27,13 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Signing with the debug keys for now so the CI APK installs.
             signingConfig = signingConfigs.getByName("debug")
+            // Disable R8 code shrinking: it strips the generic type info that
+            // flutter_local_notifications' Gson deserialization needs, which
+            // crashed the release build with "Missing type parameter".
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
