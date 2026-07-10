@@ -9,5 +9,5 @@ class Config {
       'sb_publishable_-nuAQ96NVJqLQNc9wr6DpA_p6nLz0u7';
 
   // Get a key at https://console.cloud.google.com  (enable "Maps SDK for Android").
-  static const googleMapsApiKey = 'PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY';
+  static const googleMapsApiKey = 'AIzaSyCCeTqlqiAR1UEQ-1KVuWl9EtPeqH6JhFQ';
 }
