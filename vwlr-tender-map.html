@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b1220" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>VWLR Tender Map</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --surface:#ffffff; --surface-alt:#eef2f9; --line:#e2e8f2;
+    --text:#0f172a; --muted:#5b6b86; --faint:#8a99b3;
+    --brand:#1f6feb; --brand-bg:#e7f0ff; --violet:#7b61ff;
+    --green:#1a8f4c; --amber:#c67d10; --red:#d5342b;
+    --shadow:0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0b1220; --surface:#131c2e; --surface-alt:#1b2740; --line:#26324c;
+      --text:#eef2fb; --muted:#9db0cf; --faint:#6b7d9c;
+      --brand:#4d90ff; --brand-bg:#16294a; --violet:#9b86ff;
+      --green:#3fce7f; --amber:#e6a23c; --red:#ff6a5f;
+      --shadow:0 1px 3px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45; padding-bottom:40px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:0 14px}
+  header{
+    position:sticky;top:0;z-index:10;
+    background:color-mix(in srgb,var(--bg) 88%,transparent);
+    backdrop-filter:saturate(160%) blur(12px);
+    -webkit-backdrop-filter:saturate(160%) blur(12px);
+    border-bottom:1px solid var(--line);
+    padding:calc(env(safe-area-inset-top) + 12px) 0 10px;
+  }
+  .brandrow{display:flex;align-items:center;gap:10px}
+  .logo{
+    width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+    background:linear-gradient(135deg,var(--brand),var(--violet));
+    display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;
+    letter-spacing:.5px;box-shadow:var(--shadow);
+  }
+  h1{font-size:17px;margin:0;font-weight:800;letter-spacing:-.2px}
+  .sub{font-size:12px;color:var(--muted);margin-top:1px}
+  .live{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    color:var(--green);margin-left:auto;white-space:nowrap}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 0 0 rgba(63,206,127,.6);animation:pulse 2s infinite}
+  .live.stale{color:var(--amber)} .live.stale .dot{background:var(--amber);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,206,127,.5)}70%{box-shadow:0 0 0 7px rgba(63,206,127,0)}100%{box-shadow:0 0 0 0 rgba(63,206,127,0)}}
+  .stats{display:flex;gap:8px;margin-top:12px}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    padding:9px 11px;box-shadow:var(--shadow)}
+  .stat b{display:block;font-size:19px;font-weight:800;line-height:1.1;
+    font-variant-numeric:tabular-nums}
+  .stat span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .filters{display:flex;gap:7px;margin-top:12px;overflow-x:auto;padding-bottom:2px;
+    scrollbar-width:none} .filters::-webkit-scrollbar{display:none}
+  .chip{border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;white-space:nowrap;
+    cursor:pointer;transition:.15s}
+  .chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  main{margin-top:14px;display:flex;flex-direction:column;gap:11px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:14px;box-shadow:var(--shadow);position:relative}
+  .card.closed{opacity:.62}
+  .toprow{display:flex;gap:9px;align-items:flex-start}
+  .title{font-size:14.5px;font-weight:750;letter-spacing:-.1px;flex:1;margin:0}
+  .heart{flex:0 0 auto;border:none;background:transparent;font-size:20px;line-height:1;
+    cursor:pointer;padding:2px 0 0;filter:grayscale(1);opacity:.5;transition:.15s}
+  .heart.on{filter:none;opacity:1}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .b{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;
+    background:var(--surface-alt);color:var(--muted);white-space:nowrap}
+  .b.portal{background:var(--brand-bg);color:var(--brand)}
+  .b.elig{background:rgba(26,143,76,.14);color:var(--green)}
+  .b.open{background:rgba(198,125,16,.15);color:var(--amber)}
+  .b.val{background:transparent;border:1px solid var(--line);color:var(--text);font-variant-numeric:tabular-nums}
+  .meta{margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;
+    gap:4px 14px}
+  .meta .auth{color:var(--text);font-weight:650}
+  .deadrow{display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap}
+  .dl{font-size:12.5px;font-weight:750;padding:5px 11px;border-radius:9px;
+    font-variant-numeric:tabular-nums}
+  .dl.red{background:rgba(213,52,43,.14);color:var(--red)}
+  .dl.amber{background:rgba(198,125,16,.15);color:var(--amber)}
+  .dl.green{background:rgba(26,143,76,.13);color:var(--green)}
+  .dl.grey{background:var(--surface-alt);color:var(--muted)}
+  .doc{margin-left:auto;font-size:12.5px;font-weight:750;color:#fff;text-decoration:none;
+    background:var(--brand);padding:8px 14px;border-radius:10px;display:inline-flex;
+    align-items:center;gap:6px;box-shadow:var(--shadow)}
+  .doc:active{transform:translateY(1px)}
+  .reason{margin-top:9px;font-size:12px;color:var(--faint)}
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+  footer{max-width:720px;margin:26px auto 0;padding:0 14px;color:var(--faint);
+    font-size:11.5px;text-align:center;line-height:1.6}
+  footer a{color:var(--brand)}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);
+    transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);
+    font-size:12.5px;font-weight:700;padding:9px 16px;border-radius:999px;opacity:0;
+    transition:.25s;pointer-events:none;z-index:50;box-shadow:var(--shadow)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">VW</div>
+      <div>
+        <h1>VWLR Tender Map</h1>
+        <div class="sub">Vedanta Washery &amp; Logistic Solutions · Kharsia</div>
+      </div>
+      <div class="live" id="live"><span class="dot"></span><span id="liveText">Live</span></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sRelevant">–</b><span>Relevant</span></div>
+      <div class="stat"><b id="sLive">–</b><span>Live now</span></div>
+      <div class="stat"><b id="sNext">–</b><span>Next deadline</span></div>
+    </div>
+    <div class="filters" id="filters">
+      <button class="chip on" data-f="relevant">Relevant</button>
+      <button class="chip" data-f="live">Live</button>
+      <button class="chip" data-f="hearted">♥ Saved</button>
+      <button class="chip" data-f="all">All</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap"><main id="list"></main></div>
+
+<footer>
+  Live from your VWLR tender database · refreshes on open.<br/>
+  Add to Home Screen for a one-tap app — no install needed.
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://sysicrpylpnzpcuvpvjc.supabase.co";
+const ANON = "sb_publishable_-nuAQ96NVJqLQNc9wr6DpA_p6nLz0u7";
+
+// Your firm's profile (used for the eligibility check, mirrors the app).
+const ORG = {
+  avg_turnover_inr:1e8, net_worth_inr:5e7, paid_up_capital_inr:2e7,
+  max_experience_mt:160000, experience_window_months:7
+};
+
+// Baked snapshot so the page renders instantly and works offline; the live
+// fetch below replaces it the moment the network responds.
+const SNAPSHOT = [{"id":"14f2b7c2-5126-4f10-9706-079060a93fd2","ref_no":"NSPCL/SSC-CS/Rourkela-CoalTransport","title":"Coal loading, unloading & road transportation to NSPCL Rourkela","authority":"NSPCL (NTPC-SAIL Power Co.)","portal":"GeM","value_inr":"93095746.59","deadline":"2026-05-13 09:30:00+00","status":"closed","hearted":false,"pdf_url":"https://www.google.com/search?q=NSPCL+Rourkela+coal+loading+unloading+road+transportation+GeM+tender+document","qr_min_turnover_inr":"86800000","qr_experience_mt":"155800","qr_networth_pct":100,"relevance_reason":null},{"id":"98ad2b12-133e-4277-a6c7-38e43cb656cb","ref_no":"T247-101825191","title":"Hiring of 4-5 cum bucket capacity loader for stocking of crushed coal on ground and loading of coal into ground level bunkers at 6 CHP of OC3 CHP RG2, 350 hours monthly for 24 months","authority":"Singareni Collieries Company Limited","portal":"Tender247","value_inr":"14000000","deadline":"2026-07-10 00:00:00+00","status":"live","hearted":false,"pdf_url":"https://r.tenders.bidsnrfp.com/tr/cl/971GAvlZje2R3QAK3pnUBDbH15k2GoxrZTupgwqS9HQBycF82PEaiMhiNULsIVfZsydmQ6ViVfVdqsT6I9AnAZymTmTw1Oe2hryMSht-NW8WuAPYBoQEEpXgkBFC0GxA0Cl1z4bfQHQwk46pDzJrjh2HG9XIknopccCnsuRLbQhhzhCTTQtSUv_vYDADCKjYD4Gu1yf1hRfJ6gqlTEqNwSCZn_1GqJ06KwBzttMXIuW14eZ0jrKUF6mQ9xu5PJAyFzmDkUIR8UbbavSg8BjLFbXKAg_0YzD1U4Sjr3R-s0DVW9jZOOBDxgs42Frg0E7LqW6xjmwLbocCd17ojnwMbGBMyZwFM_gAdCcDmw0","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":"coal+transport, washery"},{"id":"059564cd-a96e-4527-b72d-80eb86f3280e","ref_no":"T247-101791196","title":"Handling, transport and other mining services - handling service, transport service, OB removal, coal extraction, hiring of HEMM for OB and extraction of coal in lower seams of SDOC mine","authority":"Central Coalfields Limited","portal":"Tender247","value_inr":"6409300000","deadline":"2026-07-13 00:00:00+00","status":"live","hearted":false,"pdf_url":"https://r.tenders.bidsnrfp.com/tr/cl/_6c2E2g72rNeKxmHQC7VVqfDD36agusmrfHomcPx5-r1KO0DWKsybsIv6HM6uRgnOIoaUAyYXxOATvOvRWpnOOw_evkKBoHZJvCTe3aR3mPVcCpblWvHk2GBmGj1cgPTJ3l9oMxG70W5SFdiq4gWqm4ayOWjwnRod5spOygUddjZVQt-qdpvfFtelZcGjb3x3VKXBjFDcw20TMsvwK3Bl-VyvbRpWrrvvUtahgslwQim8bW6d36b4SCxj0rny0oAPXtuWQsuI65Lv7AaCJhcuKnnweSsOLlutiUli3Y48nfiUk1FexN68Iw7jGQen_wAMlH6P3PS_fS4PcDbeQQGU8IM_0ClPavirOoedVs","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":"coal+transport, in-region"},{"id":"bf0ab74d-0d41-43bb-9351-044cd5edfeb1","ref_no":"T247-101511856","title":"Custom bid for services - hiring of HMVs for coal shifting at CHP SSTPS NTPC Singrauli","authority":"National Thermal Power Corporation Limited","portal":"Tender247","value_inr":"10400000","deadline":"2026-07-14 00:00:00+00","status":"live","hearted":false,"pdf_url":"https://r.tenders.bidsnrfp.com/tr/cl/Ly4D7e1yIEDMtWtX5N_uvrM1HuvPEPHfoHIwxuiNmGTAJqFgMRw5dZqYxk_-UW_ginVY_TRCQAmbZzTl8RgjX8UlbP4q1WOjGRpctZ3wqcegmWUUZ8fMexT1ucszkaC7sZcC_Sk-oMINKXStYrQtNenJo58UTljcO_cXeGWaBh0El_lLSNB1RMajiH7eb1zBi0nX4bnVRzTJ_qiFd6YyLQjxAvOtIWOa6OpzK4xN3l7VIFr-tdLctxDgMVhbXiQ9R7zKbFPQBZxRJDOWuaMSh3LdpbDVOrijYmMNcZZ7Ajlr_f69QmGFqLZwLgiq2SY36in-uQAEGf7YrLO0_UfvSfodhUYgzvDcgkVvu80","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":"coal+washery, washery"},{"id":"48635105-eded-4c39-a232-88422e8d30be","ref_no":"T247-102044102","title":"Transportation and safe delivery of consignments (except coal, oil, sand and cement) from BHEL units within 60 km radius by road via LCV/lorry/trailers","authority":"Bharat Heavy Electricals Limited","portal":"Tender247","value_inr":null,"deadline":"2026-07-17 00:00:00+00","status":"live","hearted":false,"pdf_url":"https://r.tenders.bidsnrfp.com/tr/cl/lgFRb5NTHIrLlJ3HT4fpmrDnZvkqck4teuX56XlDDmCBenMY08fIMrygkjgrrjCdvqj237A4c8u2n-9nQBW4lt3DhL1KEyIpBGoc2IwlkN1TpLEPrwL7laUjFSqTg7WdwJ-9630hIz7XxlsxrD9AxSpC08XVRW-5zZVVbMb-MCmzxQgaJQ7HMDRy_0wF4EYlvf-_b8T9mYmiVu1I2X-1x34mMdlBRXRReGEVg0LxHABIYsBxvHzGaR7QaauQxFpBWdQ8GHtbQIy0Cl70Jv27YU1ywE8v1pHO1PcnlilKjcLyDitGJD5h9bD90TSL1pU1j9zIH8pELWO7ArA3pGFN4zNk1v-HR4Z0Usi3QO8","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":"coal+transport"},{"id":"0b7ad6bd-e821-4a3c-b68c-4b0c5ecb9198","ref_no":"T247-102079686","title":"Loading and unloading of boxes, bundles, cement, iron, loading and unloading coal per quintal, sulphur, bales, bricks, gas cylinder, lubricant","authority":"Uttar Pradesh Co-operative Sugar Factories Federation Limited","portal":"Tender247","value_inr":"200000","deadline":"2026-07-24 00:00:00+00","status":"live","hearted":false,"pdf_url":"https://r.tenders.bidsnrfp.com/tr/cl/f1f3ljodAzjMOAA5DK8TiRG6UDJOtMTmha8mH3g6J_XhAYzW64iGzeSI4g0Zz7wqaoWkI0t4jsoy-idEvOk28D8_nwgnlGZMPLcvn9lbahLiCbnBMF3Z2Eh12GarKZ_Kf0zc2n3ruRNqtzvkgrPzrt-0XDcNGFNJU1Y7PznnvH2khpMyxuCULjgjiF9TUjqG46wJwzQ7_kSBMH7Q1X7JyK8NN3aOoVVmt3OVbDhtn6MWu840Q_Dim_LtQhkyhJprmyEJJbXfevT-2zpP2gS99fuxSIWxzqL9YdUL-I-DlUAXbzD5VC0ShZLSduANUAOVGeL-jMtr9EUVCctYunm16m5qx7GubIH3-rChdss","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":"coal+transport"},{"id":"4940b892-f6d3-46ea-a90c-ce837ad73585","ref_no":"eGR2994","title":"Coal road transportation (RCR) for NALCO CPP","authority":"NALCO","portal":"GeM (Limited / Invitation-only)","value_inr":"49400000","deadline":null,"status":"live","hearted":false,"pdf_url":"https://www.google.com/search?q=NALCO+eGR2994+coal+road+transportation+RCR+CPP+tender+document","qr_min_turnover_inr":null,"qr_experience_mt":null,"qr_networth_pct":null,"relevance_reason":null}];
+
+let TENDERS = SNAPSHOT.slice();
+let filter = "relevant";
+
+/* ---------- eligibility (mirrors lib/services/eligibility.dart) ---------- */
+function assess(t){
+  const checks=[];
+  if(t.qr_min_turnover_inr!=null && ORG.avg_turnover_inr!=null)
+    checks.push(ORG.avg_turnover_inr >= +t.qr_min_turnover_inr);
+  if(t.qr_experience_mt!=null && ORG.max_experience_mt!=null)
+    checks.push(ORG.max_experience_mt >= +t.qr_experience_mt);
+  if(t.qr_networth_pct!=null && ORG.net_worth_inr!=null && ORG.paid_up_capital_inr!=null)
+    checks.push(ORG.net_worth_inr >= (t.qr_networth_pct/100)*ORG.paid_up_capital_inr);
+  const eligible = checks.length>0 && checks.every(Boolean);
+  const noCriteria = checks.length===0;
+  return {eligible, noCriteria, relevant: eligible||noCriteria};
+}
+
+/* ---------- formatting ---------- */
+function inr(v){
+  if(v==null||v==="") return "—";
+  const n=+v;
+  if(n>=1e7) return "₹"+(n/1e7).toFixed(2)+" Cr";
+  if(n>=1e5) return "₹"+(n/1e5).toFixed(2)+" L";
+  return "₹"+n.toLocaleString("en-IN");
+}
+function daysLeft(d){
+  if(!d) return null;
+  const ms=new Date(d).getTime()-Date.now();
+  return Math.ceil(ms/86400000);
+}
+function deadlineChip(t){
+  const dl=daysLeft(t.deadline);
+  if(t.status==="closed") return {cls:"grey",txt:"Closed"};
+  if(dl==null) return {cls:"grey",txt:"Deadline TBC"};
+  if(dl<0) return {cls:"grey",txt:"Expired"};
+  if(dl===0) return {cls:"red",txt:"Closes today"};
+  const cls = dl<=3?"red":dl<=7?"amber":"green";
+  return {cls, txt:dl+" day"+(dl===1?"":"s")+" left"};
+}
+function fmtDate(d){
+  if(!d) return "";
+  const x=new Date(d);
+  return x.toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+}
+
+/* ---------- render ---------- */
+function passesFilter(t){
+  const a=assess(t);
+  if(filter==="relevant") return a.relevant;
+  if(filter==="live") return t.status==="live";
+  if(filter==="hearted") return !!t.hearted;
+  return true;
+}
+function render(){
+  const relevant=TENDERS.filter(t=>assess(t).relevant);
+  const liveNow=TENDERS.filter(t=>t.status==="live");
+  document.getElementById("sRelevant").textContent=relevant.length;
+  document.getElementById("sLive").textContent=liveNow.length;
+  const upcoming=liveNow.map(t=>daysLeft(t.deadline)).filter(d=>d!=null&&d>=0).sort((a,b)=>a-b);
+  document.getElementById("sNext").textContent = upcoming.length? upcoming[0]+"d" : "—";
+
+  const rows=TENDERS.filter(passesFilter);
+  const list=document.getElementById("list");
+  if(!rows.length){ list.innerHTML='<div class="empty">No tenders match this filter yet.</div>'; return; }
+  list.innerHTML=rows.map(card).join("");
+  list.querySelectorAll(".heart").forEach(b=>b.onclick=()=>toggleHeart(b.dataset.id));
+}
+function card(t){
+  const a=assess(t);
+  const d=deadlineChip(t);
+  const eligBadge = a.eligible
+    ? '<span class="b elig">✓ You qualify</span>'
+    : (a.noCriteria ? '<span class="b open">Open — no PQC published</span>' : '');
+  return `
+  <div class="card ${t.status==="closed"?"closed":""}">
+    <div class="toprow">
+      <p class="title">${esc(t.title)}</p>
+      <button class="heart ${t.hearted?"on":""}" data-id="${t.id}" aria-label="Save">♥</button>
+    </div>
+    <div class="badges">
+      ${t.portal?`<span class="b portal">${esc(t.portal)}</span>`:""}
+      ${t.value_inr?`<span class="b val">${inr(t.value_inr)}</span>`:""}
+      ${eligBadge}
+    </div>
+    <div class="meta">
+      <span class="auth">${esc(t.authority||"")}</span>
+      ${t.ref_no?`<span>${esc(t.ref_no)}</span>`:""}
+    </div>
+    <div class="deadrow">
+      <span class="dl ${d.cls}">${d.txt}${t.deadline&&t.status!=="closed"?" · "+fmtDate(t.deadline):""}</span>
+      ${t.pdf_url?`<a class="doc" href="${esc(t.pdf_url)}" target="_blank" rel="noopener">Open document ↗</a>`:""}
+    </div>
+    ${t.relevance_reason?`<div class="reason">Matched: ${esc(t.relevance_reason)}</div>`:""}
+  </div>`;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ---------- live data ---------- */
+async function fetchLive(){
+  const headers={apikey:ANON, Authorization:"Bearer "+ANON};
+  try{
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/tenders?select=*&order=deadline.asc.nullslast`,{headers});
+    if(!r.ok) throw new Error(r.status);
+    const rows=await r.json();
+    if(Array.isArray(rows)&&rows.length){
+      TENDERS=rows; render(); setLive(true);
+      try{localStorage.setItem("vwlr_tenders",JSON.stringify(rows));}catch(e){}
+    }
+  }catch(e){
+    // Offline / blocked: keep last good data. Try cached, else snapshot.
+    try{
+      const cached=JSON.parse(localStorage.getItem("vwlr_tenders")||"null");
+      if(cached&&cached.length){TENDERS=cached; render();}
+    }catch(_){}
+    setLive(false);
+  }
+}
+async function toggleHeart(id){
+  const t=TENDERS.find(x=>x.id===id); if(!t) return;
+  const next=!t.hearted; t.hearted=next; render();
+  try{
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/tenders?id=eq.${id}`,{
+      method:"PATCH",
+      headers:{apikey:ANON,Authorization:"Bearer "+ANON,"Content-Type":"application/json",Prefer:"return=minimal"},
+      body:JSON.stringify({hearted:next})
+    });
+    if(!r.ok) throw new Error(r.status);
+    toast(next?"Saved ♥":"Removed");
+  }catch(e){ toast("Saved on this device"); }
+}
+function setLive(ok){
+  const el=document.getElementById("live");
+  el.classList.toggle("stale",!ok);
+  document.getElementById("liveText").textContent = ok? "Live" : "Offline · cached";
+}
+let toastT;
+function toast(msg){
+  const el=document.getElementById("toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1600);
+}
+
+document.getElementById("filters").addEventListener("click",e=>{
+  const b=e.target.closest(".chip"); if(!b) return;
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c===b));
+  filter=b.dataset.f; render();
+});
+
+render();
+fetchLive();
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) fetchLive(); });
+</script>
+</body>
+</html>
