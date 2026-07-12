@@ -52,7 +52,7 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
     except SharesCFOError as exc:
         return AccountBook(creds_key=creds_key, ok=False, status="degraded", reason=str(exc))
 
-    book = AccountBook(creds_key=creds_key, client_code=account.client_code)
+    book = AccountBook(creds_key=creds_key, client_code=account.client_code, label=account.label)
     adapter = HdfcAdapter(account)
     try:
         raw_holdings = await adapter.get_holdings()

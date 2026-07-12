@@ -86,6 +86,7 @@ class AccountBook:
 
     creds_key: str
     client_code: str = ""
+    label: str = ""
     ok: bool = True
     status: str = "ok"          # "ok" | "degraded"
     reason: str = ""            # plain-language reason when degraded
@@ -102,6 +103,7 @@ class AccountBook:
         return {
             "creds_key": self.creds_key,
             "client_code": self.client_code,
+            "label": self.label,
             "ok": self.ok,
             "status": self.status,
             "reason": self.reason,

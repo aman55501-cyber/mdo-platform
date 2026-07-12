@@ -30,8 +30,14 @@ from .exceptions import ConfigError
 DEFAULT_BASE_URL = "https://developer.hdfcsec.com/oapi/v1"
 DEFAULT_USER_AGENT = "shares-cfo/1.0"
 
-# Aman's real starting account (Aditi Investments, HDFC Securities).
-DEFAULT_CLIENT_CODES = {"HDFC1": "4016900", "HDFC2": "553A001"}
+# Client codes + human labels (labels are cosmetic — the API keys on client_code).
+# 4016900 = Aman's PERSONAL HDFC account (confirmed). Aditi Investments is the
+# Angel One account (A1504046), added in Phase 3.
+DEFAULT_CLIENT_CODES = {"HDFC1": "4016900", "HDFC2": "553A001", "ANGEL1": "A1504046"}
+ACCOUNT_LABELS = {
+    "HDFC1": "Aman (personal)",
+    "ANGEL1": "Aditi Investments",
+}
 
 
 def _find_env_path() -> Path:
@@ -68,6 +74,7 @@ class AccountConfig:
     client_code: str = ""
     static_ip: str = ""
     base_url: str = DEFAULT_BASE_URL
+    label: str = ""
 
     @property
     def env_prefix(self) -> str:
@@ -101,6 +108,7 @@ def load_account(creds_key: str) -> AccountConfig:
         client_code=get("CLIENT_CODE", DEFAULT_CLIENT_CODES.get(creds_key, "")),
         static_ip=get("STATIC_IP"),
         base_url=os.environ.get("HDFC_BASE_URL", DEFAULT_BASE_URL).strip(),
+        label=ACCOUNT_LABELS.get(creds_key, creds_key),
     )
 
 
