@@ -22,6 +22,9 @@ import logging
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
+from fastapi.responses import RedirectResponse
+
+from . import token_store
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
 from .config import get_accounts, get_api_token, load_account
 from .exceptions import SharesCFOError, TokenExpiredError
@@ -131,6 +134,11 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
         account = load_account(creds_key)
     except SharesCFOError as exc:
         return AccountBook(creds_key=creds_key, ok=False, status="degraded", reason=str(exc))
+
+    # On Railway the token comes from the daily phone-login (in-memory), not .env.
+    stored = token_store.get_token(creds_key)
+    if stored:
+        account.access_token = stored
 
     book = AccountBook(creds_key=creds_key, client_code=account.client_code, label=account.label)
     adapter = HdfcAdapter(account)
@@ -308,12 +316,48 @@ async def analysis(request: Request, ticker: str, token: str | None = Query(defa
     }
 
 
+@app.get("/hdfc/login")
+async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Query(default=None)):
+    """Phone login: redirects you to HDFC's 2FA. After you approve, HDFC calls
+    /hdfc/callback and the server arms itself — no PC needed. Protected by the token."""
+    _check_token(request, token)
+    account = load_account(key)
+    return RedirectResponse(f"{account.base_url}/login?api_key={account.api_key}")
+
+
+@app.get("/hdfc/callback", response_class=HTMLResponse)
+async def hdfc_callback(
+    requestToken: str | None = Query(default=None),
+    request_token: str | None = Query(default=None),
+    key: str = "HDFC1",
+) -> str:
+    """HDFC redirects here with the request token; we exchange it and arm the server."""
+    rt = requestToken or request_token
+    if not rt:
+        return "<h3>No request token found in the callback URL.</h3>"
+    account = load_account(key)
+    adapter = HdfcAdapter(account)
+    try:
+        access_token = await adapter.exchange_request_token(rt)
+    except SharesCFOError as exc:
+        return f"<h3>Login failed: {exc}</h3>"
+    finally:
+        await adapter.close()
+    token_store.set_token(key, access_token)
+    return (
+        f"<div style='font-family:sans-serif;padding:24px'>"
+        f"<h2 style='color:#3fb950'>✅ {key} logged in for today.</h2>"
+        f"<p>You can close this tab and open your dashboard.</p></div>"
+    )
+
+
 def main() -> None:
     import os
     import uvicorn
 
     host = os.environ.get("CFO_HOST", "0.0.0.0")
-    port = int(os.environ.get("CFO_PORT", "8000"))
+    # Railway injects PORT; fall back to CFO_PORT, then 8000 for local.
+    port = int(os.environ.get("PORT", os.environ.get("CFO_PORT", "8000")))
     uvicorn.run(app, host=host, port=port)
 
 

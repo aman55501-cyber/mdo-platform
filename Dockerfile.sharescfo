@@ -1,0 +1,12 @@
+# Shares CFO — always-on service (separate from the MDO Dockerfile).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements_sharescfo.txt ./
+RUN pip install --no-cache-dir -r requirements_sharescfo.txt
+
+COPY shares_cfo ./shares_cfo
+
+# Railway sets $PORT; bind 0.0.0.0 so it's reachable.
+CMD ["sh", "-c", "uvicorn shares_cfo.server:app --host 0.0.0.0 --port ${PORT:-8000}"]
