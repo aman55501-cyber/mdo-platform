@@ -43,11 +43,13 @@ async def main() -> int:
         raw = await adapter._get(ep.HOLDINGS)
     finally:
         await adapter.close()
+    from shares_cfo.brokers.hdfc import _digits  # noqa: E402
     rows = (raw.get("data") or [])[:2]
     toks = []
     for r in rows:
-        tok = r.get("instrument_token") or r.get("security_id")
-        toks.append({"token": tok, "exchange": r.get("exchange", "NSE")})
+        tok = _digits(r.get("instrument_token") or r.get("security_id"))
+        if tok:
+            toks.append({"token": tok, "exchange": r.get("exchange", "NSE")})
     if not toks:
         print("[X] No instruments found to probe with.")
         return 1
@@ -63,14 +65,9 @@ async def main() -> int:
         },
     )
 
-    # We now know the body is {"data":[{"token":..., ...}]} — try token type/field variants.
-    tok_str = [{"token": str(t["token"]), "exchange": t["exchange"]} for t in toks]
-    tok_int = [{"token": int(t["token"]), "exchange": t["exchange"]} for t in toks if str(t["token"]).isdigit()]
+    # Confirmed format from the docs: {"data":[{"exchange","token"}]} with numeric token.
     candidates = {
-        "data[{token:str, exchange}]": {"data": tok_str},
-        "data[{token:int, exchange}]": {"data": tok_int or tok_str},
-        "data[{token, exchange_segment}]": {"data": [{"token": str(t["token"]), "exchange_segment": t["exchange"]} for t in toks]},
-        "data[{token} only]": {"data": [{"token": str(t["token"])} for t in toks]},
+        "data[{exchange, token}] (confirmed)": {"data": [{"exchange": t["exchange"], "token": t["token"]} for t in toks]},
     }
 
     winners = []

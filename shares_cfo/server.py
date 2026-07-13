@@ -103,8 +103,8 @@ function render(p){
   (p.accounts||[]).forEach(a=>{
     h+='<div class="card"><div class="row" style="margin-bottom:6px"><span style="font-weight:700">'+(a.label||a.creds_key)+'</span><span class="dim">'+a.client_code+'</span></div>';
     (a.holdings||[]).forEach(x=>{const g=x.pnl>=0; h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.quantity+' @ '+px(x.average_price)+'</div></div><div style="text-align:right"><div>'+inr(x.market_value)+'</div><div class="'+(g?'gr':'rd')+'" style="font-size:12px">'+(g?'+':'')+inr(x.pnl)+'</div></div></div>';});
-    if(a.positions&&a.positions.length){ h+='<div class="tag">F&O positions ('+a.positions.length+') · live P&L pending feed</div>';
-      a.positions.forEach(x=>{h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.product_type+'</div></div><div style="text-align:right"><div>'+(x.quantity>0?'+':'')+x.quantity+'</div><div class="dim">@ '+px(x.average_price)+'</div></div></div>';});
+    if(a.positions&&a.positions.length){ h+='<div class="tag">F&O positions ('+a.positions.length+')</div>';
+      a.positions.forEach(x=>{const g=x.pnl>=0; h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.product_type+' · '+(x.quantity>0?'+':'')+x.quantity+' @ '+px(x.average_price)+'</div></div><div style="text-align:right"><div>'+px(x.last_price)+'</div><div class="'+(g?'gr':'rd')+'" style="font-size:12px">'+(g?'+':'')+inr(x.pnl)+'</div></div></div>';});
     }
     h+='</div>';
   });
@@ -174,6 +174,35 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
             book.ok = False; book.status = "degraded"; book.reason = exc.action; return book
         except SharesCFOError as exc:
             book.notes.append(f"funds unavailable ({exc})")
+
+        # Live prices (fetch-ltp) for equity holdings + F&O positions. Non-fatal:
+        # any failure just leaves last-known prices in place.
+        try:
+            instruments = (
+                [{"token": h.token, "exchange": h.exchange} for h in book.holdings if h.token]
+                + [{"token": p.token, "exchange": p.exchange} for p in book.positions if p.token]
+            )
+            ltp = await adapter.fetch_ltp(instruments) if instruments else {}
+            if ltp:
+                for h in book.holdings:
+                    q = ltp.get(h.token)
+                    if q and q["ltp"]:
+                        h.last_price = q["ltp"]
+                        h.pnl = round(h.quantity * (h.last_price - h.average_price), 2)
+                        if q["prev_close"]:
+                            h.day_change = round(h.quantity * (h.last_price - q["prev_close"]), 2)
+                for p in book.positions:
+                    q = ltp.get(p.token)
+                    if q and q["ltp"]:
+                        p.last_price = q["ltp"]
+                        p.pnl = round(p.quantity * (p.last_price - p.average_price), 2)
+                        if q["prev_close"]:
+                            p.day_pnl = round(p.quantity * (p.last_price - q["prev_close"]), 2)
+                book.holdings.sort(key=lambda h: h.market_value, reverse=True)
+            else:
+                book.notes.append("live prices unavailable (fetch-ltp returned nothing)")
+        except SharesCFOError as exc:
+            book.notes.append(f"live prices unavailable ({exc})")
     finally:
         await adapter.close()
     return book

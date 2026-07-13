@@ -24,6 +24,7 @@ HOLDINGS = "/portfolio/holdings"            # returns sector_name, day_change, d
 PROFILE = "/user/profile"
 POSITIONS = "/portfolio/cumulative-positions"  # confirmed from ir-docs
 FUNDS = "/user/margins"                     # HDFC's "Funds / Limits" == margins; confirmed from ir-docs
+FETCH_LTP = "/fetch-ltp"                     # PUT {"data":[{"exchange","token"}]} -> ltp + prev_close
 
 # How the access token is presented on each authenticated call.
 # The probe reports which the API actually accepts; change this one constant.

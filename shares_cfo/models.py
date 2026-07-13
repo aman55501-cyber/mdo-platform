@@ -22,6 +22,7 @@ class Holding:
     day_change_pct: float = 0.0    # today's % change (from HDFC)
     isin: str = ""
     security_id: str = ""
+    token: str = ""                # numeric instrument token (for fetch-ltp)
 
     @property
     def market_value(self) -> float:
@@ -56,6 +57,7 @@ class Position:
     last_price: float = 0.0
     pnl: float = 0.0
     day_pnl: float = 0.0
+    token: str = ""                # numeric instrument token (for fetch-ltp)
 
     def to_dict(self) -> dict:
         return {

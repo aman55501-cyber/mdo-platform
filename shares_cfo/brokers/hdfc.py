@@ -22,6 +22,11 @@ from ..normalise import to_float
 from . import hdfc_endpoints as ep
 
 
+def _digits(value: Any) -> str:
+    """Numeric part of an id, e.g. 'NSEDNL67605' -> '67605' (fetch-ltp token)."""
+    return "".join(c for c in str(value or "") if c.isdigit())
+
+
 def _first(d: dict, *keys: str, default: Any = None) -> Any:
     """Return the first present key from a dict (handles field-name variants)."""
     for k in keys:
@@ -177,6 +182,7 @@ class HdfcAdapter:
                 "day_change_pct": to_float(_first(h, "day_change_percentage", "dayChangePercentage", "day_change_pct")) or 0.0,
                 "isin": _first(h, "isin", "ISIN", default=""),
                 "security_id": str(_first(h, "security_id", "securityId", "instrument_token", default="")),
+                "token": _digits(_first(h, "instrument_token", "security_id", default="")),
             })
         return out
 
@@ -225,8 +231,48 @@ class HdfcAdapter:
                 "last_price": 0.0,  # cumulative-positions has no LTP; needs a quotes call (later)
                 "pnl": to_float(_first(p, "realised_pl_overall_position", "realised_pl", "pnl")) or 0.0,
                 "day_pnl": to_float(_first(p, "realised_pl_t_day_position", "realised_pl_t_day")) or 0.0,
+                "token": _digits(_first(p, "instrument_token", "security_id", default="")),
             })
         return out
+
+    async def fetch_ltp(self, instruments: list[dict]) -> dict:
+        """Live last-traded prices via PUT /fetch-ltp.
+
+        instruments: [{"token": "67605", "exchange": "NSE"}, ...]
+        returns: {"67605": {"ltp": 216.3, "prev_close": 214.0}, ...}
+        Batches requests; failures are swallowed (caller treats missing tokens as
+        "no live price"). Never places an order.
+        """
+        result: dict[str, dict] = {}
+        clean = [
+            {"exchange": (i.get("exchange") or "NSE"), "token": str(i["token"])}
+            for i in instruments if i.get("token")
+        ]
+        CHUNK = 50
+        for start in range(0, len(clean), CHUNK):
+            body = {"data": clean[start:start + CHUNK]}
+            try:
+                resp = await self._http.put(
+                    ep.FETCH_LTP,
+                    params=self._auth_params(),
+                    headers=self._auth_headers(),
+                    json=body,
+                )
+            except httpx.HTTPError:
+                continue
+            if resp.status_code != 200:
+                continue
+            try:
+                rows = resp.json().get("data", [])
+            except ValueError:
+                continue
+            for row in rows:
+                tok = str(row.get("token"))
+                result[tok] = {
+                    "ltp": to_float(row.get("ltp")) or 0.0,
+                    "prev_close": to_float(row.get("prev_close")) or 0.0,
+                }
+        return result
 
     async def get_funds(self) -> dict:
         # Real schema: data.equity{ total_available_limit, total_utilised_limit,
