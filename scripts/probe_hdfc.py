@@ -29,19 +29,23 @@ from shares_cfo.exceptions import SharesCFOError, TokenExpiredError  # noqa: E40
 
 
 def _shape(payload) -> str:
-    if isinstance(payload, dict):
-        keys = list(payload.keys())
-        inner = ""
-        if "data" in payload and isinstance(payload["data"], (list, dict)):
-            d = payload["data"]
-            if isinstance(d, list) and d and isinstance(d[0], dict):
-                inner = f"  data[0] keys: {list(d[0].keys())}"
-            elif isinstance(d, dict):
-                inner = f"  data keys: {list(d.keys())}"
-        return f"dict keys: {keys}{inner}"
-    if isinstance(payload, list):
-        head = payload[0] if payload else None
-        return f"list[{len(payload)}]" + (f" item keys: {list(head.keys())}" if isinstance(head, dict) else "")
+    """Print a nested key-tree (up to 3 levels) so we see net[]/equity{} fields."""
+    def walk(v, prefix: str, depth: int) -> list[str]:
+        out: list[str] = []
+        if isinstance(v, dict):
+            out.append(f"{prefix} keys: {list(v.keys())}")
+            if depth > 0:
+                for k, val in v.items():
+                    if isinstance(val, (dict, list)):
+                        out += walk(val, f"{prefix}.{k}", depth - 1)
+        elif isinstance(v, list):
+            out.append(f"{prefix}[{len(v)}]")
+            if v and isinstance(v[0], dict) and depth > 0:
+                out += walk(v[0], f"{prefix}[0]", depth - 1)
+        return out
+
+    if isinstance(payload, (dict, list)):
+        return "\n       " + "\n       ".join(walk(payload, "root", 3))
     return type(payload).__name__
 
 
