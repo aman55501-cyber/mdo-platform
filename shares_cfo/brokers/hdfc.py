@@ -161,13 +161,17 @@ class HdfcAdapter:
             if is_derivative:
                 self.last_holdings_excluded += 1
                 continue
+            qty = int(to_float(_first(h, "quantity", "totalQty", "qty", "netQty")) or 0)
+            avg = to_float(_first(h, "average_price", "averagePrice", "avgPrice", "buyAvg")) or 0.0
+            last = to_float(_first(h, "close_price", "closePrice", "lastPrice", "ltp", "currentPrice", "marketPrice")) or 0.0
             out.append({
                 "ticker": _first(h, "company_name", "companyName", "symbol", "tradingsymbol", "tradingSymbol", "scripName", default=""),
                 "exchange": _first(h, "exchange", "exch", default="NSE"),
-                "quantity": int(to_float(_first(h, "quantity", "totalQty", "qty", "netQty")) or 0),
-                "average_price": to_float(_first(h, "average_price", "averagePrice", "avgPrice", "buyAvg")) or 0.0,
-                "last_price": to_float(_first(h, "close_price", "closePrice", "lastPrice", "ltp", "currentPrice", "marketPrice")) or 0.0,
-                "pnl": to_float(_first(h, "pnl", "unrealised", "profitLoss", "profit_loss")) or 0.0,
+                "quantity": qty,
+                "average_price": avg,
+                "last_price": last,
+                # HDFC's holdings pnl reads 0 pre-market; compute unrealised ourselves.
+                "pnl": round(qty * (last - avg), 2),
                 "sector": _first(h, "sector_name", "sectorName", "sector", default=""),
                 "day_change": to_float(_first(h, "day_change", "dayChange")) or 0.0,
                 "day_change_pct": to_float(_first(h, "day_change_percentage", "dayChangePercentage", "day_change_pct")) or 0.0,

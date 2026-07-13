@@ -82,6 +82,9 @@ export default function DashboardScreen() {
         <Text style={{ color: p.day_change >= 0 ? T.green : T.red, fontSize: 15, fontWeight: "600", marginTop: 2 }}>
           {p.day_change >= 0 ? "▲" : "▼"} {formatINR(Math.abs(p.day_change))} ({pct(Math.abs(p.day_change_pct))}) today
         </Text>
+        <Text style={{ color: p.unrealised_pnl >= 0 ? T.green : T.red, fontSize: 13, marginTop: 2 }}>
+          Unrealised P&L {p.unrealised_pnl >= 0 ? "+" : "−"}{formatINR(Math.abs(p.unrealised_pnl))} ({pct(Math.abs(p.unrealised_pnl_pct))})
+        </Text>
         <Row style={{ marginTop: 8, justifyContent: "space-between" }}>
           <View>
             <Text style={styles.dim}>Holdings</Text>

@@ -121,11 +121,19 @@ async def _consolidated() -> dict:
     prev_value = holdings_value - day_change
     day_change_pct = (day_change / prev_value) if prev_value else 0.0
 
+    # Overall unrealised P&L on equity (computed: qty * (price - avg cost)).
+    invested_value = sum(h.average_price * h.quantity for h in all_holdings)
+    unrealised_pnl = holdings_value - invested_value
+    unrealised_pnl_pct = (unrealised_pnl / invested_value) if invested_value else 0.0
+
     return {
         "as_of": utc_now_iso(),
         "complete": len(degraded) == 0,
         "net_worth": round(net_worth, 2),
         "holdings_value": round(holdings_value, 2),
+        "invested_value": round(invested_value, 2),
+        "unrealised_pnl": round(unrealised_pnl, 2),
+        "unrealised_pnl_pct": round(unrealised_pnl_pct, 4),
         "cash": round(cash, 2),
         "day_change": round(day_change, 2),
         "day_change_pct": round(day_change_pct, 4),

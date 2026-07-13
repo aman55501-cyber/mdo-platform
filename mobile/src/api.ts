@@ -34,6 +34,9 @@ export interface Portfolio {
   complete: boolean;
   net_worth: number;
   holdings_value: number;
+  invested_value: number;
+  unrealised_pnl: number;
+  unrealised_pnl_pct: number;
   cash: number;
   day_change: number;
   day_change_pct: number;
