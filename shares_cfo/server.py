@@ -69,6 +69,7 @@ function inr(n,sym){ if(sym===undefined)sym=true; const s=sym?'₹':''; if(n==nu
   const a=Math.abs(n), sg=n<0?'-':''; if(a>=1e7)return sg+s+(a/1e7).toFixed(2)+' Cr'; if(a>=1e5)return sg+s+(a/1e5).toFixed(2)+' L';
   return sg+s+Math.round(a).toLocaleString('en-IN'); }
 function pct(f){ return f==null||isNaN(f)?'—':(f*100).toFixed(1)+'%'; }
+function px(n){ if(n==null||isNaN(n))return '₹—'; return '₹'+(Math.abs(n)<100? n.toFixed(2): Math.round(n).toLocaleString('en-IN')); }
 function el(h){ const d=document.createElement('div'); d.innerHTML=h; return d; }
 async function load(){
   try{
@@ -101,9 +102,9 @@ function render(p){
   }
   (p.accounts||[]).forEach(a=>{
     h+='<div class="card"><div class="row" style="margin-bottom:6px"><span style="font-weight:700">'+(a.label||a.creds_key)+'</span><span class="dim">'+a.client_code+'</span></div>';
-    (a.holdings||[]).forEach(x=>{const g=x.pnl>=0; h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.quantity+' @ '+inr(x.average_price)+'</div></div><div style="text-align:right"><div>'+inr(x.market_value)+'</div><div class="'+(g?'gr':'rd')+'" style="font-size:12px">'+(g?'+':'')+inr(x.pnl)+'</div></div></div>';});
+    (a.holdings||[]).forEach(x=>{const g=x.pnl>=0; h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.quantity+' @ '+px(x.average_price)+'</div></div><div style="text-align:right"><div>'+inr(x.market_value)+'</div><div class="'+(g?'gr':'rd')+'" style="font-size:12px">'+(g?'+':'')+inr(x.pnl)+'</div></div></div>';});
     if(a.positions&&a.positions.length){ h+='<div class="tag">F&O positions ('+a.positions.length+') · live P&L pending feed</div>';
-      a.positions.forEach(x=>{h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.product_type+'</div></div><div style="text-align:right"><div>'+(x.quantity>0?'+':'')+x.quantity+'</div><div class="dim">@ '+inr(x.average_price)+'</div></div></div>';});
+      a.positions.forEach(x=>{h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.product_type+'</div></div><div style="text-align:right"><div>'+(x.quantity>0?'+':'')+x.quantity+'</div><div class="dim">@ '+px(x.average_price)+'</div></div></div>';});
     }
     h+='</div>';
   });
@@ -143,6 +144,7 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
                 Holding(**{**h, "sector": h.get("sector") or sectors.sector_of(h["ticker"])})
                 for h in raw_holdings
             ]
+            book.holdings.sort(key=lambda h: h.market_value, reverse=True)  # biggest first
             book.ok = True
             book.status = "ok"
             book.fetched_at = utc_now_iso()
