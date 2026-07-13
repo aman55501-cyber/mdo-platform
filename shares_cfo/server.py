@@ -34,6 +34,85 @@ log = logging.getLogger("shares_cfo.server")
 
 app = FastAPI(title="Shares CFO", version="0.1.0")
 
+# Self-contained mobile web dashboard, served at "/". Open it in your phone's
+# browser: http://<PC-LAN-IP>:8000/?token=<CFO_API_TOKEN>
+DASHBOARD_HTML = r"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shares CFO</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--card2:#1c2330;--bd:#2a3038;--tx:#e6edf3;--dim:#8b949e;--gr:#3fb950;--rd:#f85149;--bl:#58a6ff;--am:#d29922}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:14px 14px 40px}
+  .dim{color:var(--dim);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-top:12px}
+  .row{display:flex;justify-content:space-between;align-items:center}
+  h1{font-size:22px;font-weight:700}
+  .hero{font-size:38px;font-weight:800;margin-top:2px}
+  .metric{font-size:17px;font-weight:600;margin-top:2px}
+  .bar{height:8px;background:var(--card2);border-radius:4px;margin-top:4px;overflow:hidden}
+  .fill{height:8px;background:var(--bl);border-radius:4px}
+  .hrow{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--bd)}
+  .gr{color:var(--gr)} .rd{color:var(--rd)} .am{color:var(--am)}
+  .tag{font-size:11px;color:var(--dim);margin-top:12px;margin-bottom:2px}
+  #err{color:var(--rd)}
+</style></head>
+<body>
+  <div class="row"><h1>Shares CFO</h1><span class="dim" id="asof">…</span></div>
+  <div id="err"></div>
+  <div id="app"></div>
+  <p class="dim" style="text-align:center;margin-top:16px">read-only • prices as of last pull</p>
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+function inr(n,sym){ if(sym===undefined)sym=true; const s=sym?'₹':''; if(n==null||isNaN(n))return s+'—';
+  const a=Math.abs(n), sg=n<0?'-':''; if(a>=1e7)return sg+s+(a/1e7).toFixed(2)+' Cr'; if(a>=1e5)return sg+s+(a/1e5).toFixed(2)+' L';
+  return sg+s+Math.round(a).toLocaleString('en-IN'); }
+function pct(f){ return f==null||isNaN(f)?'—':(f*100).toFixed(1)+'%'; }
+function el(h){ const d=document.createElement('div'); d.innerHTML=h; return d; }
+async function load(){
+  try{
+    const r=await fetch('/portfolio?token='+encodeURIComponent(token));
+    if(!r.ok){ document.getElementById('err').textContent='Server '+r.status+' — check the token in the link.'; return; }
+    document.getElementById('err').textContent='';
+    render(await r.json());
+  }catch(e){ document.getElementById('err').textContent='Cannot reach server. Same Wi-Fi? Firewall open?'; }
+}
+function render(p){
+  document.getElementById('asof').textContent=new Date(p.as_of).toLocaleTimeString();
+  const dc=p.day_change>=0, up=p.unrealised_pnl>=0, deg=p.book_health.degraded>0;
+  let h='';
+  h+='<div class="card"><div class="dim">Net worth</div><div class="hero">'+inr(p.net_worth)+'</div>'
+    +'<div class="'+(dc?'gr':'rd')+'" style="font-weight:600">'+(dc?'▲':'▼')+' '+inr(Math.abs(p.day_change))+' ('+pct(Math.abs(p.day_change_pct))+') today</div>'
+    +'<div class="'+(up?'gr':'rd')+'" style="font-size:13px">Unrealised P&L '+(up?'+':'−')+inr(Math.abs(p.unrealised_pnl))+' ('+pct(Math.abs(p.unrealised_pnl_pct))+')</div>'
+    +'<div class="row" style="margin-top:10px">'
+    +'<div><div class="dim">Holdings</div><div class="metric">'+inr(p.holdings_value)+'</div></div>'
+    +'<div><div class="dim">Cash</div><div class="metric">'+inr(p.cash)+'</div></div>'
+    +'</div></div>';
+  h+='<div class="card" style="border-color:'+(deg?'var(--rd)':'var(--bd)')+'"><div class="row">'
+    +'<span style="font-weight:700" class="'+(deg?'rd':'gr')+'">'+(deg?'Book incomplete':'Book complete')+'</span>'
+    +'<span class="dim">'+p.book_health.fresh+'/'+p.book_health.accounts+' fresh</span></div>';
+  (p.accounts||[]).forEach(a=>{(a.notes||[]).forEach(n=>{h+='<div class="am" style="font-size:12px;margin-top:6px">• '+n+'</div>';});});
+  h+='</div>';
+  if(p.sector_concentration&&p.sector_concentration.length){
+    h+='<div class="card"><div class="dim" style="margin-bottom:8px">Sector concentration</div>';
+    p.sector_concentration.slice(0,12).forEach(s=>{h+='<div style="margin:5px 0"><div class="row"><span>'+s.sector+'</span><span>'+pct(s.pct)+'</span></div><div class="bar"><div class="fill" style="width:'+Math.min(100,s.pct*100)+'%"></div></div></div>';});
+    h+='</div>';
+  }
+  (p.accounts||[]).forEach(a=>{
+    h+='<div class="card"><div class="row" style="margin-bottom:6px"><span style="font-weight:700">'+(a.label||a.creds_key)+'</span><span class="dim">'+a.client_code+'</span></div>';
+    (a.holdings||[]).forEach(x=>{const g=x.pnl>=0; h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.quantity+' @ '+inr(x.average_price)+'</div></div><div style="text-align:right"><div>'+inr(x.market_value)+'</div><div class="'+(g?'gr':'rd')+'" style="font-size:12px">'+(g?'+':'')+inr(x.pnl)+'</div></div></div>';});
+    if(a.positions&&a.positions.length){ h+='<div class="tag">F&O positions ('+a.positions.length+') · live P&L pending feed</div>';
+      a.positions.forEach(x=>{h+='<div class="hrow"><div><div>'+x.ticker+'</div><div class="dim">'+x.product_type+'</div></div><div style="text-align:right"><div>'+(x.quantity>0?'+':'')+x.quantity+'</div><div class="dim">@ '+inr(x.average_price)+'</div></div></div>';});
+    }
+    h+='</div>';
+  });
+  document.getElementById('app').innerHTML=h;
+}
+load(); setInterval(load, 20000);
+</script>
+</body></html>"""
+
 
 def _check_token(request: Request, token: str | None) -> None:
     expected = get_api_token()
@@ -152,10 +231,7 @@ async def _consolidated() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def root() -> str:
-    return (
-        "<h2>Shares CFO — read-only</h2>"
-        "<p>Endpoints: <code>/portfolio</code>, <code>/health</code></p>"
-    )
+    return DASHBOARD_HTML
 
 
 @app.get("/health")
