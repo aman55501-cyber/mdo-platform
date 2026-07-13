@@ -104,8 +104,10 @@ async def _consolidated() -> dict:
 
     all_holdings = [h for b in ok_books for h in b.holdings]
     holdings_value = sum(normalise("market_value", h.market_value) or 0.0 for h in all_holdings)
-    cash = sum(normalise("available", b.funds.available) or 0.0 for b in ok_books)
-    positions_pnl = sum(p.pnl + p.day_pnl for b in ok_books for p in b.positions)
+    # Net worth uses free cash (not total available limit, which includes margin/collateral).
+    cash = sum(normalise("available", b.funds.cash) or 0.0 for b in ok_books)
+    # F&O realised P&L (overall). cumulative-positions has no LTP, so no unrealised MTM yet.
+    positions_pnl = sum(p.pnl for b in ok_books for p in b.positions)
     net_worth = holdings_value + cash
 
     # Today's move on the holdings book (HDFC gives per-holding day_change).

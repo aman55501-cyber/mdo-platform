@@ -27,7 +27,7 @@ export interface AccountRow {
   creds_key: string; client_code: string; label: string;
   ok: boolean; status: string; reason: string; fetched_at: string;
   holdings: HoldingRow[]; holdings_value: number;
-  funds: { available: number; used_margin: number; total: number };
+  funds: { available: number; used_margin: number; total: number; cash: number; ledger_balance: number };
 }
 export interface Portfolio {
   as_of: string;

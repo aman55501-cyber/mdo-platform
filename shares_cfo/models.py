@@ -72,15 +72,19 @@ class Position:
 
 @dataclass
 class FundInfo:
-    available: float = 0.0
-    used_margin: float = 0.0
-    total: float = 0.0
+    available: float = 0.0        # total available limit/margin
+    used_margin: float = 0.0      # total utilised limit
+    total: float = 0.0            # total limit
+    cash: float = 0.0             # free cash (totalAvailableLimitDetails.cash)
+    ledger_balance: float = 0.0   # broker ledger balance
 
     def to_dict(self) -> dict:
         return {
             "available": self.available,
             "used_margin": self.used_margin,
             "total": self.total,
+            "cash": self.cash,
+            "ledger_balance": self.ledger_balance,
         }
 
 

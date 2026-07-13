@@ -178,29 +178,53 @@ class HdfcAdapter:
 
         out = []
         for p in rows:
+            net_qty = int(to_float(_first(p, "net_qty", "netQty", "t_day_net_qty", "tdayNetQty")) or 0)
+            if net_qty == 0:
+                continue  # squared-off / closed position — not an open holding
+            # average price on the side the net position sits
+            if net_qty > 0:
+                avg = _first(p, "average_buy_price", "tdayAverageBuyPrice", "average_sell_price")
+            else:
+                avg = _first(p, "average_sell_price", "t_day_avg_sell_price", "average_buy_price")
+            # build a readable instrument label
+            underlying = _first(p, "underlying_symbol", "security_id", default="")
+            opt = str(_first(p, "option_type", default="") or "").upper()
+            strike = _first(p, "strike_price", default="")
+            expiry = _first(p, "expiry_date", default="")
+            if opt in ("CE", "PE"):
+                label = f"{underlying} {strike}{opt} {expiry}".strip()
+            elif expiry:
+                label = f"{underlying} FUT {expiry}".strip()
+            else:
+                label = str(underlying)
             out.append({
-                "ticker": _first(p, "tradingsymbol", "tradingSymbol", "symbol", "company_name", "security_id", default=""),
+                "ticker": label,
                 "exchange": _first(p, "exchange", "instrument_segment", "exch", default="NSE"),
-                "product_type": _first(p, "product", "productType", "prodType", default="NRML"),
-                "quantity": int(to_float(_first(p, "net_qty", "netQty", "quantity", "netQuantity", "qty")) or 0),
-                "average_price": to_float(_first(p, "average_price", "net_avg_price", "averagePrice", "avgPrice")) or 0.0,
-                "last_price": to_float(_first(p, "last_price", "ltp", "close_price", "marketPrice")) or 0.0,
-                "pnl": to_float(_first(p, "realised_pl_overall_position", "realised_pl", "realizedPnl", "pnl")) or 0.0,
-                "day_pnl": to_float(_first(p, "unrealised_pl_overall_position", "unrealised_pl", "mtm", "m2m", "dayPnl")) or 0.0,
+                "product_type": _first(p, "product", "productType", default="NRML"),
+                "quantity": net_qty,
+                "average_price": to_float(avg) or 0.0,
+                "last_price": 0.0,  # cumulative-positions has no LTP; needs a quotes call (later)
+                "pnl": to_float(_first(p, "realised_pl_overall_position", "realised_pl", "pnl")) or 0.0,
+                "day_pnl": to_float(_first(p, "realised_pl_t_day_position", "realised_pl_t_day")) or 0.0,
             })
         return out
 
     async def get_funds(self) -> dict:
+        # Real schema: data.equity{ total_available_limit, total_utilised_limit,
+        # total_limit, totalAvailableLimitDetails{cash,...}, totalLimitDetails{ledger_balance,...} }
         data = await self._get(ep.FUNDS)
-        f = _first(data, "funds", "data", "limits", default=data)
-        if isinstance(f, list) and f:
-            f = f[0]
-        if not isinstance(f, dict):
-            f = {}
+        d = data.get("data", data)
+        eq = d.get("equity", d) if isinstance(d, dict) else {}
+        if not isinstance(eq, dict):
+            eq = {}
+        avail_details = eq.get("totalAvailableLimitDetails") or {}
+        limit_details = eq.get("totalLimitDetails") or {}
         return {
-            "available": to_float(_first(f, "available_balance", "availableBalance", "available_margin", "availableMargin", "available", "cashAvailable", "net_available")) or 0.0,
-            "used_margin": to_float(_first(f, "margin_used", "marginUsed", "used_margin", "usedMargin", "utilized", "utilised")) or 0.0,
-            "total": to_float(_first(f, "total_balance", "totalBalance", "total", "net_balance", "netBalance")) or 0.0,
+            "available": to_float(_first(eq, "total_available_limit", "totalAvailableLimit", "available")) or 0.0,
+            "used_margin": to_float(_first(eq, "total_utilised_limit", "total_utilized_limit", "totalUtilisedLimit")) or 0.0,
+            "total": to_float(_first(eq, "total_limit", "totalLimit")) or 0.0,
+            "cash": to_float(_first(avail_details, "cash")) or 0.0,
+            "ledger_balance": to_float(_first(limit_details, "ledger_balance", "ledgerBalance")) or 0.0,
         }
 
     async def get_profile(self) -> dict:
