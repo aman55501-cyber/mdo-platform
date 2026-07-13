@@ -85,6 +85,8 @@
   .b.elig{background:rgba(26,143,76,.14);color:var(--green)}
   .b.open{background:rgba(198,125,16,.15);color:var(--amber)}
   .b.val{background:transparent;border:1px solid var(--line);color:var(--text);font-variant-numeric:tabular-nums}
+  .b.pref{background:rgba(198,125,16,.16);color:var(--amber)}
+  .b.bg{background:rgba(213,52,43,.13);color:var(--red)}
   .meta{margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;
     gap:4px 14px}
   .meta .auth{color:var(--text);font-weight:650}
@@ -140,6 +142,7 @@
 
 <footer>
   Live from your VWLR tender database · refreshes on open.<br/>
+  “Relevant” = clears eligibility + your ₹250 Cr value floor. ★ = preferred buyer.<br/>
   Add to Home Screen for a one-tap app — no install needed.
 </footer>
 
@@ -154,6 +157,19 @@ const ORG = {
   avg_turnover_inr:1121539000, net_worth_inr:965523000, paid_up_capital_inr:81424000,
   max_experience_mt:2194654, experience_window_months:12, max_single_month_mt:309195
 };
+
+// Appetite filters (VWLR eligibility questionnaire, Section E).
+const MIN_VALUE_INR = 2500000000;                 // Q25: ₹250 Cr floor for "Relevant"
+const PBG_CAPACITY_INR = 80000000;                // Q28: 5% PBG up to ₹8 Cr...
+const BG_CEILING_INR = PBG_CAPACITY_INR / 0.05;   // ...backs a contract of ~₹160 Cr
+const PREFERRED_BUYERS = ["ntpc","nalco","secl","south eastern coalfields",
+  "mcl","mahanadi","cspgcl","adani","tata power","tata","jsw","jindal","vedanta",
+  "hindalco","ultratech","nuppl","mppgcl","nabha","mahagenco","jhabua","dhariwal",
+  "cspdcl","apgenco","ppgcl","cesc"];
+const isPreferred = t => { const a=(t.authority||"").toLowerCase();
+  return PREFERRED_BUYERS.some(b => a.includes(b)); };
+const bgShort = t => t.value_inr != null && +t.value_inr > BG_CEILING_INR;
+const meetsFloor = t => t.value_inr == null || +t.value_inr >= MIN_VALUE_INR;
 
 // Baked snapshot so the page renders instantly and works offline; the live
 // fetch below replaces it the moment the network responds.
@@ -205,22 +221,25 @@ function fmtDate(d){
 }
 
 /* ---------- render ---------- */
+// Appetite = passes eligibility AND clears your ₹250 Cr value floor (Q25).
+// Tenders with unknown value get the benefit of the doubt.
+const isAppetite = t => assess(t).relevant && meetsFloor(t);
 function passesFilter(t){
-  const a=assess(t);
-  if(filter==="relevant") return a.relevant;
+  if(filter==="relevant") return isAppetite(t);
   if(filter==="live") return t.status==="live";
   if(filter==="hearted") return !!t.hearted;
   return true;
 }
 function render(){
-  const relevant=TENDERS.filter(t=>assess(t).relevant);
   const liveNow=TENDERS.filter(t=>t.status==="live");
-  document.getElementById("sRelevant").textContent=relevant.length;
+  document.getElementById("sRelevant").textContent=TENDERS.filter(isAppetite).length;
   document.getElementById("sLive").textContent=liveNow.length;
   const upcoming=liveNow.map(t=>daysLeft(t.deadline)).filter(d=>d!=null&&d>=0).sort((a,b)=>a-b);
   document.getElementById("sNext").textContent = upcoming.length? upcoming[0]+"d" : "—";
 
-  const rows=TENDERS.filter(passesFilter);
+  // Preferred buyers (Q27) float to the top, keeping deadline order within each group.
+  const rows=TENDERS.filter(passesFilter)
+    .sort((a,b)=>(isPreferred(b)?1:0)-(isPreferred(a)?1:0));
   const list=document.getElementById("list");
   if(!rows.length){ list.innerHTML='<div class="empty">No tenders match this filter yet.</div>'; return; }
   list.innerHTML=rows.map(card).join("");
@@ -239,9 +258,11 @@ function card(t){
       <button class="heart ${t.hearted?"on":""}" data-id="${t.id}" aria-label="Save">♥</button>
     </div>
     <div class="badges">
+      ${isPreferred(t)?'<span class="b pref">★ Preferred buyer</span>':""}
       ${t.portal?`<span class="b portal">${esc(t.portal)}</span>`:""}
       ${t.value_inr?`<span class="b val">${inr(t.value_inr)}</span>`:""}
       ${eligBadge}
+      ${bgShort(t)?'<span class="b bg">BG shortfall · needs &gt; ₹8 Cr PBG</span>':""}
     </div>
     <div class="meta">
       <span class="auth">${esc(t.authority||"")}</span>
