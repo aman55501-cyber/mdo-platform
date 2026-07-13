@@ -67,6 +67,11 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
             book.ok = True
             book.status = "ok"
             book.fetched_at = utc_now_iso()
+            if adapter.last_holdings_excluded:
+                book.notes.append(
+                    f"{adapter.last_holdings_excluded} F&O contracts excluded from holdings "
+                    f"value (they appear under positions; holdings = equity delivery only)"
+                )
         except TokenExpiredError as exc:
             book.ok = False; book.status = "degraded"; book.reason = exc.action
             return book
@@ -104,8 +109,9 @@ async def _consolidated() -> dict:
 
     all_holdings = [h for b in ok_books for h in b.holdings]
     holdings_value = sum(normalise("market_value", h.market_value) or 0.0 for h in all_holdings)
-    # Net worth uses free cash (not total available limit, which includes margin/collateral).
-    cash = sum(normalise("available", b.funds.cash) or 0.0 for b in ok_books)
+    # Net worth cash = broker ledger balance (actual money), not the "cash limit"
+    # field, which goes negative when F&O margin is deployed.
+    cash = sum(normalise("available", b.funds.ledger_balance) or 0.0 for b in ok_books)
     # F&O realised P&L (overall). cumulative-positions has no LTP, so no unrealised MTM yet.
     positions_pnl = sum(p.pnl for b in ok_books for p in b.positions)
     net_worth = holdings_value + cash

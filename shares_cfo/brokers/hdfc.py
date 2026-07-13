@@ -48,6 +48,7 @@ class HdfcAdapter:
 
     def __init__(self, account: AccountConfig) -> None:
         self._acct = account
+        self.last_holdings_excluded = 0  # F&O contracts filtered out of holdings
         # User-Agent is MANDATORY and Content-Type json is expected by the token API.
         self._http = httpx.AsyncClient(
             base_url=account.base_url,
@@ -143,9 +144,23 @@ class HdfcAdapter:
     async def get_holdings(self) -> list[dict]:
         # Real HDFC schema (confirmed by probe): company_name, sector_name, isin,
         # quantity, average_price, close_price, pnl, day_change, day_change_percentage.
+        #
+        # IMPORTANT: HDFC returns F&O contracts inside /portfolio/holdings, priced at
+        # the UNDERLYING spot x lot qty (e.g. "NIFTY Options" = 3510 x 23962 = 8.4Cr).
+        # That is NOT an equity holding value and would inflate net worth ~4x. We
+        # exclude them here (they are represented under positions). Discriminator:
+        # real equity has an ISIN (INE...); F&O contracts have isin "0" and a
+        # company_name ending in " Options"/" Futures".
+        self.last_holdings_excluded = 0
         data = await self._get(ep.HOLDINGS)
         out = []
         for h in self._rows(data, "holdings", "data", "holding"):
+            isin = str(_first(h, "isin", "ISIN", default="")).strip()
+            name = str(_first(h, "company_name", "companyName", default="")).strip()
+            is_derivative = isin in ("", "0") or name.endswith((" Options", " Futures"))
+            if is_derivative:
+                self.last_holdings_excluded += 1
+                continue
             out.append({
                 "ticker": _first(h, "company_name", "companyName", "symbol", "tradingsymbol", "tradingSymbol", "scripName", default=""),
                 "exchange": _first(h, "exchange", "exch", default="NSE"),
