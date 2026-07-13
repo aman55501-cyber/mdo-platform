@@ -36,21 +36,22 @@ async def main() -> int:
         print(f"\n[X] No access token. Run:  python scripts/hdfc_login.py {creds_key}\n")
         return 1
 
-    # grab a couple of real instruments (security_id + exchange) from holdings
+    # grab a couple of real instruments from RAW holdings — we need instrument_token
+    from shares_cfo.brokers import hdfc_endpoints as ep  # noqa: E402
     adapter = HdfcAdapter(account)
     try:
-        holdings = await adapter.get_holdings()
+        raw = await adapter._get(ep.HOLDINGS)
     finally:
         await adapter.close()
-    samples = [
-        {"security_id": h["security_id"], "exchange": h.get("exchange", "NSE")}
-        for h in holdings if h.get("security_id")
-    ][:2]
-    if not samples:
-        print("[X] No instruments with a security_id found to probe with.")
+    rows = (raw.get("data") or [])[:2]
+    toks = []
+    for r in rows:
+        tok = r.get("instrument_token") or r.get("security_id")
+        toks.append({"token": tok, "exchange": r.get("exchange", "NSE")})
+    if not toks:
+        print("[X] No instruments found to probe with.")
         return 1
-    sids = [s["security_id"] for s in samples]
-    print(f"\n=== Probing /fetch-ltp for {creds_key} with instruments {sids} ===\n")
+    print(f"\n=== Probing /fetch-ltp for {creds_key} with tokens {[t['token'] for t in toks]} ===\n")
 
     http = httpx.AsyncClient(
         base_url=account.base_url,
@@ -62,17 +63,14 @@ async def main() -> int:
         },
     )
 
-    # candidate body shapes (the error message often reveals the expected field)
+    # We now know the body is {"data":[{"token":..., ...}]} — try token type/field variants.
+    tok_str = [{"token": str(t["token"]), "exchange": t["exchange"]} for t in toks]
+    tok_int = [{"token": int(t["token"]), "exchange": t["exchange"]} for t in toks if str(t["token"]).isdigit()]
     candidates = {
-        "instruments[{security_id,exchange}]": {"instruments": samples},
-        "data[{security_id,exchange}]": {"data": samples},
-        "bare list": samples,
-        "symbols[security_id]": {"symbols": sids},
-        "instrument_tokens[]": {"instrument_tokens": sids},
-        "instruments[{security_id,exchange_segment}]": {
-            "instruments": [{"security_id": s["security_id"], "exchange_segment": s["exchange"]} for s in samples]
-        },
-        "ltp[{security_id,exchange}]": {"ltp": samples},
+        "data[{token:str, exchange}]": {"data": tok_str},
+        "data[{token:int, exchange}]": {"data": tok_int or tok_str},
+        "data[{token, exchange_segment}]": {"data": [{"token": str(t["token"]), "exchange_segment": t["exchange"]} for t in toks]},
+        "data[{token} only]": {"data": [{"token": str(t["token"])} for t in toks]},
     }
 
     winners = []
@@ -89,7 +87,7 @@ async def main() -> int:
             except httpx.HTTPError as exc:
                 print(f"[ERR] {name}: {exc}\n")
     finally:
-        await http.close()
+        await http.aclose()
 
     if winners:
         print(f"WORKING body shape(s): {winners}")
