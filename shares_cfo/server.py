@@ -257,6 +257,28 @@ async def portfolio(request: Request, token: str | None = Query(default=None)) -
     return await _consolidated()
 
 
+@app.get("/analysis/{ticker}")
+async def analysis(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
+    """Technical read for one NSE symbol (e.g. /analysis/COALINDIA). Free (yfinance)."""
+    _check_token(request, token)
+    # Lazy import so the core server runs even without pandas/yfinance installed.
+    from .analysis import technicals
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    try:
+        data = get_ohlcv(ticker)
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    tech = technicals.analyze(data["closes"], data["volumes"])
+    return {
+        "ticker": ticker.upper(),
+        "source": data["source"],
+        "confidence": data["confidence"],
+        "bars": data["bars"],
+        "technicals": tech,
+    }
+
+
 def main() -> None:
     import os
     import uvicorn
