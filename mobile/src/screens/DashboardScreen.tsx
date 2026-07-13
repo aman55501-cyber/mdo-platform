@@ -151,8 +151,8 @@ export default function DashboardScreen() {
             <Text style={styles.dim}>{acc.client_code}</Text>
           </Row>
           {acc.holdings.length === 0 && <Text style={styles.dim}>No holdings returned.</Text>}
-          {acc.holdings.map((h) => (
-            <Row key={h.ticker} style={styles.holdingRow}>
+          {acc.holdings.map((h, i) => (
+            <Row key={`${h.ticker}-${i}`} style={styles.holdingRow}>
               <View style={{ flex: 2 }}>
                 <Text style={styles.rowText}>{h.ticker}</Text>
                 <Text style={styles.dim}>{h.quantity} @ {formatINR(h.average_price)}</Text>
@@ -165,6 +165,26 @@ export default function DashboardScreen() {
               </View>
             </Row>
           ))}
+
+          {acc.positions.length > 0 && (
+            <>
+              <Text style={[styles.dim, { marginTop: 12, marginBottom: 4 }]}>
+                F&O positions ({acc.positions.length}) · live P&L pending feed
+              </Text>
+              {acc.positions.map((pos, i) => (
+                <Row key={`${pos.ticker}-${i}`} style={styles.holdingRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.rowText}>{pos.ticker}</Text>
+                    <Text style={styles.dim}>{pos.product_type}</Text>
+                  </View>
+                  <View style={{ flex: 1, alignItems: "flex-end" }}>
+                    <Text style={styles.rowText}>{pos.quantity > 0 ? "+" : ""}{pos.quantity}</Text>
+                    <Text style={styles.dim}>@ {formatINR(pos.average_price)}</Text>
+                  </View>
+                </Row>
+              ))}
+            </>
+          )}
         </Card>
       ))}
 

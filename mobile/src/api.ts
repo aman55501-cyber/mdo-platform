@@ -22,11 +22,17 @@ export interface HoldingRow {
   day_change: number; day_change_pct: number;
   isin: string; security_id: string;
 }
+export interface PositionRow {
+  ticker: string; exchange: string; product_type: string;
+  quantity: number; average_price: number; last_price: number;
+  pnl: number; day_pnl: number;
+}
 export interface DegradedAccount { creds_key: string; reason: string; }
 export interface AccountRow {
   creds_key: string; client_code: string; label: string;
   ok: boolean; status: string; reason: string; fetched_at: string;
   holdings: HoldingRow[]; holdings_value: number;
+  positions: PositionRow[];
   funds: { available: number; used_margin: number; total: number; cash: number; ledger_balance: number };
 }
 export interface Portfolio {
