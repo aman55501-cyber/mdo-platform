@@ -19,11 +19,11 @@ from __future__ import annotations
 LOGIN = "/login"                 # GET ?api_key=... (opened in browser)
 ACCESS_TOKEN = "/access-token"   # POST ?api_key=&request_token=  body {"apiSecret": "..."}
 
-# --- Read-only portfolio endpoints ---
-HOLDINGS = "/portfolio/holdings"          # CONFIRMED by probe (returns sector_name, day_change)
-PROFILE = "/user/profile"                 # CONFIRMED by probe
-POSITIONS = "/portfolio/overall_positions"  # strong lead (real HDFC adapter) — confirm via probe
-FUNDS = "/portfolio/funds"                # TO CONFIRM — none of the first guesses hit; see CANDIDATES
+# --- Read-only portfolio endpoints (all CONFIRMED against the live account + docs) ---
+HOLDINGS = "/portfolio/holdings"            # returns sector_name, day_change, day_change_percentage
+PROFILE = "/user/profile"
+POSITIONS = "/portfolio/cumulative-positions"  # confirmed from ir-docs
+FUNDS = "/user/margins"                     # HDFC's "Funds / Limits" == margins; confirmed from ir-docs
 
 # How the access token is presented on each authenticated call.
 # The probe reports which the API actually accepts; change this one constant.
@@ -36,13 +36,6 @@ AUTH_STYLE = "bearer"
 CANDIDATES = {
     "holdings": ["/portfolio/holdings"],  # confirmed
     "profile": ["/user/profile"],         # confirmed
-    "positions": [
-        "/portfolio/overall_positions", "/portfolio/positions", "/portfolio/day_positions",
-        "/positions", "/overall_positions", "/portfolio/net_positions",
-    ],
-    "funds": [
-        "/portfolio/funds", "/user/funds", "/portfolio/limits", "/user/limits",
-        "/funds", "/limits", "/margin", "/user/margin", "/funds/limits",
-        "/portfolio/margin", "/portfolio/available_margin",
-    ],
+    "positions": ["/portfolio/cumulative-positions"],  # confirmed
+    "funds": ["/user/margins"],                          # confirmed
 }
