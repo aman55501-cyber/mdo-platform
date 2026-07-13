@@ -19,6 +19,8 @@ export interface HoldingRow {
   ticker: string; exchange: string; quantity: number;
   average_price: number; last_price: number; pnl: number;
   sector: string; market_value: number;
+  day_change: number; day_change_pct: number;
+  isin: string; security_id: string;
 }
 export interface DegradedAccount { creds_key: string; reason: string; }
 export interface AccountRow {
@@ -33,6 +35,8 @@ export interface Portfolio {
   net_worth: number;
   holdings_value: number;
   cash: number;
+  day_change: number;
+  day_change_pct: number;
   positions_pnl: number;
   sector_concentration: SectorRow[];
   unmapped_sectors: string[];

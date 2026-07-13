@@ -18,6 +18,10 @@ class Holding:
     last_price: float = 0.0
     pnl: float = 0.0
     sector: str = "UNKNOWN"
+    day_change: float = 0.0        # today's rupee change for this holding (from HDFC)
+    day_change_pct: float = 0.0    # today's % change (from HDFC)
+    isin: str = ""
+    security_id: str = ""
 
     @property
     def market_value(self) -> float:
@@ -32,6 +36,10 @@ class Holding:
             "last_price": self.last_price,
             "pnl": self.pnl,
             "sector": self.sector,
+            "day_change": self.day_change,
+            "day_change_pct": self.day_change_pct,
+            "isin": self.isin,
+            "security_id": self.security_id,
             "market_value": round(self.market_value, 2),
         }
 

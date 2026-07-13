@@ -19,11 +19,11 @@ from __future__ import annotations
 LOGIN = "/login"                 # GET ?api_key=... (opened in browser)
 ACCESS_TOKEN = "/access-token"   # POST ?api_key=&request_token=  body {"apiSecret": "..."}
 
-# --- Read-only portfolio endpoints (probe corrects these) ---
-HOLDINGS = "/holdings"
-POSITIONS = "/positions"
-FUNDS = "/limits"                # HDFC labels this "Funds / Limits"
-PROFILE = "/profile"
+# --- Read-only portfolio endpoints ---
+HOLDINGS = "/portfolio/holdings"          # CONFIRMED by probe (returns sector_name, day_change)
+PROFILE = "/user/profile"                 # CONFIRMED by probe
+POSITIONS = "/portfolio/overall_positions"  # strong lead (real HDFC adapter) — confirm via probe
+FUNDS = "/portfolio/funds"                # TO CONFIRM — none of the first guesses hit; see CANDIDATES
 
 # How the access token is presented on each authenticated call.
 # The probe reports which the API actually accepts; change this one constant.
@@ -32,10 +32,17 @@ PROFILE = "/profile"
 #   "query"  -> ?access_token=<token>
 AUTH_STYLE = "bearer"
 
-# Candidate paths the probe will try for each concept if the primary 404s.
+# Candidate paths the probe will try for each concept. Confirmed paths first.
 CANDIDATES = {
-    "holdings": ["/holdings", "/portfolio/holdings", "/demat/holdings", "/portfolio"],
-    "positions": ["/positions", "/portfolio/positions", "/positions/day", "/netpositions"],
-    "funds": ["/limits", "/funds", "/margin", "/funds/limits", "/user/limits"],
-    "profile": ["/profile", "/user/profile", "/customer/profile", "/me"],
+    "holdings": ["/portfolio/holdings"],  # confirmed
+    "profile": ["/user/profile"],         # confirmed
+    "positions": [
+        "/portfolio/overall_positions", "/portfolio/positions", "/portfolio/day_positions",
+        "/positions", "/overall_positions", "/portfolio/net_positions",
+    ],
+    "funds": [
+        "/portfolio/funds", "/user/funds", "/portfolio/limits", "/user/limits",
+        "/funds", "/limits", "/margin", "/user/margin", "/funds/limits",
+        "/portfolio/margin", "/portfolio/available_margin",
+    ],
 }

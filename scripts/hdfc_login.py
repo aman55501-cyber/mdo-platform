@@ -31,19 +31,23 @@ from shares_cfo.exceptions import SharesCFOError  # noqa: E402
 
 
 def _extract_request_token(pasted: str) -> str:
-    """Accept either the full redirected URL or the bare token."""
+    """Accept the full redirected URL or the bare token.
+
+    HDFC's redirect uses the param name `requestToken` (camelCase); we also accept
+    `request_token` / `request-token` for safety.
+    """
     pasted = pasted.strip()
     if not pasted:
         raise ValueError("Nothing pasted.")
-    if "request_token" in pasted:
+    if "?" in pasted or "://" in pasted:
         qs = parse_qs(urlparse(pasted).query)
-        token = qs.get("request_token", [""])[0]
-        if token:
-            return token
-    # maybe they pasted just the token
-    if "://" not in pasted and "?" not in pasted and " " not in pasted:
+        for key, values in qs.items():
+            if key.lower().replace("_", "").replace("-", "") == "requesttoken" and values and values[0]:
+                return values[0]
+    # bare token pasted on its own
+    if "://" not in pasted and "?" not in pasted and "=" not in pasted and " " not in pasted:
         return pasted
-    raise ValueError("Could not find 'request_token' in what you pasted.")
+    raise ValueError("Could not find a request token in what you pasted. Paste the whole address bar.")
 
 
 async def main() -> int:

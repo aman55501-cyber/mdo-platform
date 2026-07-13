@@ -141,32 +141,52 @@ class HdfcAdapter:
         return raw if isinstance(raw, list) else []
 
     async def get_holdings(self) -> list[dict]:
+        # Real HDFC schema (confirmed by probe): company_name, sector_name, isin,
+        # quantity, average_price, close_price, pnl, day_change, day_change_percentage.
         data = await self._get(ep.HOLDINGS)
         out = []
         for h in self._rows(data, "holdings", "data", "holding"):
             out.append({
-                "ticker": _first(h, "symbol", "tradingSymbol", "scripName", "nseSymbol", default=""),
+                "ticker": _first(h, "company_name", "companyName", "symbol", "tradingsymbol", "tradingSymbol", "scripName", default=""),
                 "exchange": _first(h, "exchange", "exch", default="NSE"),
                 "quantity": int(to_float(_first(h, "quantity", "totalQty", "qty", "netQty")) or 0),
-                "average_price": to_float(_first(h, "averagePrice", "avgPrice", "buyAvg", "costPrice")) or 0.0,
-                "last_price": to_float(_first(h, "lastPrice", "ltp", "closePrice", "marketPrice")) or 0.0,
-                "pnl": to_float(_first(h, "pnl", "unrealizedPnl", "profitLoss")) or 0.0,
+                "average_price": to_float(_first(h, "average_price", "averagePrice", "avgPrice", "buyAvg")) or 0.0,
+                "last_price": to_float(_first(h, "close_price", "closePrice", "lastPrice", "ltp", "currentPrice", "marketPrice")) or 0.0,
+                "pnl": to_float(_first(h, "pnl", "unrealised", "profitLoss", "profit_loss")) or 0.0,
+                "sector": _first(h, "sector_name", "sectorName", "sector", default=""),
+                "day_change": to_float(_first(h, "day_change", "dayChange")) or 0.0,
+                "day_change_pct": to_float(_first(h, "day_change_percentage", "dayChangePercentage", "day_change_pct")) or 0.0,
+                "isin": _first(h, "isin", "ISIN", default=""),
+                "security_id": str(_first(h, "security_id", "securityId", "instrument_token", default="")),
             })
         return out
 
     async def get_positions(self) -> list[dict]:
+        # HDFC returns positions under data.net[] (and possibly data.day[]).
         data = await self._get(ep.POSITIONS)
+        container = data.get("data", data)
+        rows: list[dict] = []
+        if isinstance(container, dict):
+            for key in ("net", "day", "overall", "positions"):
+                v = container.get(key)
+                if isinstance(v, list):
+                    rows.extend(v)
+            if not rows and any(k in container for k in ("net_qty", "security_id", "netQty")):
+                rows = [container]
+        elif isinstance(container, list):
+            rows = container
+
         out = []
-        for p in self._rows(data, "positions", "data", "netPositions", "net"):
+        for p in rows:
             out.append({
-                "ticker": _first(p, "symbol", "tradingSymbol", "scripName", default=""),
-                "exchange": _first(p, "exchange", "exch", default="NSE"),
-                "product_type": _first(p, "productType", "product", "prodType", default="NRML"),
-                "quantity": int(to_float(_first(p, "quantity", "netQty", "netQuantity", "qty")) or 0),
-                "average_price": to_float(_first(p, "averagePrice", "avgPrice", "netAvg")) or 0.0,
-                "last_price": to_float(_first(p, "lastPrice", "ltp", "marketPrice")) or 0.0,
-                "pnl": to_float(_first(p, "pnl", "realizedPnl", "bookedPnl")) or 0.0,
-                "day_pnl": to_float(_first(p, "dayPnl", "unrealizedPnl", "mtm", "m2m")) or 0.0,
+                "ticker": _first(p, "tradingsymbol", "tradingSymbol", "symbol", "company_name", "security_id", default=""),
+                "exchange": _first(p, "exchange", "instrument_segment", "exch", default="NSE"),
+                "product_type": _first(p, "product", "productType", "prodType", default="NRML"),
+                "quantity": int(to_float(_first(p, "net_qty", "netQty", "quantity", "netQuantity", "qty")) or 0),
+                "average_price": to_float(_first(p, "average_price", "net_avg_price", "averagePrice", "avgPrice")) or 0.0,
+                "last_price": to_float(_first(p, "last_price", "ltp", "close_price", "marketPrice")) or 0.0,
+                "pnl": to_float(_first(p, "realised_pl_overall_position", "realised_pl", "realizedPnl", "pnl")) or 0.0,
+                "day_pnl": to_float(_first(p, "unrealised_pl_overall_position", "unrealised_pl", "mtm", "m2m", "dayPnl")) or 0.0,
             })
         return out
 
@@ -178,9 +198,9 @@ class HdfcAdapter:
         if not isinstance(f, dict):
             f = {}
         return {
-            "available": to_float(_first(f, "availableMargin", "available", "availableCash", "netAvailable", "cashAvailable")) or 0.0,
-            "used_margin": to_float(_first(f, "usedMargin", "utilized", "marginUsed", "utilised")) or 0.0,
-            "total": to_float(_first(f, "totalBalance", "total", "netBalance", "openingBalance")) or 0.0,
+            "available": to_float(_first(f, "available_balance", "availableBalance", "available_margin", "availableMargin", "available", "cashAvailable", "net_available")) or 0.0,
+            "used_margin": to_float(_first(f, "margin_used", "marginUsed", "used_margin", "usedMargin", "utilized", "utilised")) or 0.0,
+            "total": to_float(_first(f, "total_balance", "totalBalance", "total", "net_balance", "netBalance")) or 0.0,
         }
 
     async def get_profile(self) -> dict:

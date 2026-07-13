@@ -79,6 +79,9 @@ export default function DashboardScreen() {
       <Card style={{ marginTop: 12 }}>
         <Text style={styles.dim}>Net worth</Text>
         <Text style={styles.hero}>{formatINR(p.net_worth)}</Text>
+        <Text style={{ color: p.day_change >= 0 ? T.green : T.red, fontSize: 15, fontWeight: "600", marginTop: 2 }}>
+          {p.day_change >= 0 ? "▲" : "▼"} {formatINR(Math.abs(p.day_change))} ({pct(Math.abs(p.day_change_pct))}) today
+        </Text>
         <Row style={{ marginTop: 8, justifyContent: "space-between" }}>
           <View>
             <Text style={styles.dim}>Holdings</Text>

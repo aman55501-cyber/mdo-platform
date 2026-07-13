@@ -59,8 +59,10 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
         raw_positions = await adapter.get_positions()
         raw_funds = await adapter.get_funds()
 
+        # Prefer HDFC's own sector_name; fall back to our map only when it's missing.
         book.holdings = [
-            Holding(sector=sectors.sector_of(h["ticker"]), **h) for h in raw_holdings
+            Holding(**{**h, "sector": h.get("sector") or sectors.sector_of(h["ticker"])})
+            for h in raw_holdings
         ]
         book.positions = [Position(**p) for p in raw_positions]
         book.funds = FundInfo(**raw_funds)
@@ -95,12 +97,19 @@ async def _consolidated() -> dict:
     positions_pnl = sum(p.pnl + p.day_pnl for b in ok_books for p in b.positions)
     net_worth = holdings_value + cash
 
+    # Today's move on the holdings book (HDFC gives per-holding day_change).
+    day_change = sum(h.day_change for h in all_holdings)
+    prev_value = holdings_value - day_change
+    day_change_pct = (day_change / prev_value) if prev_value else 0.0
+
     return {
         "as_of": utc_now_iso(),
         "complete": len(degraded) == 0,
         "net_worth": round(net_worth, 2),
         "holdings_value": round(holdings_value, 2),
         "cash": round(cash, 2),
+        "day_change": round(day_change, 2),
+        "day_change_pct": round(day_change_pct, 4),
         "positions_pnl": round(positions_pnl, 2),
         "sector_concentration": sectors.concentration(all_holdings),
         "unmapped_sectors": sectors.missing(),
