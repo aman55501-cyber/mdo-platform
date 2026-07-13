@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/org_profile.dart';
 import '../models/tender.dart';
+import '../services/appetite.dart';
 import '../widgets/tender_card.dart';
 
-enum ListFilter { all, live, hearted, relevant }
+enum ListFilter { relevant, live, big, hearted, all }
 
 class ListScreen extends StatefulWidget {
   final List<Tender> tenders;
@@ -24,23 +25,33 @@ class ListScreen extends StatefulWidget {
 }
 
 class _ListScreenState extends State<ListScreen> {
-  ListFilter _f = ListFilter.all;
+  ListFilter _f = ListFilter.relevant;
 
   List<Tender> get _items {
+    List<Tender> list;
     switch (_f) {
       case ListFilter.live:
-        return widget.tenders
+        list = widget.tenders
             .where((t) => t.status == TenderStatus.live)
             .toList();
       case ListFilter.hearted:
-        return widget.tenders.where((t) => t.hearted).toList();
+        list = widget.tenders.where((t) => t.hearted).toList();
       case ListFilter.relevant:
-        return widget.tenders
+        list = widget.tenders
             .where((t) => widget.relevantIds.contains(t.id))
             .toList();
+      case ListFilter.big:
+        list = widget.tenders
+            .where((t) =>
+                widget.relevantIds.contains(t.id) && Appetite.meetsFloor(t))
+            .toList();
       case ListFilter.all:
-        return widget.tenders;
+        list = List.of(widget.tenders);
     }
+    // Preferred buyers (Q27) float to the top, order otherwise preserved.
+    list.sort((a, b) =>
+        (Appetite.isPreferred(b) ? 1 : 0) - (Appetite.isPreferred(a) ? 1 : 0));
+    return list;
   }
 
   @override
@@ -59,6 +70,7 @@ class _ListScreenState extends State<ListScreen> {
                   label: Text(switch (f) {
                     ListFilter.all => 'All',
                     ListFilter.live => 'Live',
+                    ListFilter.big => 'Big ₹250Cr+',
                     ListFilter.hearted => 'Watching',
                     ListFilter.relevant => 'Relevant',
                   }),

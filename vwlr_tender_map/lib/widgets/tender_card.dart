@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/org_profile.dart';
 import '../models/tender.dart';
+import '../services/appetite.dart';
 import '../services/eligibility.dart';
 import '../services/format.dart';
 import '../theme.dart';
@@ -37,6 +38,10 @@ class TenderCard extends StatelessWidget {
                   StatusChip(tender.status),
                   const SizedBox(width: 6),
                   _eligBadge(context, elig),
+                  if (Appetite.isPreferred(tender)) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.star, size: 14, color: Color(0xFFC67D10)),
+                  ],
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(tender.authority ?? '',
@@ -80,6 +85,19 @@ class TenderCard extends StatelessWidget {
                     ),
                 ],
               ),
+              if (Appetite.bgShort(tender)) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  const Icon(Icons.account_balance_outlined,
+                      size: 14, color: Color(0xFFD5342B)),
+                  const SizedBox(width: 5),
+                  Text('BG shortfall · needs > ₹8 Cr PBG',
+                      style: TextStyle(
+                          color: c.danger,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12)),
+                ]),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
