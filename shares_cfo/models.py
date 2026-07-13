@@ -98,6 +98,7 @@ class AccountBook:
     ok: bool = True
     status: str = "ok"          # "ok" | "degraded"
     reason: str = ""            # plain-language reason when degraded
+    notes: list[str] = field(default_factory=list)  # partial-data notes (book still ok)
     holdings: list[Holding] = field(default_factory=list)
     positions: list[Position] = field(default_factory=list)
     funds: FundInfo = field(default_factory=FundInfo)
@@ -115,6 +116,7 @@ class AccountBook:
             "ok": self.ok,
             "status": self.status,
             "reason": self.reason,
+            "notes": self.notes,
             "fetched_at": self.fetched_at,
             "holdings": [h.to_dict() for h in self.holdings],
             "positions": [p.to_dict() for p in self.positions],

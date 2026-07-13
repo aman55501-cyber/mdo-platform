@@ -55,28 +55,39 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
     book = AccountBook(creds_key=creds_key, client_code=account.client_code, label=account.label)
     adapter = HdfcAdapter(account)
     try:
-        raw_holdings = await adapter.get_holdings()
-        raw_positions = await adapter.get_positions()
-        raw_funds = await adapter.get_funds()
+        # Holdings is the core of the book. A token-expiry here degrades everything;
+        # any other holdings failure degrades the account.
+        try:
+            raw_holdings = await adapter.get_holdings()
+            # Prefer HDFC's own sector_name; fall back to our map only when missing.
+            book.holdings = [
+                Holding(**{**h, "sector": h.get("sector") or sectors.sector_of(h["ticker"])})
+                for h in raw_holdings
+            ]
+            book.ok = True
+            book.status = "ok"
+            book.fetched_at = utc_now_iso()
+        except TokenExpiredError as exc:
+            book.ok = False; book.status = "degraded"; book.reason = exc.action
+            return book
+        except SharesCFOError as exc:
+            book.ok = False; book.status = "degraded"; book.reason = str(exc)
+            return book
 
-        # Prefer HDFC's own sector_name; fall back to our map only when it's missing.
-        book.holdings = [
-            Holding(**{**h, "sector": h.get("sector") or sectors.sector_of(h["ticker"])})
-            for h in raw_holdings
-        ]
-        book.positions = [Position(**p) for p in raw_positions]
-        book.funds = FundInfo(**raw_funds)
-        book.fetched_at = utc_now_iso()
-        book.ok = True
-        book.status = "ok"
-    except TokenExpiredError as exc:
-        book.ok = False
-        book.status = "degraded"
-        book.reason = exc.action
-    except SharesCFOError as exc:
-        book.ok = False
-        book.status = "degraded"
-        book.reason = str(exc)
+        # Positions and funds are secondary: a failure here must NOT hide holdings.
+        try:
+            book.positions = [Position(**p) for p in await adapter.get_positions()]
+        except TokenExpiredError as exc:
+            book.ok = False; book.status = "degraded"; book.reason = exc.action; return book
+        except SharesCFOError as exc:
+            book.notes.append(f"positions unavailable ({exc})")
+
+        try:
+            book.funds = FundInfo(**await adapter.get_funds())
+        except TokenExpiredError as exc:
+            book.ok = False; book.status = "degraded"; book.reason = exc.action; return book
+        except SharesCFOError as exc:
+            book.notes.append(f"funds unavailable ({exc})")
     finally:
         await adapter.close()
     return book
