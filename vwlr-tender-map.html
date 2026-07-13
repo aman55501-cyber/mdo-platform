@@ -103,6 +103,23 @@
   .doc:active{transform:translateY(1px)}
   .reason{margin-top:9px;font-size:12px;color:var(--faint)}
   .empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:14px}
+  .profile{margin-top:16px;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  .profile>summary{list-style:none;cursor:pointer;padding:14px;font-weight:800;
+    font-size:14px;display:flex;align-items:center;gap:8px}
+  .profile>summary::-webkit-details-marker{display:none}
+  .profile>summary::before{content:"▸";color:var(--brand);font-size:12px;transition:.15s}
+  .profile[open]>summary::before{transform:rotate(90deg)}
+  .profile .pbody{padding:0 14px 14px}
+  .pgrp{margin-top:12px}
+  .pgrp h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--brand)}
+  .prow{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;
+    padding:3px 0;border-bottom:1px dashed var(--line)}
+  .prow span:first-child{color:var(--muted)}
+  .prow span:last-child{font-weight:650;text-align:right;font-variant-numeric:tabular-nums}
+  .ptags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .ptags .b{background:var(--brand-bg);color:var(--brand)}
   footer{max-width:720px;margin:26px auto 0;padding:0 14px;color:var(--faint);
     font-size:11.5px;text-align:center;line-height:1.6}
   footer a{color:var(--brand)}
@@ -132,6 +149,7 @@
     <div class="filters" id="filters">
       <button class="chip on" data-f="relevant">Relevant</button>
       <button class="chip" data-f="live">Live</button>
+      <button class="chip" data-f="big">Big ₹250Cr+</button>
       <button class="chip" data-f="hearted">♥ Saved</button>
       <button class="chip" data-f="all">All</button>
     </div>
@@ -140,9 +158,58 @@
 
 <div class="wrap"><main id="list"></main></div>
 
+<div class="wrap">
+  <details class="profile">
+    <summary>VWLR bid-prep profile — QR figures &amp; registrations</summary>
+    <div class="pbody">
+      <div class="pgrp">
+        <h4>Financial capacity</h4>
+        <div class="prow"><span>Avg turnover (3 yr)</span><span>₹112.15 Cr</span></div>
+        <div class="prow"><span>Turnover FY22-23 / 23-24 / 24-25</span><span>₹128.55 / 121.98 / 85.93 Cr</span></div>
+        <div class="prow"><span>Net worth (FY24-25, audited)</span><span>₹96.55 Cr</span></div>
+        <div class="prow"><span>Paid-up share capital</span><span>₹8.14 Cr</span></div>
+        <div class="prow"><span>Bank solvency</span><span>₹79 Cr (Yes ₹49 + Kotak ₹30)</span></div>
+      </div>
+      <div class="pgrp">
+        <h4>Past performance</h4>
+        <div class="prow"><span>Peak tonnage, 1 window</span><span>21.95 lakh MT / 12 mo</span></div>
+        <div class="prow"><span>Client (largest)</span><span>RKM Powergen Pvt Ltd</span></div>
+        <div class="prow"><span>Best single month</span><span>3.09 lakh MT</span></div>
+        <div class="prow"><span>Contracts executed</span><span>21</span></div>
+        <div class="prow"><span>Cargo / mode</span><span>Coal · RCR (road-cum-rail)</span></div>
+        <div class="prow"><span>Certificates</span><span>Client-issued</span></div>
+      </div>
+      <div class="pgrp">
+        <h4>Registration &amp; legal</h4>
+        <div class="prow"><span>GST</span><span>22AAECV8176B1ZG</span></div>
+        <div class="prow"><span>Status</span><span>MSME · Class-I local supplier</span></div>
+        <div class="prow"><span>PAN / EPF / ESI</span><span>Active</span></div>
+        <div class="prow"><span>Blacklisting</span><span>None</span></div>
+        <div class="ptags">
+          <span class="b">GeM enlisted</span><span class="b">CIL</span>
+          <span class="b">NTPC</span><span class="b">NALCO</span>
+        </div>
+      </div>
+      <div class="pgrp">
+        <h4>Operational footprint</h4>
+        <div class="prow"><span>Base / siding</span><span>VWLR siding, Kharsia</span></div>
+        <div class="prow"><span>Delivery reach</span><span>Raigarh 25 km · Bilaspur 107 km</span></div>
+        <div class="prow"><span>Source lift</span><span>MCL Ib Valley 100 km · SECL Korba 125 km</span></div>
+        <div class="prow"><span>Fleet (owned)</span><span>103 trailer/hywa · 11 poclain · 10 loaders</span></div>
+      </div>
+      <div class="pgrp">
+        <h4>Appetite</h4>
+        <div class="prow"><span>Value floor (Big filter)</span><span>₹250 Cr</span></div>
+        <div class="prow"><span>PBG capacity (5%)</span><span>₹8 Cr → backs ~₹160 Cr</span></div>
+        <div class="prow"><span>Preferred buyers</span><span>22 (NTPC, NALCO, SECL, MCL, Adani, Tata, JSW…)</span></div>
+      </div>
+    </div>
+  </details>
+</div>
+
 <footer>
   Live from your VWLR tender database · refreshes on open.<br/>
-  “Relevant” = clears eligibility + your ₹250 Cr value floor. ★ = preferred buyer.<br/>
+  “Relevant” = everything you qualify for · “Big ₹250Cr+” = your floor · ★ = preferred buyer.<br/>
   Add to Home Screen for a one-tap app — no install needed.
 </footer>
 
@@ -221,18 +288,21 @@ function fmtDate(d){
 }
 
 /* ---------- render ---------- */
-// Appetite = passes eligibility AND clears your ₹250 Cr value floor (Q25).
-// Tenders with unknown value get the benefit of the doubt.
-const isAppetite = t => assess(t).relevant && meetsFloor(t);
+// Relevant = passes eligibility (or no PQC published) — shows everything you
+// might bid. "Big" additionally requires clearing your ₹250 Cr floor (Q25);
+// unknown-value tenders get the benefit of the doubt.
+const isRelevant = t => assess(t).relevant;
+const isBig = t => isRelevant(t) && meetsFloor(t);
 function passesFilter(t){
-  if(filter==="relevant") return isAppetite(t);
+  if(filter==="relevant") return isRelevant(t);
+  if(filter==="big") return isBig(t);
   if(filter==="live") return t.status==="live";
   if(filter==="hearted") return !!t.hearted;
   return true;
 }
 function render(){
   const liveNow=TENDERS.filter(t=>t.status==="live");
-  document.getElementById("sRelevant").textContent=TENDERS.filter(isAppetite).length;
+  document.getElementById("sRelevant").textContent=TENDERS.filter(isRelevant).length;
   document.getElementById("sLive").textContent=liveNow.length;
   const upcoming=liveNow.map(t=>daysLeft(t.deadline)).filter(d=>d!=null&&d>=0).sort((a,b)=>a-b);
   document.getElementById("sNext").textContent = upcoming.length? upcoming[0]+"d" : "—";
