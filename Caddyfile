@@ -1,0 +1,7 @@
+# Caddy reverse proxy with automatic HTTPS for Shares CFO.
+# $DOMAIN comes from the .env file (e.g. yourname.duckdns.org). Caddy fetches and
+# renews a free Let's Encrypt certificate automatically.
+
+{$DOMAIN} {
+	reverse_proxy sharescfo:8000
+}

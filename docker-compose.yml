@@ -1,0 +1,43 @@
+# Shares CFO — VPS deployment with automatic HTTPS.
+# Caddy terminates TLS (free Let's Encrypt cert for $DOMAIN) and proxies to the
+# read-only app. Run from the repo root on your VPS:  docker compose up -d
+#
+# Requires a .env file next to this (gitignored) containing at least:
+#   DOMAIN=yourname.duckdns.org
+#   HDFC_HDFC1_API_KEY=...
+#   HDFC_HDFC1_API_SECRET=...
+#   HDFC_BASE_URL=https://developer.hdfcsec.com/oapi/v1
+#   CFO_API_TOKEN=<long random string>
+#   CFO_ACCOUNTS=HDFC1
+
+services:
+  sharescfo:
+    build:
+      context: .
+      dockerfile: Dockerfile.sharescfo
+    restart: always
+    environment:
+      - PORT=8000
+    env_file:
+      - .env
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - sharescfo
+
+volumes:
+  caddy_data:
+  caddy_config:
