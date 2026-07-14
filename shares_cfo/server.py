@@ -351,6 +351,25 @@ async def hdfc_callback(
     )
 
 
+@app.get("/backtest/{ticker}")
+async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
+                   token: str | None = Query(default=None)) -> dict:
+    """Backtest a rule on an NSE symbol, e.g. /backtest/RELIANCE?strategy=dma_cross.
+    Strategies: dma_cross | price_above_200dma | rsi_meanrev. Free (yfinance)."""
+    _check_token(request, token)
+    from .analysis import backtest as bt
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    if strategy not in bt.STRATEGIES:
+        raise HTTPException(status_code=400, detail=f"strategy must be one of {list(bt.STRATEGIES)}")
+    try:
+        data = get_ohlcv(ticker, period="5y")
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    result = bt.run(data["closes"], strategy)
+    return {"ticker": ticker.upper(), "source": data["source"], "confidence": data["confidence"], **result}
+
+
 def main() -> None:
     import os
     import uvicorn
