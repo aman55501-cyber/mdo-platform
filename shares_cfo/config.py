@@ -33,10 +33,23 @@ DEFAULT_USER_AGENT = "shares-cfo/1.0"
 # Client codes + human labels (labels are cosmetic — the API keys on client_code).
 # 4016900 = Aman's PERSONAL HDFC account (confirmed). Aditi Investments is the
 # Angel One account (A1504046), added in Phase 3.
-DEFAULT_CLIENT_CODES = {"HDFC1": "4016900", "HDFC2": "553A001", "ANGEL1": "A1504046"}
+# Real client/customer codes for the accounts Aman manages.
+# Note: HDFC5 in the family list is actually an Angel One account -> ANGEL1.
+DEFAULT_CLIENT_CODES = {
+    "HDFC1": "4016900",     # Aman (personal)
+    "HDFC2": "189737306",   # Sudha
+    "HDFC3": "190837559",   # Ashok
+    "HDFC4": "53612658",    # Aditi
+    "HDFC6": "178601202",   # Jahnavi
+    "ANGEL1": "288924176",  # Aditi Investment (Angel One)
+}
 ACCOUNT_LABELS = {
     "HDFC1": "Aman (personal)",
-    "ANGEL1": "Aditi Investments",
+    "HDFC2": "Sudha",
+    "HDFC3": "Ashok",
+    "HDFC4": "Aditi",
+    "HDFC6": "Jahnavi",
+    "ANGEL1": "Aditi Investment",
 }
 
 
