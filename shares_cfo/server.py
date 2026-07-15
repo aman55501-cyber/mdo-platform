@@ -390,6 +390,31 @@ async def hdfc_callback(
     )
 
 
+@app.get("/alerts")
+async def alerts(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Current alerts on the live book (🔴/🟡/🟢), most severe first."""
+    _check_token(request, token)
+    from .analysis import alerts as alerts_mod
+    book = await _consolidated()
+    items = alerts_mod.evaluate(book)
+    counts = {s: sum(1 for a in items if a["severity"] == s) for s in ("🔴", "🟡", "🟢")}
+    return {"as_of": book["as_of"], "counts": counts, "alerts": items}
+
+
+@app.get("/alerts/push")
+async def alerts_push(request: Request, token: str | None = Query(default=None)) -> dict:
+    """New critical alerts to actually push (max 5, 72h cooldown). App polls this."""
+    _check_token(request, token)
+    import time
+    from .analysis import alert_state
+    from .analysis import alerts as alerts_mod
+    book = await _consolidated()
+    now = time.time()
+    pushable = alert_state.new_pushable(alerts_mod.evaluate(book), now)
+    alert_state.mark_pushed(pushable, now)
+    return {"push": pushable}
+
+
 @app.get("/exposure")
 async def exposure(request: Request, hedge: float = 0.5, beta: float = 1.0,
                    token: str | None = Query(default=None)) -> dict:
