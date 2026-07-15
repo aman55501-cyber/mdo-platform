@@ -449,6 +449,52 @@ async def exposure(request: Request, hedge: float = 0.5, beta: float = 1.0,
     }
 
 
+@app.get("/fundamentals/{ticker}")
+async def fundamentals(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
+    """Fundamentals for a symbol (yfinance free + Screener CSV if exported)."""
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    return fun.get(ticker)
+
+
+@app.get("/idea/{ticker}")
+async def idea(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
+    """Technicals + fundamentals + where they agree/disagree, for one symbol."""
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    from .analysis import technicals as tech
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+    try:
+        data = get_ohlcv(ticker)
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    t = tech.analyze(data["closes"], data["volumes"])
+    f = fun.get(ticker)
+    return {"ticker": ticker.upper(), "technicals": t, "fundamentals": f, "verdict": fun.combine(t, f)}
+
+
+@app.get("/watchlist")
+async def watchlist(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Scan the watchlist: technical + fundamental read + conflict flag, per name."""
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    from .analysis import technicals as tech
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+    from .sectors import DEFAULT_WATCHLIST
+    rows = []
+    for sym in DEFAULT_WATCHLIST:
+        try:
+            data = get_ohlcv(sym)
+            t = tech.analyze(data["closes"], data["volumes"])
+            f = fun.get(sym)
+            rows.append({"ticker": sym, "last_price": t.get("last_price"),
+                         "dma_signal": t.get("dma_signal"), "rsi14": t.get("rsi14"),
+                         "verdict": fun.combine(t, f), "confidence": f.get("confidence")})
+        except PriceDataUnavailable:
+            rows.append({"ticker": sym, "error": "no price data"})
+    return {"watchlist": rows}
+
+
 @app.get("/backtest/{ticker}")
 async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
                    token: str | None = Query(default=None)) -> dict:
