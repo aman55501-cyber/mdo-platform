@@ -28,6 +28,7 @@ from .exceptions import ConfigError
 #   - base URL includes /oapi/v1
 #   - a User-Agent header is MANDATORY on every call
 DEFAULT_BASE_URL = "https://developer.hdfcsec.com/oapi/v1"
+DEFAULT_ANGEL_BASE_URL = "https://apiconnect.angelbroking.com"
 DEFAULT_USER_AGENT = "shares-cfo/1.0"
 
 # Client codes + human labels (labels are cosmetic — the API keys on client_code).
@@ -88,6 +89,9 @@ class AccountConfig:
     static_ip: str = ""
     base_url: str = DEFAULT_BASE_URL
     label: str = ""
+    # Angel-only (SmartAPI logs in server-side with a TOTP secret + MPIN)
+    totp_secret: str = ""
+    mpin: str = ""
 
     @property
     def env_prefix(self) -> str:
@@ -105,11 +109,19 @@ def load_account(creds_key: str) -> AccountConfig:
 
     api_key = get("API_KEY")
     api_secret = get("API_SECRET")
-    if not api_key or not api_secret:
+    # Angel logs in with client_code + MPIN + TOTP (no api_secret); HDFC needs both.
+    if broker == "hdfc" and (not api_key or not api_secret):
         raise ConfigError(
             f"Missing {prefix}API_KEY and/or {prefix}API_SECRET in {ENV_PATH.name}. "
             f"Add them to your .env and try again."
         )
+    if broker == "angel" and not api_key:
+        raise ConfigError(f"Missing {prefix}API_KEY in {ENV_PATH.name}.")
+
+    if broker == "angel":
+        base_url = os.environ.get("ANGEL_BASE_URL", DEFAULT_ANGEL_BASE_URL).strip()
+    else:
+        base_url = os.environ.get("HDFC_BASE_URL", DEFAULT_BASE_URL).strip()
 
     return AccountConfig(
         creds_key=creds_key,
@@ -120,8 +132,10 @@ def load_account(creds_key: str) -> AccountConfig:
         redirect_url=get("REDIRECT_URL", "http://localhost:8080/callback"),
         client_code=get("CLIENT_CODE", DEFAULT_CLIENT_CODES.get(creds_key, "")),
         static_ip=get("STATIC_IP"),
-        base_url=os.environ.get("HDFC_BASE_URL", DEFAULT_BASE_URL).strip(),
+        base_url=base_url,
         label=ACCOUNT_LABELS.get(creds_key, creds_key),
+        totp_secret=get("TOTP_SECRET"),
+        mpin=get("MPIN") or get("PIN") or get("PASSWORD"),
     )
 
 

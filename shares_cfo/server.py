@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.responses import RedirectResponse
 
 from . import token_store
+from .brokers import make_adapter
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
 from .config import get_accounts, get_api_token, load_account
 from .exceptions import SharesCFOError, TokenExpiredError
@@ -141,7 +142,7 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
         account.access_token = stored
 
     book = AccountBook(creds_key=creds_key, client_code=account.client_code, label=account.label)
-    adapter = HdfcAdapter(account)
+    adapter = make_adapter(account)  # HDFC or Angel by account.broker
     try:
         # Holdings is the core of the book. A token-expiry here degrades everything;
         # any other holdings failure degrades the account.

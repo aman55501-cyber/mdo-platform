@@ -1,0 +1,171 @@
+"""Angel One (SmartAPI) read-only adapter.
+
+Same interface as HdfcAdapter (get_holdings/get_positions/get_funds/fetch_ltp/close)
+so it drops straight into the consolidated book. Angel logs in server-side with a
+TOTP secret + MPIN, so no phone 2FA — the adapter arms itself on first use and
+caches the JWT in the token store for the day.
+
+Angel requires the calling IP to be a registered STATIC IP (since Apr 2026). On the
+VPS that's your server's public IP — register it in the Angel developer console and
+set ANGEL_PUBLIC_IP to it.
+
+No order code here. This adapter cannot place a trade.
+"""
+
+from __future__ import annotations
+
+import os
+
+import httpx
+
+from ..config import AccountConfig
+from ..exceptions import AuthenticationError, BrokerError, TokenExpiredError
+from ..normalise import to_float
+from .. import token_store
+from .hdfc import _digits, _first
+
+LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
+HOLDINGS = "/rest/secure/angelbroking/portfolio/v1/getAllHolding"
+POSITIONS = "/rest/secure/angelbroking/order/v1/getPosition"
+RMS = "/rest/secure/angelbroking/user/v1/getRMS"
+
+
+def _headers(account: AccountConfig, jwt: str | None = None) -> dict:
+    h = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-UserType": "USER",
+        "X-SourceID": "WEB",
+        "X-ClientLocalIP": os.environ.get("ANGEL_LOCAL_IP", "127.0.0.1"),
+        "X-ClientPublicIP": os.environ.get("ANGEL_PUBLIC_IP", "127.0.0.1"),
+        "X-MACAddress": os.environ.get("ANGEL_MAC", "AA:BB:CC:DD:EE:FF"),
+        "X-PrivateKey": account.api_key,
+    }
+    if jwt:
+        h["Authorization"] = f"Bearer {jwt}"
+    return h
+
+
+class AngelAdapter:
+    def __init__(self, account: AccountConfig) -> None:
+        self._acct = account
+        self.last_holdings_excluded = 0  # interface parity with HdfcAdapter
+        self._http = httpx.AsyncClient(base_url=account.base_url, timeout=30.0)
+
+    async def _ensure_login(self) -> str:
+        jwt = token_store.get_token(self._acct.creds_key)
+        if jwt:
+            return jwt
+        try:
+            import pyotp
+        except ImportError as exc:  # pragma: no cover
+            raise AuthenticationError("pyotp not installed (pip install pyotp).") from exc
+        if not (self._acct.totp_secret and self._acct.mpin):
+            raise TokenExpiredError(
+                self._acct.creds_key,
+                f"Angel {self._acct.creds_key} needs MPIN + TOTP_SECRET in .env.",
+            )
+        totp = pyotp.TOTP(self._acct.totp_secret).now()
+        body = {"clientcode": self._acct.client_code, "password": self._acct.mpin, "totp": totp}
+        try:
+            resp = await self._http.post(LOGIN, headers=_headers(self._acct), json=body)
+        except httpx.HTTPError as exc:
+            raise AuthenticationError(f"Angel login network error: {exc}") from exc
+        if resp.status_code >= 400:
+            raise AuthenticationError(f"Angel login failed [HTTP {resp.status_code}]: {resp.text[:300]}")
+        payload = resp.json()
+        data = payload.get("data") or {}
+        jwt = data.get("jwtToken") or data.get("jwt_token")
+        if not jwt:
+            raise AuthenticationError(f"Angel login: no jwtToken. Body: {resp.text[:300]}")
+        token_store.set_token(self._acct.creds_key, jwt)
+        return jwt
+
+    async def _get(self, path: str) -> dict:
+        jwt = await self._ensure_login()
+        try:
+            resp = await self._http.get(path, headers=_headers(self._acct, jwt))
+        except httpx.HTTPError as exc:
+            raise BrokerError(f"Angel GET {path} error: {exc}") from exc
+        if resp.status_code == 401:
+            token_store.set_token(self._acct.creds_key, "")  # force re-login next time
+            raise TokenExpiredError(self._acct.creds_key)
+        if resp.status_code >= 400:
+            raise BrokerError(f"Angel GET {path} failed [HTTP {resp.status_code}]: {resp.text[:200]}")
+        return resp.json()
+
+    @staticmethod
+    def _rows(data: dict) -> list[dict]:
+        d = data.get("data", data)
+        if isinstance(d, dict):
+            return d.get("holdings") or d.get("data") or []
+        return d if isinstance(d, list) else []
+
+    async def get_holdings(self) -> list[dict]:
+        data = await self._get(HOLDINGS)
+        out = []
+        for h in self._rows(data):
+            qty = int(to_float(_first(h, "quantity", "qty")) or 0)
+            avg = to_float(_first(h, "averageprice", "avgprice", "average_price")) or 0.0
+            last = to_float(_first(h, "ltp", "lastprice", "close")) or 0.0
+            prev = to_float(_first(h, "close", "previousclose")) or 0.0
+            out.append({
+                "ticker": _first(h, "tradingsymbol", "symbolname", "symbol", default=""),
+                "exchange": _first(h, "exchange", default="NSE"),
+                "quantity": qty,
+                "average_price": avg,
+                "last_price": last,
+                "pnl": to_float(_first(h, "profitandloss", "pnl")) or round(qty * (last - avg), 2),
+                "sector": "",  # Angel doesn't return sector; sector map fills it in
+                "day_change": round(qty * (last - prev), 2) if prev else 0.0,
+                "day_change_pct": to_float(_first(h, "pnlpercentage")) or 0.0,
+                "isin": _first(h, "isin", default=""),
+                "security_id": str(_first(h, "symboltoken", "token", default="")),
+                "token": _digits(_first(h, "symboltoken", "token", default="")),
+            })
+        return out
+
+    async def get_positions(self) -> list[dict]:
+        data = await self._get(POSITIONS)
+        rows = data.get("data") or []
+        if not isinstance(rows, list):
+            rows = []
+        out = []
+        for p in rows:
+            net = int(to_float(_first(p, "netqty", "netQty", "quantity")) or 0)
+            if net == 0:
+                continue
+            avg = to_float(_first(p, "buyavgprice", "netprice", "avgnetprice")) if net > 0 else to_float(_first(p, "sellavgprice", "netprice"))
+            out.append({
+                "ticker": _first(p, "tradingsymbol", "symbolname", default=""),
+                "exchange": _first(p, "exchange", default="NFO"),
+                "product_type": _first(p, "producttype", "product", default="NRML"),
+                "quantity": net,
+                "average_price": to_float(avg) or 0.0,
+                "last_price": to_float(_first(p, "ltp", "lastprice")) or 0.0,
+                "pnl": to_float(_first(p, "pnl", "realised", "unrealised")) or 0.0,
+                "day_pnl": to_float(_first(p, "unrealised", "m2m")) or 0.0,
+                "token": _digits(_first(p, "symboltoken", "token", default="")),
+            })
+        return out
+
+    async def get_funds(self) -> dict:
+        data = await self._get(RMS)
+        f = data.get("data") or {}
+        if not isinstance(f, dict):
+            f = {}
+        avail = to_float(_first(f, "availablecash", "availableCash", "net")) or 0.0
+        return {
+            "available": avail,
+            "used_margin": to_float(_first(f, "utiliseddebits", "utilisedDebits")) or 0.0,
+            "total": to_float(_first(f, "net")) or 0.0,
+            "cash": to_float(_first(f, "availablecash", "availableCash")) or 0.0,
+            "ledger_balance": to_float(_first(f, "net")) or 0.0,
+        }
+
+    async def fetch_ltp(self, instruments: list[dict]) -> dict:
+        # Angel holdings/positions already carry ltp; live LTP feed can come later.
+        return {}
+
+    async def close(self) -> None:
+        await self._http.aclose()
