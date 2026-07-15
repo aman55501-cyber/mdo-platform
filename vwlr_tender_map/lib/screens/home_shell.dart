@@ -5,6 +5,7 @@ import '../services/eligibility.dart';
 import '../services/notifications.dart';
 import '../services/tender_repository.dart';
 import 'dashboard_screen.dart';
+import 'eligibility_screen.dart';
 import 'list_screen.dart';
 import 'map_screen.dart';
 import 'tender_detail_screen.dart';
@@ -114,7 +115,7 @@ class _HomeShellState extends State<HomeShell> {
       );
     }
 
-    final titles = ['Map', 'Tenders', 'Dashboard'];
+    final titles = ['Map', 'Tenders', 'Eligibility', 'Dashboard'];
     final pages = [
       MapScreen(org: _org!, tenders: _tenders, onOpen: _open),
       ListScreen(
@@ -123,6 +124,7 @@ class _HomeShellState extends State<HomeShell> {
           relevantIds: _relevantIds,
           onOpen: _open,
           onHeart: _heart),
+      EligibilityScreen(org: _org!, tenders: _tenders, onOpen: _open),
       DashboardScreen(
           org: _org!, tenders: _tenders, eligibleIds: _eligibleIds),
     ];
@@ -142,6 +144,8 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(icon: Icon(Icons.map_outlined), label: 'Map'),
           NavigationDestination(
               icon: Icon(Icons.list_alt_outlined), label: 'Tenders'),
+          NavigationDestination(
+              icon: Icon(Icons.fact_check_outlined), label: 'Eligibility'),
           NavigationDestination(
               icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
         ],

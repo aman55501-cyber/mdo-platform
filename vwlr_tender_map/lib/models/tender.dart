@@ -39,6 +39,9 @@ class Tender {
   final num? qrExperienceMt;
   final int? qrExperienceWindowMonths;
   final int? qrNetworthPct;
+  final num? qrNetworthInr;
+  final num? qrExperienceValueInr;
+  final num? qrSolvencyInr;
   final int? relevanceScore;
   final String? eligibilityNotes;
   final String? pdfUrl;
@@ -63,6 +66,9 @@ class Tender {
     this.qrExperienceMt,
     this.qrExperienceWindowMonths,
     this.qrNetworthPct,
+    this.qrNetworthInr,
+    this.qrExperienceValueInr,
+    this.qrSolvencyInr,
     this.relevanceScore,
     this.eligibilityNotes,
     this.pdfUrl,
@@ -91,6 +97,9 @@ class Tender {
       qrExperienceMt: _n(m['qr_experience_mt']),
       qrExperienceWindowMonths: _i(m['qr_experience_window_months']),
       qrNetworthPct: _i(m['qr_networth_pct']),
+      qrNetworthInr: _n(m['qr_networth_inr']),
+      qrExperienceValueInr: _n(m['qr_experience_value_inr']),
+      qrSolvencyInr: _n(m['qr_solvency_inr']),
       relevanceScore: _i(m['relevance_score']),
       eligibilityNotes: m['eligibility_notes'],
       pdfUrl: m['pdf_url'],
