@@ -36,3 +36,6 @@ Thumbs.db
 
 # Execution audit log
 shares_cfo/data/execution_audit.jsonl
+
+# Generated state (snapshots + audit) — persisted via Docker volume
+shares_cfo/data/state/

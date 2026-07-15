@@ -390,6 +390,24 @@ async def hdfc_callback(
     )
 
 
+@app.get("/reconcile")
+async def reconcile(request: Request, cadence: str = "daily",
+                    token: str | None = Query(default=None)) -> dict:
+    """Diff today's book vs the last snapshot: new trades, qty & cash changes."""
+    _check_token(request, token)
+    from . import reconcile as recon
+    book = await _consolidated()
+    return recon.run_daily(book)
+
+
+@app.get("/events/{ticker}")
+async def events(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
+    """Corporate actions + earnings date + headlines for a symbol (free)."""
+    _check_token(request, token)
+    from .analysis import events as ev
+    return ev.get(ticker)
+
+
 @app.get("/alerts")
 async def alerts(request: Request, token: str | None = Query(default=None)) -> dict:
     """Current alerts on the live book (🔴/🟡/🟢), most severe first."""

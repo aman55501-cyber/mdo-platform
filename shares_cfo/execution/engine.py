@@ -18,7 +18,7 @@ from . import guardrails
 from .models import OrderRequest
 
 log = logging.getLogger("shares_cfo.execution")
-_AUDIT = Path(__file__).resolve().parent.parent / "data" / "execution_audit.jsonl"
+_AUDIT = Path(__file__).resolve().parent.parent / "data" / "state" / "execution_audit.jsonl"
 
 # In-process state (resets on restart — fine for same-day trading).
 _STATE = {"kill": False, "orders_today": 0}

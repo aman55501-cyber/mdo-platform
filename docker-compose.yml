@@ -22,6 +22,9 @@ services:
       - .env
     expose:
       - "8000"
+    volumes:
+      # persist snapshots + audit log across rebuilds (sector map stays baked in image)
+      - sharescfo_state:/app/shares_cfo/data/state
 
   caddy:
     image: caddy:2
@@ -41,3 +44,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  sharescfo_state:
