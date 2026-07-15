@@ -33,3 +33,6 @@ mdo-app/dist-electron/
 # OS
 .DS_Store
 Thumbs.db
+
+# Execution audit log
+shares_cfo/data/execution_audit.jsonl

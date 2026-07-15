@@ -139,6 +139,46 @@ def load_account(creds_key: str) -> AccountConfig:
     )
 
 
+@dataclass
+class TradingConfig:
+    """Execution guardrails. Everything defaults to the SAFE value (off / zero)."""
+    enabled: bool = False               # master switch (CFO_TRADING_ENABLED)
+    max_qty_per_order: int = 0          # 0 = block (must be set)
+    max_value_per_order: float = 0.0    # 0 = block
+    max_orders_per_day: int = 0         # 0 = block
+    daily_loss_halt: float = 0.0        # ₹; 0 = no halt configured
+    allowed_underlyings: tuple[str, ...] = ()  # empty = block all (must whitelist)
+
+
+def get_trading_config() -> TradingConfig:
+    def _b(n: str) -> bool:
+        return os.environ.get(n, "").strip().lower() in ("1", "true", "yes", "on")
+
+    def _i(n: str) -> int:
+        try:
+            return int(os.environ.get(n, "0") or 0)
+        except ValueError:
+            return 0
+
+    def _f(n: str) -> float:
+        try:
+            return float(os.environ.get(n, "0") or 0)
+        except ValueError:
+            return 0.0
+
+    allowed = tuple(
+        x.strip().upper() for x in os.environ.get("CFO_ALLOWED_UNDERLYINGS", "").split(",") if x.strip()
+    )
+    return TradingConfig(
+        enabled=_b("CFO_TRADING_ENABLED"),
+        max_qty_per_order=_i("CFO_MAX_QTY_PER_ORDER"),
+        max_value_per_order=_f("CFO_MAX_VALUE_PER_ORDER"),
+        max_orders_per_day=_i("CFO_MAX_ORDERS_PER_DAY"),
+        daily_loss_halt=_f("CFO_DAILY_LOSS_HALT"),
+        allowed_underlyings=allowed,
+    )
+
+
 def get_user_agent() -> str:
     return os.environ.get("SHARES_CFO_USER_AGENT", DEFAULT_USER_AGENT).strip()
 

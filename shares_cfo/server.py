@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from fastapi.responses import RedirectResponse
@@ -441,6 +441,67 @@ async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
         raise HTTPException(status_code=503, detail=str(exc))
     result = bt.run(data["closes"], strategy)
     return {"ticker": ticker.upper(), "source": data["source"], "confidence": data["confidence"], **result}
+
+
+_ORDER_FIELDS = ("creds_key", "exchange", "symbol", "token", "side", "quantity",
+                 "product", "order_type", "price", "trigger_price", "underlying")
+
+
+async def _day_pnl() -> float:
+    """Rough intraday P&L across the book, for the daily-loss halt."""
+    try:
+        book = await _consolidated()
+        return float(book.get("positions_pnl", 0.0)) + float(book.get("unrealised_pnl", 0.0))
+    except Exception:
+        return 0.0
+
+
+@app.get("/execution/status")
+async def execution_status(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from .execution import engine
+    return engine.status()
+
+
+@app.post("/execution/propose")
+async def execution_propose(request: Request, order: dict = Body(...),
+                            token: str | None = Query(default=None)) -> dict:
+    """Validate an order against all guardrails and return a confirm summary. Sends nothing."""
+    _check_token(request, token)
+    from .execution import engine
+    from .execution.guardrails import GuardrailError
+    from .execution.models import OrderRequest
+    try:
+        o = OrderRequest(**{k: order[k] for k in _ORDER_FIELDS if k in order})
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad order fields: {exc}")
+    try:
+        return engine.propose(o, await _day_pnl())
+    except GuardrailError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.post("/execution/confirm")
+async def execution_confirm(request: Request, payload: dict = Body(...),
+                            token: str | None = Query(default=None)) -> dict:
+    """Confirm and place a previously-proposed order (blocked until the send is wired)."""
+    _check_token(request, token)
+    from .execution import engine
+    from .execution.guardrails import GuardrailError
+    pid, code = payload.get("proposal_id", ""), payload.get("confirm_code", "")
+    try:
+        return engine.confirm(pid, code, await _day_pnl())
+    except GuardrailError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc))
+
+
+@app.post("/execution/kill")
+async def execution_kill(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from .execution import engine
+    return engine.engage_kill()
 
 
 def main() -> None:
