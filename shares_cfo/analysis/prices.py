@@ -47,3 +47,18 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
         "source": "yfinance",
         "confidence": "low",  # free feed; upgrade to EODHD for high-confidence
     }
+
+
+def get_spot(yf_symbol: str) -> float:
+    """Latest price for a raw Yahoo symbol (e.g. '^NSEI' for NIFTY)."""
+    try:
+        import yfinance as yf
+    except ImportError as exc:  # pragma: no cover
+        raise PriceDataUnavailable("yfinance not installed (pip install yfinance).") from exc
+    try:
+        df = yf.download(yf_symbol, period="5d", progress=False, auto_adjust=True)
+    except Exception as exc:
+        raise PriceDataUnavailable(f"spot fetch failed for {yf_symbol}: {exc}") from exc
+    if df is None or df.empty:
+        raise PriceDataUnavailable(f"no spot data for {yf_symbol}")
+    return float(df["Close"].dropna().iloc[-1])

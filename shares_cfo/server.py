@@ -351,6 +351,40 @@ async def hdfc_callback(
     )
 
 
+@app.get("/exposure")
+async def exposure(request: Request, hedge: float = 0.5, beta: float = 1.0,
+                   token: str | None = Query(default=None)) -> dict:
+    """Net market exposure across ALL accounts + a NIFTY-futures hedge suggestion.
+    `hedge` = fraction of equity to hedge (0.5 = 50%); `beta` = portfolio beta."""
+    _check_token(request, token)
+    from .analysis import exposure as expo
+    from .analysis.prices import PriceDataUnavailable, get_spot
+
+    book = await _consolidated()
+    positions = [p for acc in book["accounts"] for p in acc.get("positions", [])]
+    net = expo.net_exposure(book["holdings_value"], positions)
+
+    hedge_block: dict = {}
+    try:
+        nifty = get_spot("^NSEI")
+        hedge_block = {
+            f"{int(f*100)}pct": expo.hedge_with_nifty_futures(book["holdings_value"], nifty, f, beta)
+            for f in (0.25, hedge, 1.0)
+        }
+    except PriceDataUnavailable as exc:
+        hedge_block = {"error": f"NIFTY spot unavailable ({exc})"}
+
+    return {
+        "as_of": book["as_of"],
+        "accounts": book["book_health"]["accounts"],
+        "net_worth": book["net_worth"],
+        "net_exposure": net,
+        "hedge_suggestions": hedge_block,
+        "note": "Advisory only. Assumes beta≈1 and premium-notional for options; "
+                "delta-aware exposure comes later. You execute any hedge yourself.",
+    }
+
+
 @app.get("/backtest/{ticker}")
 async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
                    token: str | None = Query(default=None)) -> dict:
