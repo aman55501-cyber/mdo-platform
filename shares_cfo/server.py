@@ -316,6 +316,42 @@ async def analysis(request: Request, ticker: str, token: str | None = Query(defa
     }
 
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_hub(request: Request, token: str | None = Query(default=None)) -> str:
+    """One page listing every account + its login status, with a Log-in link each."""
+    _check_token(request, token)
+    t = token or ""
+    armed = set(token_store.armed_accounts())
+    rows = ""
+    for key in get_accounts():
+        try:
+            acc = load_account(key)
+            label, code, broker = acc.label, acc.client_code, acc.broker
+        except SharesCFOError:
+            label, code, broker = key, "", "hdfc"
+        on = key in armed
+        badge = "#3fb950" if on else "#8b949e"
+        status = "logged in" if on else "not logged in"
+        if broker == "hdfc":
+            link = f"<a href='/hdfc/login?key={key}&token={t}' style='color:#58a6ff'>Log in →</a>"
+        else:
+            link = "<span style='color:#8b949e'>Angel (separate)</span>"
+        rows += (
+            f"<div style='display:flex;justify-content:space-between;align-items:center;"
+            f"padding:12px;border-bottom:1px solid #2a3038'>"
+            f"<div><div>{label}</div><div style='color:#8b949e;font-size:12px'>{key} · {code}</div></div>"
+            f"<div style='text-align:right'><div style='color:{badge};font-size:12px'>● {status}</div>{link}</div></div>"
+        )
+    return (
+        "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<div style='font-family:sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;padding:16px'>"
+        "<h2>Shares CFO — morning login</h2>"
+        "<p style='color:#8b949e'>Tap Log in for each account (2FA on that holder's phone). Same-day tokens.</p>"
+        f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:12px'>{rows}</div>"
+        f"<p style='margin-top:16px'><a href='/?token={t}' style='color:#58a6ff'>→ Open dashboard</a></p></div>"
+    )
+
+
 @app.get("/hdfc/login")
 async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Query(default=None)):
     """Phone login: redirects you to HDFC's 2FA. After you approve, HDFC calls
