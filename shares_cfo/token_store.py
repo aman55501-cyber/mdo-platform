@@ -10,6 +10,21 @@ process restart just needs another login.
 from __future__ import annotations
 
 _TOKENS: dict[str, str] = {}
+# Which account a login is currently in progress for (HDFC's callback can't carry
+# our state, so /hdfc/login records it and /hdfc/callback reads it).
+_PENDING: dict[str, str] = {"key": "HDFC1"}
+
+
+def set_pending(creds_key: str) -> None:
+    _PENDING["key"] = creds_key.upper()
+
+
+def get_pending() -> str:
+    return _PENDING["key"]
+
+
+def armed_accounts() -> list[str]:
+    return sorted(_TOKENS.keys())
 
 
 def set_token(creds_key: str, access_token: str) -> None:

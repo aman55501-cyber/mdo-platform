@@ -322,6 +322,7 @@ async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Q
     /hdfc/callback and the server arms itself — no PC needed. Protected by the token."""
     _check_token(request, token)
     account = load_account(key)
+    token_store.set_pending(key)  # remember which account this login is for
     return RedirectResponse(f"{account.base_url}/login?api_key={account.api_key}")
 
 
@@ -329,12 +330,13 @@ async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Q
 async def hdfc_callback(
     requestToken: str | None = Query(default=None),
     request_token: str | None = Query(default=None),
-    key: str = "HDFC1",
+    key: str | None = Query(default=None),
 ) -> str:
     """HDFC redirects here with the request token; we exchange it and arm the server."""
     rt = requestToken or request_token
     if not rt:
         return "<h3>No request token found in the callback URL.</h3>"
+    key = (key or token_store.get_pending()).upper()  # which account we're arming
     account = load_account(key)
     adapter = HdfcAdapter(account)
     try:
