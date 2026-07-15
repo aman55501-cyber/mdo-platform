@@ -39,6 +39,7 @@ class Tender {
   final num? qrExperienceMt;
   final int? qrExperienceWindowMonths;
   final int? qrNetworthPct;
+  final int? relevanceScore;
   final String? eligibilityNotes;
   final String? pdfUrl;
   final TenderStatus status;
@@ -62,6 +63,7 @@ class Tender {
     this.qrExperienceMt,
     this.qrExperienceWindowMonths,
     this.qrNetworthPct,
+    this.relevanceScore,
     this.eligibilityNotes,
     this.pdfUrl,
     this.status = TenderStatus.live,
@@ -89,6 +91,7 @@ class Tender {
       qrExperienceMt: _n(m['qr_experience_mt']),
       qrExperienceWindowMonths: _i(m['qr_experience_window_months']),
       qrNetworthPct: _i(m['qr_networth_pct']),
+      relevanceScore: _i(m['relevance_score']),
       eligibilityNotes: m['eligibility_notes'],
       pdfUrl: m['pdf_url'],
       status: statusFrom(m['status']),

@@ -25,18 +25,26 @@ class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _c;
   bool _showRadius = true;
 
-  double _hue(LocRole r) => switch (r) {
-        LocRole.base => BitmapDescriptor.hueAzure,
-        LocRole.mine => BitmapDescriptor.hueOrange,
-        LocRole.plant => BitmapDescriptor.hueViolet,
-        LocRole.siding => BitmapDescriptor.hueYellow,
-      };
+  // Markers are colour-coded by each tender's priority tier (relevance score),
+  // so the map reads "which of these is worth my time" at a glance.
+  double _tierHue(int? score) {
+    final s = score ?? 0;
+    if (s >= 90) return BitmapDescriptor.hueGreen; // core RCR / washery
+    if (s >= 80) return BitmapDescriptor.hueOrange; // rail-siding / rake
+    if (s >= 72) return BitmapDescriptor.hueYellow; // power-plant / CHP
+    return BitmapDescriptor.hueRose; // other coal transport
+  }
 
-  Color _routeColor(LocRole r) => switch (r) {
-        LocRole.plant => const Color(0xFF7B61FF),
-        LocRole.mine => const Color(0xFFD8871F),
-        _ => const Color(0xFF1F6FEB),
-      };
+  Color _tierColor(int? score) {
+    final s = score ?? 0;
+    if (s >= 90) return const Color(0xFF2E9B57);
+    if (s >= 80) return const Color(0xFFD8871F);
+    if (s >= 72) return const Color(0xFFC9A227);
+    return const Color(0xFFD5342B);
+  }
+
+  bool _onMap(Tender t) =>
+      t.status == TenderStatus.live || t.status == TenderStatus.bidding;
 
   bool get _hasMapsKey =>
       Config.googleMapsApiKey != 'PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY';
@@ -59,12 +67,16 @@ class _MapScreenState extends State<MapScreen> {
     final polylines = <Polyline>{};
 
     for (final t in widget.tenders) {
-      for (final l in t.locations) {
-        if (l.role == LocRole.base) continue;
+      if (!_onMap(t)) continue; // only live / bidding stay on the map
+      final hue = _tierHue(t.relevanceScore);
+      final col = _tierColor(t.relevanceScore);
+      final sites =
+          t.locations.where((l) => l.role != LocRole.base).toList();
+      for (final l in sites) {
         markers.add(Marker(
           markerId: MarkerId('${t.id}_${l.id}'),
           position: LatLng(l.lat, l.lng),
-          icon: BitmapDescriptor.defaultMarkerWithHue(_hue(l.role)),
+          icon: BitmapDescriptor.defaultMarkerWithHue(hue),
           infoWindow: InfoWindow(
             title: '${l.role.name.toUpperCase()} · ${l.name}',
             snippet:
@@ -72,11 +84,25 @@ class _MapScreenState extends State<MapScreen> {
             onTap: () => widget.onOpen(t),
           ),
         ));
+      }
+      // Haul route mine → plant in the tender's tier colour.
+      final mine = t.mines.isNotEmpty ? t.mines.first : null;
+      final plant = t.plant;
+      if (mine != null && plant != null) {
         polylines.add(Polyline(
-          polylineId: PolylineId('route_${t.id}_${l.id}'),
-          points: [base, LatLng(l.lat, l.lng)],
-          color: _routeColor(l.role).withValues(alpha: 0.55),
-          width: 3,
+          polylineId: PolylineId('haul_${t.id}'),
+          points: [LatLng(mine.lat, mine.lng), LatLng(plant.lat, plant.lng)],
+          color: col.withValues(alpha: 0.75),
+          width: 4,
+        ));
+      }
+      // Faint line from VWLR base to the site, for distance context.
+      if (sites.isNotEmpty) {
+        polylines.add(Polyline(
+          polylineId: PolylineId('reach_${t.id}'),
+          points: [base, LatLng(sites.first.lat, sites.first.lng)],
+          color: const Color(0xFF8A94A6).withValues(alpha: 0.28),
+          width: 2,
         ));
       }
     }
@@ -183,10 +209,12 @@ class _MapScreenState extends State<MapScreen> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Wrap(spacing: 14, runSpacing: 4, children: [
+        child: Wrap(spacing: 12, runSpacing: 4, children: [
           _Dot(c.brand, 'VWLR base'),
-          const _Dot(Color(0xFFD8871F), 'Mine'),
-          _Dot(c.violet, 'Plant'),
+          const _Dot(Color(0xFF2E9B57), 'Core RCR/washery'),
+          const _Dot(Color(0xFFD8871F), 'Rail-siding'),
+          const _Dot(Color(0xFFC9A227), 'Power-plant'),
+          const _Dot(Color(0xFFD5342B), 'Other'),
         ]),
       ),
     );
