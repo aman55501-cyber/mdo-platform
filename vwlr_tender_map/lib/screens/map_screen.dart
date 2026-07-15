@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -33,6 +34,22 @@ class _MapScreenState extends State<MapScreen> {
 
   static const Color _baseColor = Color(0xFF1F6FEB);
 
+  // Marker bitmap geometry: a circular pin up top, a name label pill below.
+  // Anchor sits on the circle centre so the pin points at the coordinate.
+  static const double _r = 32;
+  static const double _circleCY = 38; // 6 top pad + r
+  static const double _pillTop = 77; // 6 + 2r + 7 gap
+  static const double _labelH = 40;
+  static const double _totalH = 122; // pillTop + labelH + 5 bottom pad
+  static const Offset _pinAnchor = Offset(0.5, _circleCY / _totalH);
+
+  String _shortName(String n) {
+    var s = n;
+    final i = s.indexOf(' (');
+    if (i > 0) s = s.substring(0, i);
+    return s.length > 22 ? '${s.substring(0, 21)}…' : s;
+  }
+
   bool get _hasMapsKey =>
       Config.googleMapsApiKey != 'PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY';
 
@@ -67,7 +84,8 @@ class _MapScreenState extends State<MapScreen> {
       Marker(
         markerId: const MarkerId('base'),
         position: base,
-        icon: await _icon(_baseColor, Icons.home),
+        anchor: _pinAnchor,
+        icon: await _icon(_baseColor, Icons.home, 'VWLR base'),
         infoWindow: InfoWindow(
             title: '${widget.org.name} (${widget.org.railwayCode})',
             snippet: widget.org.address),
@@ -80,15 +98,30 @@ class _MapScreenState extends State<MapScreen> {
             t.status == TenderStatus.live || t.status == TenderStatus.bidding)
         .toList();
 
+    // Fan out pins that share the same district centroid so labels don't stack.
+    final coordCount = <String, int>{};
+    LatLng spread(double lat, double lng) {
+      final k = '${lat.toStringAsFixed(3)},${lng.toStringAsFixed(3)}';
+      final n = coordCount[k] ?? 0;
+      coordCount[k] = n + 1;
+      if (n == 0) return LatLng(lat, lng);
+      final ang = n * 2.399; // golden angle → even fan-out
+      return LatLng(lat + 0.05 * math.cos(ang), lng + 0.05 * math.sin(ang));
+    }
+
     for (var i = 0; i < live.length; i++) {
       final t = live[i];
       final color = _shade(i);
       final sites = t.locations.where((l) => l.role != LocRole.base).toList();
+      LatLng? firstPos;
       for (final l in sites) {
+        final pos = spread(l.lat, l.lng);
+        firstPos ??= pos;
         markers.add(Marker(
           markerId: MarkerId('${t.id}_${l.id}'),
-          position: LatLng(l.lat, l.lng),
-          icon: await _icon(color, _glyph(l.role)),
+          position: pos,
+          anchor: _pinAnchor,
+          icon: await _icon(color, _glyph(l.role), _shortName(l.name)),
           infoWindow: InfoWindow(
             title: '${l.role.name.toUpperCase()} · ${l.name}',
             snippet:
@@ -109,10 +142,10 @@ class _MapScreenState extends State<MapScreen> {
         ));
       }
       // Faint line from VWLR base to the site, for distance context.
-      if (sites.isNotEmpty) {
+      if (firstPos != null) {
         polylines.add(Polyline(
           polylineId: PolylineId('reach_${t.id}'),
-          points: [base, LatLng(sites.first.lat, sites.first.lng)],
+          points: [base, firstPos],
           color: color.withValues(alpha: 0.22),
           width: 2,
         ));
@@ -127,41 +160,74 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  // Draws a coloured circular pin with a white role glyph, cached by (colour, glyph).
-  Future<BitmapDescriptor> _icon(Color color, IconData glyph) async {
-    final key = '${color.value}_${glyph.codePoint}';
+  // Draws a coloured circular pin (white role glyph) with a small name label
+  // pill below it. Cached by (colour, glyph, label).
+  Future<BitmapDescriptor> _icon(
+      Color color, IconData glyph, String label) async {
+    final key = '${color.value}_${glyph.codePoint}_$label';
     final hit = _iconCache[key];
     if (hit != null) return hit;
 
-    const double s = 96;
-    const double r = 38;
-    const Offset ctr = Offset(48, 46);
+    final tpLabel = TextPainter(
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )
+      ..text = TextSpan(
+          text: label,
+          style: const TextStyle(
+              fontSize: 25,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF15233B)))
+      ..layout(maxWidth: 340);
+
+    final double w =
+        (2 * _r + 16) > (tpLabel.width + 22) ? (2 * _r + 16) : tpLabel.width + 22;
+    final double cx = w / 2;
+
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    canvas.drawCircle(const Offset(48, 49), r,
-        Paint()..color = Colors.black.withValues(alpha: 0.20));
-    canvas.drawCircle(ctr, r, Paint()..color = color);
+
+    // Pin.
+    canvas.drawCircle(Offset(cx, _circleCY + 2), _r,
+        Paint()..color = Colors.black.withValues(alpha: 0.18));
+    canvas.drawCircle(Offset(cx, _circleCY), _r, Paint()..color = color);
     canvas.drawCircle(
-        ctr,
-        r,
+        Offset(cx, _circleCY),
+        _r,
         Paint()
           ..color = Colors.white
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 5);
-    final tp = TextPainter(textDirection: TextDirection.ltr)
+          ..strokeWidth = 4);
+    final tpIcon = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(
         text: String.fromCharCode(glyph.codePoint),
         style: TextStyle(
-          fontSize: 44,
+          fontSize: 38,
           fontFamily: glyph.fontFamily,
           package: glyph.fontPackage,
           color: Colors.white,
         ),
       )
       ..layout();
-    tp.paint(canvas, Offset(ctr.dx - tp.width / 2, ctr.dy - tp.height / 2));
+    tpIcon.paint(
+        canvas, Offset(cx - tpIcon.width / 2, _circleCY - tpIcon.height / 2));
 
-    final img = await recorder.endRecording().toImage(s.toInt(), s.toInt());
+    // Label pill.
+    final rr = RRect.fromLTRBR(cx - tpLabel.width / 2 - 9, _pillTop,
+        cx + tpLabel.width / 2 + 9, _pillTop + _labelH, const Radius.circular(9));
+    canvas.drawRRect(rr, Paint()..color = const Color(0xF7FFFFFF));
+    canvas.drawRRect(
+        rr,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5);
+    tpLabel.paint(
+        canvas, Offset(cx - tpLabel.width / 2, _pillTop + (_labelH - tpLabel.height) / 2));
+
+    final img =
+        await recorder.endRecording().toImage(w.ceil(), _totalH.ceil());
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     final bmp = BitmapDescriptor.bytes(data!.buffer.asUint8List(),
         imagePixelRatio: 2.4);
