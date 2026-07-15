@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config.dart';
@@ -25,40 +26,48 @@ class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _c;
   bool _showRadius = true;
 
-  // Markers are colour-coded by each tender's priority tier (relevance score),
-  // so the map reads "which of these is worth my time" at a glance.
-  double _tierHue(int? score) {
-    final s = score ?? 0;
-    if (s >= 90) return BitmapDescriptor.hueGreen; // core RCR / washery
-    if (s >= 80) return BitmapDescriptor.hueOrange; // rail-siding / rake
-    if (s >= 72) return BitmapDescriptor.hueYellow; // power-plant / CHP
-    return BitmapDescriptor.hueRose; // other coal transport
-  }
+  final Map<String, BitmapDescriptor> _iconCache = {};
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+  bool _ready = false;
 
-  Color _tierColor(int? score) {
-    final s = score ?? 0;
-    if (s >= 90) return const Color(0xFF2E9B57);
-    if (s >= 80) return const Color(0xFFD8871F);
-    if (s >= 72) return const Color(0xFFC9A227);
-    return const Color(0xFFD5342B);
-  }
-
-  bool _onMap(Tender t) =>
-      t.status == TenderStatus.live || t.status == TenderStatus.bidding;
+  static const Color _baseColor = Color(0xFF1F6FEB);
 
   bool get _hasMapsKey =>
       Config.googleMapsApiKey != 'PASTE_YOUR_GOOGLE_MAPS_ANDROID_KEY';
 
+  // Distinct symbol per site role.
+  IconData _glyph(LocRole r) => switch (r) {
+        LocRole.mine => Icons.terrain,
+        LocRole.plant => Icons.factory,
+        LocRole.siding => Icons.train,
+        LocRole.base => Icons.home,
+      };
+
+  // A distinct colour shade per tender (golden-angle spacing keeps neighbours
+  // far apart on the wheel, so adjacent tenders never look alike).
+  Color _shade(int i) =>
+      HSVColor.fromAHSV(1.0, (i * 137.508) % 360.0, 0.62, 0.86).toColor();
+
   @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    if (!_hasMapsKey) return _needsKey(context);
+  void initState() {
+    super.initState();
+    if (_hasMapsKey) _rebuild();
+  }
+
+  @override
+  void didUpdateWidget(covariant MapScreen old) {
+    super.didUpdateWidget(old);
+    if (_hasMapsKey && old.tenders != widget.tenders) _rebuild();
+  }
+
+  Future<void> _rebuild() async {
     final base = LatLng(widget.org.lat, widget.org.lng);
     final markers = <Marker>{
       Marker(
         markerId: const MarkerId('base'),
         position: base,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: await _icon(_baseColor, Icons.home),
         infoWindow: InfoWindow(
             title: '${widget.org.name} (${widget.org.railwayCode})',
             snippet: widget.org.address),
@@ -66,17 +75,20 @@ class _MapScreenState extends State<MapScreen> {
     };
     final polylines = <Polyline>{};
 
-    for (final t in widget.tenders) {
-      if (!_onMap(t)) continue; // only live / bidding stay on the map
-      final hue = _tierHue(t.relevanceScore);
-      final col = _tierColor(t.relevanceScore);
-      final sites =
-          t.locations.where((l) => l.role != LocRole.base).toList();
+    final live = widget.tenders
+        .where((t) =>
+            t.status == TenderStatus.live || t.status == TenderStatus.bidding)
+        .toList();
+
+    for (var i = 0; i < live.length; i++) {
+      final t = live[i];
+      final color = _shade(i);
+      final sites = t.locations.where((l) => l.role != LocRole.base).toList();
       for (final l in sites) {
         markers.add(Marker(
           markerId: MarkerId('${t.id}_${l.id}'),
           position: LatLng(l.lat, l.lng),
-          icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+          icon: await _icon(color, _glyph(l.role)),
           infoWindow: InfoWindow(
             title: '${l.role.name.toUpperCase()} · ${l.name}',
             snippet:
@@ -85,14 +97,14 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ));
       }
-      // Haul route mine → plant in the tender's tier colour.
+      // Haul route mine → plant in this tender's colour.
       final mine = t.mines.isNotEmpty ? t.mines.first : null;
       final plant = t.plant;
       if (mine != null && plant != null) {
         polylines.add(Polyline(
           polylineId: PolylineId('haul_${t.id}'),
           points: [LatLng(mine.lat, mine.lng), LatLng(plant.lat, plant.lng)],
-          color: col.withValues(alpha: 0.75),
+          color: color.withValues(alpha: 0.85),
           width: 4,
         ));
       }
@@ -101,11 +113,67 @@ class _MapScreenState extends State<MapScreen> {
         polylines.add(Polyline(
           polylineId: PolylineId('reach_${t.id}'),
           points: [base, LatLng(sites.first.lat, sites.first.lng)],
-          color: const Color(0xFF8A94A6).withValues(alpha: 0.28),
+          color: color.withValues(alpha: 0.22),
           width: 2,
         ));
       }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _markers = markers;
+      _polylines = polylines;
+      _ready = true;
+    });
+  }
+
+  // Draws a coloured circular pin with a white role glyph, cached by (colour, glyph).
+  Future<BitmapDescriptor> _icon(Color color, IconData glyph) async {
+    final key = '${color.value}_${glyph.codePoint}';
+    final hit = _iconCache[key];
+    if (hit != null) return hit;
+
+    const double s = 96;
+    const double r = 38;
+    const Offset ctr = Offset(48, 46);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawCircle(const Offset(48, 49), r,
+        Paint()..color = Colors.black.withValues(alpha: 0.20));
+    canvas.drawCircle(ctr, r, Paint()..color = color);
+    canvas.drawCircle(
+        ctr,
+        r,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5);
+    final tp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(glyph.codePoint),
+        style: TextStyle(
+          fontSize: 44,
+          fontFamily: glyph.fontFamily,
+          package: glyph.fontPackage,
+          color: Colors.white,
+        ),
+      )
+      ..layout();
+    tp.paint(canvas, Offset(ctr.dx - tp.width / 2, ctr.dy - tp.height / 2));
+
+    final img = await recorder.endRecording().toImage(s.toInt(), s.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    final bmp = BitmapDescriptor.bytes(data!.buffer.asUint8List(),
+        imagePixelRatio: 2.4);
+    _iconCache[key] = bmp;
+    return bmp;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    if (!_hasMapsKey) return _needsKey(context);
+    final base = LatLng(widget.org.lat, widget.org.lng);
 
     final circles = <Circle>{
       if (_showRadius)
@@ -123,13 +191,20 @@ class _MapScreenState extends State<MapScreen> {
       children: [
         GoogleMap(
           initialCameraPosition: CameraPosition(target: base, zoom: 7),
-          markers: markers,
+          markers: _markers,
           circles: circles,
-          polylines: polylines,
+          polylines: _polylines,
           myLocationButtonEnabled: false,
           onMapCreated: (ctrl) => _c = ctrl,
         ),
         Positioned(top: 12, left: 12, right: 12, child: _legend(context)),
+        if (!_ready)
+          const Positioned(
+            top: 70,
+            left: 0,
+            right: 0,
+            child: Center(child: CircularProgressIndicator()),
+          ),
         Positioned(
           bottom: 20,
           right: 12,
@@ -205,30 +280,33 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _legend(BuildContext context) {
-    final c = context.colors;
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Wrap(spacing: 12, runSpacing: 4, children: [
-          _Dot(c.brand, 'VWLR base'),
-          const _Dot(Color(0xFF2E9B57), 'Core RCR/washery'),
-          const _Dot(Color(0xFFD8871F), 'Rail-siding'),
-          const _Dot(Color(0xFFC9A227), 'Power-plant'),
-          const _Dot(Color(0xFFD5342B), 'Other'),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Wrap(spacing: 14, runSpacing: 4, children: [
+            _Sym(Icons.home, 'VWLR base'),
+            _Sym(Icons.terrain, 'Mine / source'),
+            _Sym(Icons.factory, 'Plant'),
+            _Sym(Icons.train, 'Siding'),
+          ]),
+          const SizedBox(height: 3),
+          Text('Each tender has its own colour · line links its mine → plant',
+              style: TextStyle(fontSize: 11, color: context.colors.muted)),
         ]),
       ),
     );
   }
 }
 
-class _Dot extends StatelessWidget {
-  final Color color;
+class _Sym extends StatelessWidget {
+  final IconData icon;
   final String label;
-  const _Dot(this.color, this.label);
+  const _Sym(this.icon, this.label);
   @override
   Widget build(BuildContext context) =>
       Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.location_on, color: color, size: 16),
+        Icon(icon, color: context.colors.muted, size: 15),
         const SizedBox(width: 3),
         Text(label, style: const TextStyle(fontSize: 12)),
       ]);
