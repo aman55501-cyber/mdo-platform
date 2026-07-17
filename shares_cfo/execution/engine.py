@@ -74,9 +74,19 @@ def propose(order: OrderRequest, day_pnl: float = 0.0) -> dict:
         "order": order.to_dict(),
         "review": (
             f"{order.side} {order.quantity} {order.symbol} @ "
-            f"{'MKT' if order.order_type == 'MARKET' else order.price} "
-            f"(≈ ₹{order.est_value():,.0f}). Confirm to place."
+            f"{'MKT' if order.order_type == 'MARKET' else order.price} | "
+            f"SL {order.stop_loss} → risk ₹{order.max_loss():,.0f} | "
+            f"target {order.target} → reward ₹{order.max_gain():,.0f} | "
+            f"R:R {order.risk_reward()}:1. Confirm to place."
         ),
+        "risk_reward": {
+            "entry": order.price,
+            "stop_loss": order.stop_loss,
+            "target": order.target,
+            "max_loss": round(order.max_loss(), 2),
+            "max_gain": round(order.max_gain(), 2),
+            "ratio": order.risk_reward(),
+        },
         "note": "Reviewed only. Nothing has been sent. POST /execution/confirm with the confirm_code to place.",
     }
 

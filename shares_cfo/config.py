@@ -147,6 +147,7 @@ class TradingConfig:
     max_value_per_order: float = 0.0    # 0 = block
     max_orders_per_day: int = 0         # 0 = block
     daily_loss_halt: float = 0.0        # ₹; 0 = no halt configured
+    max_risk_per_trade: float = 0.0     # ₹ max loss per bet (qty*|entry-stop|); 0 = block
     allowed_underlyings: tuple[str, ...] = ()  # empty = block all (must whitelist)
 
 
@@ -175,6 +176,7 @@ def get_trading_config() -> TradingConfig:
         max_value_per_order=_f("CFO_MAX_VALUE_PER_ORDER"),
         max_orders_per_day=_i("CFO_MAX_ORDERS_PER_DAY"),
         daily_loss_halt=_f("CFO_DAILY_LOSS_HALT"),
+        max_risk_per_trade=_f("CFO_MAX_RISK_PER_TRADE"),
         allowed_underlyings=allowed,
     )
 

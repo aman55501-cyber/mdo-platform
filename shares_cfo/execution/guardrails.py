@@ -41,6 +41,19 @@ def check(order: OrderRequest, cfg: TradingConfig, orders_today: int,
             f"Order value ₹{order.est_value():,.0f} exceeds the cap of ₹{cfg.max_value_per_order:,.0f}."
         )
 
+    # small-bet discipline: a stop-loss is mandatory and the ₹ risk is hard-capped
+    if cfg.max_risk_per_trade <= 0:
+        raise GuardrailError("No per-trade risk cap set (CFO_MAX_RISK_PER_TRADE) — refusing.")
+    if order.stop_loss <= 0:
+        raise GuardrailError("A stop-loss is required on every bet — no naked risk.")
+    risk = order.max_loss()
+    if risk <= 0:
+        raise GuardrailError("Cannot compute risk (need entry price + stop-loss).")
+    if risk > cfg.max_risk_per_trade:
+        raise GuardrailError(
+            f"This bet risks ₹{risk:,.0f}, over your per-trade cap of ₹{cfg.max_risk_per_trade:,.0f}."
+        )
+
     if cfg.max_orders_per_day <= 0:
         raise GuardrailError("No daily order cap set (CFO_MAX_ORDERS_PER_DAY) — refusing.")
     if orders_today >= cfg.max_orders_per_day:

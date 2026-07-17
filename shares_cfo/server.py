@@ -513,6 +513,22 @@ async def watchlist(request: Request, token: str | None = Query(default=None)) -
     return {"watchlist": rows}
 
 
+@app.get("/strategy/signal/{ticker}")
+async def strategy_signal(request: Request, ticker: str, risk: float = 5000.0,
+                          token: str | None = Query(default=None)) -> dict:
+    """A risk-defined live-bet proposal for a symbol (entry/stop/target/size, R:R).
+    `risk` = ₹ you're willing to lose on the bet; size is derived from it. Advisory."""
+    _check_token(request, token)
+    from .analysis import strategy, technicals as tech
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+    try:
+        data = get_ohlcv(ticker)
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    t = tech.analyze(data["closes"], data["volumes"])
+    return strategy.signal(ticker, t, t.get("last_price") or 0.0, risk)
+
+
 @app.get("/backtest/{ticker}")
 async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
                    token: str | None = Query(default=None)) -> dict:
