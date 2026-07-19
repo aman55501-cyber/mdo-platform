@@ -53,44 +53,83 @@ def token_for(symbol: str) -> str | None:
     return _load_map().get(symbol.strip().upper())
 
 
+LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
+
+
 def _angel_account():
     from ..config import get_accounts, load_account
     key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
     return load_account(key) if key else None
 
 
-def get_candles(symbol: str, days: int = 380, interval: str = "ONE_DAY") -> dict | None:
-    """Daily OHLCV for an NSE stock via Angel, shaped like prices.get_ohlcv, or None."""
+def _login(acc) -> tuple[str | None, str]:
+    """Server-side Angel login (TOTP + MPIN). Returns (jwt, debug_note)."""
     from .. import token_store
     from .angel import _headers
+    jwt = token_store.get_token(acc.creds_key)
+    if jwt:
+        return jwt, "cached jwt"
+    if not (acc.totp_secret and acc.mpin):
+        return None, "ANGEL1 missing TOTP_SECRET/MPIN — add them in the Login tab"
+    try:
+        import pyotp
+    except ImportError:
+        return None, "pyotp not installed"
+    try:
+        body = {"clientcode": acc.client_code, "password": acc.mpin,
+                "totp": pyotp.TOTP(acc.totp_secret).now()}
+        r = httpx.post(acc.base_url + LOGIN, headers=_headers(acc), json=body, timeout=30.0)
+        data = (r.json() or {}).get("data") or {}
+        jwt = data.get("jwtToken") or data.get("jwt_token")
+        if jwt:
+            token_store.set_token(acc.creds_key, jwt)
+            return jwt, "logged in"
+        return None, f"login {r.status_code}: {r.text[:120]}"
+    except Exception as exc:
+        return None, f"login error: {str(exc)[:120]}"
 
+
+def fetch(symbol: str, days: int = 380, interval: str = "ONE_DAY") -> tuple[dict | None, dict]:
+    """Core: (ohlcv | None, debug). Self-logs-in to Angel (server-side)."""
+    from .angel import _headers
+    dbg = {"symbol": symbol.upper()}
     acc = _angel_account()
     if not acc:
-        return None
-    jwt = token_store.get_token(acc.creds_key)
-    if not jwt:
-        return None  # Angel not logged in
+        dbg["stage"] = "no Angel account configured"
+        return None, dbg
     tok = token_for(symbol)
+    dbg["token"] = tok
     if not tok:
-        return None  # symbol not in NSE scrip master
-
+        dbg["stage"] = "symbol not in NSE scrip master"
+        return None, dbg
+    jwt, note = _login(acc)
+    dbg["login"] = note
+    if not jwt:
+        dbg["stage"] = "login failed"
+        return None, dbg
     to = datetime.now()
     frm = to - timedelta(days=days)
     body = {"exchange": "NSE", "symboltoken": tok, "interval": interval,
             "fromdate": frm.strftime("%Y-%m-%d 09:15"), "todate": to.strftime("%Y-%m-%d 15:30")}
     try:
         r = httpx.post(acc.base_url + HISTORICAL, headers=_headers(acc, jwt), json=body, timeout=30.0)
-        if r.status_code >= 400:
-            return None
-        rows = (r.json() or {}).get("data") or []
-    except Exception:
-        return None
+        dbg["candle_status"] = r.status_code
+        dbg["candle_snippet"] = r.text[:160]
+        rows = (r.json() or {}).get("data") or [] if r.status_code < 400 else []
+    except Exception as exc:
+        dbg["stage"] = f"candle error: {str(exc)[:120]}"
+        return None, dbg
     if not rows:
-        return None
-    # each row: [timestamp, open, high, low, close, volume]
+        dbg["stage"] = "no candle rows"
+        return None, dbg
     closes = [float(x[4]) for x in rows]
-    highs = [float(x[2]) for x in rows]
-    lows = [float(x[3]) for x in rows]
-    volumes = [float(x[5]) for x in rows]
-    return {"symbol": symbol.upper(), "closes": closes, "highs": highs, "lows": lows,
-            "volumes": volumes, "bars": len(closes), "source": "angel", "confidence": "high"}
+    return ({"symbol": symbol.upper(), "closes": closes,
+             "highs": [float(x[2]) for x in rows], "lows": [float(x[3]) for x in rows],
+             "volumes": [float(x[5]) for x in rows], "bars": len(closes),
+             "source": "angel", "confidence": "high"}, dbg)
+
+
+def get_candles(symbol: str, days: int = 380, interval: str = "ONE_DAY") -> dict | None:
+    """Daily OHLCV for an NSE stock via Angel, shaped like prices.get_ohlcv, or None."""
+    res, _ = fetch(symbol, days, interval)
+    return res

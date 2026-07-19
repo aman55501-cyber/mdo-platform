@@ -1595,15 +1595,13 @@ async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
     """Verify Angel is serving NSE stock candles (per-stock chart/technicals source)."""
     _check_token(request, token)
     from .brokers import angel_scrip
-    tok = angel_scrip.token_for(symbol)
-    res = angel_scrip.get_candles(symbol)
+    res, dbg = angel_scrip.fetch(symbol)
     if res and res.get("closes"):
-        return {"symbol": symbol.upper(), "angel_token": tok, "bars": res["bars"],
+        return {"symbol": symbol.upper(), "angel_token": dbg.get("token"), "bars": res["bars"],
                 "last_close": res["closes"][-1], "source": "angel", "ok": True}
-    reason = ("symbol not found in Angel NSE scrip master" if not tok
-              else "Angel returned no candles — check ANGEL1 login + VPS IP whitelist")
-    return {"symbol": symbol.upper(), "angel_token": tok, "ok": False, "reason": reason,
-            "hint": "ANGEL1 must be connected + logged in, and your VPS IP whitelisted in SmartAPI."}
+    return {"ok": False, "debug": dbg,
+            "hint": "If login says missing TOTP/MPIN, connect ANGEL1 fully in the Login tab. "
+                    "If candle_status is 403/rejected, whitelist VPS IP 72.60.97.133 in SmartAPI."}
 
 
 @app.get("/market/feed-check")
