@@ -133,3 +133,66 @@ def get_candles(symbol: str, days: int = 380, interval: str = "ONE_DAY") -> dict
     """Daily OHLCV for an NSE stock via Angel, shaped like prices.get_ohlcv, or None."""
     res, _ = fetch(symbol, days, interval)
     return res
+
+
+# --- Live order placement (Angel SmartAPI) -----------------------------------
+# Reached ONLY from execution.engine after every guardrail passes and the master
+# switch is ON. Places the entry order, then a stop-loss order so no bet is naked.
+PLACE_ORDER = "/rest/secure/angelbroking/order/v1/placeOrder"
+_PRODUCT = {"CNC": "DELIVERY", "MIS": "INTRADAY", "NRML": "CARRYFORWARD", "MARGIN": "MARGIN"}
+
+
+def _place(acc, jwt, body: dict) -> dict:
+    from .angel import _headers
+    r = httpx.post(acc.base_url + PLACE_ORDER, headers=_headers(acc, jwt), json=body, timeout=30.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code >= 400 or (isinstance(j, dict) and j.get("status") is False):
+        raise RuntimeError(f"Angel rejected order [{r.status_code}]: {r.text[:200]}")
+    return (j.get("data") or {}) if isinstance(j, dict) else {}
+
+
+def place_order(order) -> dict:
+    """Place a guarded order via the Angel account. `order` is an OrderRequest."""
+    from ..config import get_accounts, load_account
+    key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+    if not key:
+        raise RuntimeError("No Angel account configured — connect ANGEL1 to place orders.")
+    acc = load_account(key)
+    jwt, note = _login(acc)
+    if not jwt:
+        raise RuntimeError(f"Angel login failed: {note}")
+
+    sym = order.symbol.upper().split("-")[0]
+    exch = (order.exchange or "NSE").upper()
+    tradingsymbol = f"{sym}-EQ" if exch == "NSE" else order.symbol
+    symboltoken = token_for(sym) or order.token
+    if not symboltoken:
+        raise RuntimeError(f"No Angel instrument token for {sym}")
+
+    entry = {
+        "variety": "NORMAL", "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
+        "transactiontype": order.side, "exchange": exch,
+        "ordertype": order.order_type, "producttype": _PRODUCT.get(order.product, "DELIVERY"),
+        "duration": "DAY", "quantity": str(int(order.quantity)),
+        "price": str(order.price) if order.order_type == "LIMIT" else "0",
+    }
+    data = _place(acc, jwt, entry)
+    result = {"broker": "angel", "account": key, "orderid": data.get("orderid"),
+              "tradingsymbol": tradingsymbol}
+
+    # protective stop-loss on the opposite side (so the bet is never naked)
+    if order.stop_loss and order.stop_loss > 0:
+        opp = "SELL" if order.side == "BUY" else "BUY"
+        sl = {
+            "variety": "STOPLOSS", "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
+            "transactiontype": opp, "exchange": exch, "ordertype": "STOPLOSS_MARKET",
+            "producttype": _PRODUCT.get(order.product, "DELIVERY"), "duration": "DAY",
+            "quantity": str(int(order.quantity)), "price": "0",
+            "triggerprice": str(order.stop_loss),
+        }
+        try:
+            sld = _place(acc, jwt, sl)
+            result["stop_loss_orderid"] = sld.get("orderid")
+        except Exception as exc:
+            result["stop_loss_error"] = str(exc)[:160]
+    return result

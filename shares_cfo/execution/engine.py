@@ -131,12 +131,11 @@ def confirm(proposal_id: str, confirm_code: str, day_pnl: float = 0.0) -> dict:
 
 
 def _send_to_broker(order: OrderRequest) -> dict:
-    """PENDING: wire the broker's official Place Order endpoint here.
+    """Place the order with the broker. Angel is wired (documented SmartAPI); HDFC
+    still needs its Place Order docs. Reached only after guardrails pass + switch ON.
 
-    Until the HDFC/Angel Place Order docs are provided and this is implemented, we
-    refuse to send — guessing an order format with real money is not acceptable.
+    All trades route through the Angel account (the one with order placement wired),
+    regardless of where the stock is held — Angel is the executing broker.
     """
-    raise NotImplementedError(
-        "Order endpoint not wired yet. Provide the broker's Place Order docs "
-        "(request + response) and this send step will be implemented against them."
-    )
+    from ..brokers import angel_scrip
+    return angel_scrip.place_order(order)  # raises RuntimeError on any broker failure

@@ -1654,6 +1654,8 @@ async def execution_confirm(request: Request, payload: dict = Body(...),
         raise HTTPException(status_code=403, detail=str(exc))
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc))
+    except RuntimeError as exc:  # broker rejected / login failed — order NOT placed
+        raise HTTPException(status_code=502, detail=f"Broker: {exc}")
 
 
 @app.post("/execution/kill")
