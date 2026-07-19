@@ -25,6 +25,8 @@ services:
     volumes:
       # persist snapshots + audit log across rebuilds (sector map stays baked in image)
       - sharescfo_state:/app/shares_cfo/data/state
+      # persist uploaded Screener Premium exports across rebuilds
+      - sharescfo_screener:/app/shares_cfo/data/screener
 
   caddy:
     image: caddy:2
@@ -45,3 +47,4 @@ volumes:
   caddy_data:
   caddy_config:
   sharescfo_state:
+  sharescfo_screener:

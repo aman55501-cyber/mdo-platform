@@ -110,6 +110,37 @@ def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
     return None
 
 
+def screener_status() -> dict:
+    """What Screener data is currently loaded — for the dashboard/status view.
+
+    Reports the newest file (the one that actually wins), how many companies it
+    covers, and which of our canonical fields its headers map to.
+    """
+    if not SCREENER_DIR.exists():
+        return {"loaded": False, "reason": "drop-zone folder missing"}
+    files = sorted(p for p in SCREENER_DIR.glob("*")
+                   if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
+    if not files:
+        return {"loaded": False, "reason": "no Screener export dropped yet",
+                "drop_zone": str(SCREENER_DIR)}
+    latest = files[-1]
+    rows = _rows_from_file(latest)
+    headers = list(rows[0].keys()) if rows else []
+    mapped = {canon: next((h for h in cands if h in headers), None)
+              for canon, cands in COLMAP.items()}
+    name_col = next((c for c in ("Name", "Symbol", "NSE Code") if c in headers), None)
+    return {
+        "loaded": True,
+        "active_file": latest.name,
+        "format": latest.suffix.lower().lstrip("."),
+        "companies": len(rows),
+        "name_column": name_col,
+        "fields_detected": {k: v for k, v in mapped.items() if v},
+        "fields_missing": [k for k, v in mapped.items() if not v],
+        "other_files": [p.name for p in files[:-1]],
+    }
+
+
 def get(symbol: str, exchange: str = "NSE") -> dict:
     """Merged fundamentals: later providers override earlier, with provenance."""
     merged: dict = {}

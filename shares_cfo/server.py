@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request
+from pathlib import Path
+
+from fastapi import Body, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from fastapi.responses import RedirectResponse
@@ -66,7 +68,17 @@ DASHBOARD_HTML = r"""<!doctype html>
   <div class="row"><h1>Shares CFO</h1><span class="dim" id="asof">…</span></div>
   <div id="err"></div>
   <div id="app"></div>
-  <p class="dim" style="text-align:center;margin-top:16px">read-only • prices as of last pull</p>
+  <div class="card" id="screener">
+    <div class="row"><span style="font-weight:700">Screener Premium</span><span class="dim" id="scr-state">…</span></div>
+    <div class="dim" id="scr-detail" style="margin-top:6px">Checking loaded data…</div>
+    <div style="margin-top:10px">
+      <input type="file" id="scr-file" accept=".xlsx,.xls,.csv" style="color:var(--dim);font-size:13px">
+      <button id="scr-btn" style="margin-top:8px;background:var(--bl);color:#04122b;border:0;border-radius:8px;padding:9px 14px;font-weight:700">Upload export</button>
+      <div class="dim" id="scr-msg" style="margin-top:6px"></div>
+    </div>
+    <div class="dim" style="margin-top:8px;font-size:12px">Screener → open a Screen/Watchlist → <b>Export to Excel</b> → pick the file above.</div>
+  </div>
+  <p class="dim" style="text-align:center;margin-top:16px">prices as of last pull</p>
 <script>
 const token = new URLSearchParams(location.search).get('token') || '';
 function inr(n,sym){ if(sym===undefined)sym=true; const s=sym?'₹':''; if(n==null||isNaN(n))return s+'—';
@@ -114,7 +126,32 @@ function render(p){
   });
   document.getElementById('app').innerHTML=h;
 }
-load(); setInterval(load, 20000);
+async function loadScreener(){
+  try{
+    const r=await fetch('/fundamentals/screener/status?token='+encodeURIComponent(token));
+    if(!r.ok)return; const s=await r.json();
+    const st=document.getElementById('scr-state'), d=document.getElementById('scr-detail');
+    if(s.loaded){ st.textContent='● loaded'; st.className='gr';
+      d.innerHTML=s.companies+' companies · <span class="dim">'+s.active_file+'</span><br>fields: '
+        +Object.keys(s.fields_detected||{}).join(', ')
+        +(s.fields_missing&&s.fields_missing.length?' · <span class="am">missing: '+s.fields_missing.join(', ')+'</span>':''); }
+    else { st.textContent='● none'; st.className='am'; d.textContent=s.reason||'no export loaded yet'; }
+  }catch(e){}
+}
+document.getElementById('scr-btn').onclick=async function(){
+  const f=document.getElementById('scr-file').files[0], msg=document.getElementById('scr-msg');
+  if(!f){ msg.textContent='Pick a file first.'; return; }
+  msg.textContent='Uploading '+f.name+'…';
+  const fd=new FormData(); fd.append('file', f);
+  try{
+    const r=await fetch('/fundamentals/screener/upload?token='+encodeURIComponent(token),{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok){ msg.className='rd dim'; msg.textContent=(j&&j.detail)||('Upload failed ('+r.status+')'); return; }
+    msg.className='gr dim'; msg.textContent='✅ Loaded '+(j.status&&j.status.companies||0)+' companies from '+f.name;
+    loadScreener();
+  }catch(e){ msg.className='rd dim'; msg.textContent='Upload failed — server reachable?'; }
+};
+load(); loadScreener(); setInterval(load, 20000);
 </script>
 </body></html>"""
 
@@ -473,6 +510,41 @@ async def fundamentals(request: Request, ticker: str, token: str | None = Query(
     _check_token(request, token)
     from .analysis import fundamentals as fun
     return fun.get(ticker)
+
+
+@app.get("/fundamentals/screener/status")
+async def screener_status(request: Request, token: str | None = Query(default=None)) -> dict:
+    """What Screener Premium data is loaded (active file, company count, mapped fields)."""
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    return fun.screener_status()
+
+
+@app.post("/fundamentals/screener/upload")
+async def screener_upload(request: Request, file: UploadFile = File(...),
+                          token: str | None = Query(default=None)) -> dict:
+    """Upload a Screener Premium export straight from your phone → the drop-zone.
+
+    No git, no file manager. The newest file always wins on the next read.
+    """
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+
+    name = (file.filename or "").strip()
+    ext = Path(name).suffix.lower()
+    if ext not in (".xlsx", ".xls", ".csv"):
+        raise HTTPException(status_code=400,
+                            detail="Upload a Screener .xlsx (Export to Excel) or .csv file.")
+    fun.SCREENER_DIR.mkdir(parents=True, exist_ok=True)
+    # Timestamped, sanitised name so the newest upload sorts last (== wins).
+    safe = "".join(c for c in Path(name).stem if c.isalnum() or c in ("-", "_"))[:40] or "screener"
+    dest = fun.SCREENER_DIR / f"{utc_now_iso().replace(':', '').replace('.', '')}_{safe}{ext}"
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (15 MB max).")
+    dest.write_bytes(data)
+    status = fun.screener_status()
+    return {"uploaded": dest.name, "bytes": len(data), "status": status}
 
 
 @app.get("/idea/{ticker}")
