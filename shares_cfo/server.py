@@ -1499,6 +1499,69 @@ async def debug_holdings_fields(request: Request, key: str | None = Query(defaul
         await adapter.close()
 
 
+@app.get("/debug/hdfc-history")
+async def debug_hdfc_history(request: Request, key: str | None = Query(default=None),
+                             token: str | None = Query(default=None)) -> dict:
+    """Probe HDFC OApi for a historical/candle endpoint so per-stock charts can use it.
+
+    Tries candidate paths against a real instrument from your book and reports which
+    return data. Read-only. Temporary; removed once the endpoint is identified.
+    """
+    _check_token(request, token)
+    from datetime import timedelta
+    from .brokers.hdfc import HdfcAdapter
+
+    target = key or (token_store.armed_accounts() or ["HDFC1"])[0]
+    account = load_account(target)
+    stored = token_store.get_token(target)
+    if stored:
+        account.access_token = stored
+    adapter = HdfcAdapter(account)
+
+    # a real instrument to query with
+    tok, exch, sym = "", "NSE", ""
+    try:
+        hs = await adapter.get_holdings()
+        for h in hs:
+            if h.get("token"):
+                tok, exch, sym = h["token"], h.get("exchange", "NSE"), h.get("ticker", "")
+                break
+    except SharesCFOError:
+        pass
+
+    today = utc_now_iso()[:10]
+    frm = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%d")
+    paths = ["/historical", "/historical-data", "/chart", "/charts", "/candle", "/candles",
+             "/historical/candle", "/market/historical", "/instruments/historical",
+             "/price/historical", "/historical-chart", "/quote/historical",
+             f"/historical/{exch}/{tok}", "/market-data/historical"]
+    param_sets = [
+        {"exchange": exch, "security_id": tok, "interval": "1D", "from": frm, "to": today},
+        {"exchange": exch, "token": tok, "timeframe": "day", "fromDate": frm, "toDate": today},
+        {"exchange": exch, "instrument_token": tok, "interval": "day"},
+    ]
+    results = []
+    try:
+        for path in paths:
+            hit = None
+            for ps in param_sets:
+                try:
+                    r = await adapter._http.get(path, params=ps, headers=adapter._auth_headers())
+                    if r.status_code != 404:
+                        hit = {"path": path, "status": r.status_code, "snippet": r.text[:140]}
+                        break
+                except Exception as exc:
+                    hit = {"path": path, "error": str(exc)[:80]}
+                    break
+            if hit and hit.get("status") not in (None,) and hit.get("status") != 404:
+                results.append(hit)
+        return {"account": target, "sample": {"symbol": sym, "token": tok, "exchange": exch},
+                "found": results,
+                "note": "Any 200 with candle data = the endpoint to wire. Paste this back."}
+    finally:
+        await adapter.close()
+
+
 @app.get("/execution/status")
 async def execution_status(request: Request, token: str | None = Query(default=None)) -> dict:
     _check_token(request, token)
