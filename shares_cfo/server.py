@@ -198,6 +198,16 @@ DASHBOARD_HTML = r"""<!doctype html>
       <div id="hedge-body"></div>
       <button class="btn hedge" style="width:100%;margin-top:14px" id="hedge-go">Review hedge order →</button>
     </div>
+    <div class="card" id="opt-card">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Option strategy</span><span class="frag">payoff builder</span></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <select id="opt-name" style="flex:1;background:var(--elev);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:9px;font-size:13px"></select>
+        <select id="opt-under" style="background:var(--elev);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:9px;font-size:13px"><option>NIFTY</option><option>BANKNIFTY</option></select>
+      </div>
+      <canvas id="opt-canvas" width="860" height="300" style="width:100%;height:auto;margin-top:12px;display:block"></canvas>
+      <div id="opt-metrics"></div>
+      <div class="note" id="opt-note"></div>
+    </div>
   </section>
 
   <section id="s-mtf">
@@ -403,6 +413,62 @@ async function loadTrades(){
     return '<div class="tr"><span class="side '+sc+'">'+(o.side||e.event)+'</span><div><div style="font-weight:600">'+(o.symbol||e.event)+' <span class="dim" style="font-size:12px">'+(o.quantity?o.quantity+' @ '+px(o.price):'')+'</span></div><div class="dim" style="font-size:11.5px">'+(o.stop_loss?'SL '+o.stop_loss+' · R:R '+(o.risk_reward||'—'):t)+'</div></div><span class="stt '+e.event+'">'+e.event.replace('_',' ')+'</span></div>';}).join('');
 }
 
+/* ---- OPTIONS ---- */
+let optStrategiesLoaded=false;
+async function loadOptions(){
+  if(!optStrategiesLoaded){
+    const s=await j('/options/strategies?'+Q);
+    if(s.ok){document.getElementById('opt-name').innerHTML=(s.d.strategies||[]).map(x=>'<option value="'+x.key+'">'+x.key.replace(/_/g,' ')+'</option>').join('');optStrategiesLoaded=true;
+      document.getElementById('opt-name').onchange=runOptions;document.getElementById('opt-under').onchange=runOptions;}
+  }
+  runOptions();
+}
+async function runOptions(){
+  const name=document.getElementById('opt-name').value||'bull_call_spread';
+  const und=document.getElementById('opt-under').value||'NIFTY';
+  document.getElementById('opt-metrics').innerHTML='<div class="load">Pricing…</div>';
+  const r=await j('/options/strategy?name='+name+'&underlying='+und+'&'+Q);
+  if(!r.ok){document.getElementById('opt-metrics').innerHTML='<div class="load">'+(r.d.detail||'Needs the market feed (EODHD) for spot/IV.')+'</div>';drawPayoff(null);return;}
+  const d=r.d;drawPayoff(d);
+  const legs=(d.legs||[]).map(l=>l.side+' '+l.type+' '+l.strike+' @'+l.premium).join(' · ');
+  const g=d.greeks||{};
+  document.getElementById('opt-metrics').innerHTML=
+    '<div class="rr" style="margin-top:12px"><div><div class="k">Max profit</div><div class="v up">'+inr(d.max_profit)+(d.max_profit_capped&&d.max_profit>0?'':'')+'</div></div>'
+    +'<div><div class="k">Max loss</div><div class="v down">'+inr(d.max_loss)+'</div></div>'
+    +'<div><div class="k">R:R</div><div class="v">'+(d.reward_risk||'—')+'</div></div></div>'
+    +'<div class="rowline"><span class="dim">Breakeven'+(d.breakevens.length>1?'s':'')+'</span><span class="mono">'+(d.breakevens.join(' / ')||'—')+'</span></div>'
+    +'<div class="rowline"><span class="dim">Net premium</span><span class="mono '+(d.net_premium<0?'down':'up')+'">'+(d.net_premium<0?'debit ':'credit ')+inr(Math.abs(d.net_premium))+'</span></div>'
+    +'<div class="rowline"><span class="dim">Spot / IV / DTE</span><span class="mono">'+Math.round(d.spot).toLocaleString('en-IN')+' · '+d.iv_pct+'% · '+d.dte+'d</span></div>'
+    +'<div class="rowline"><span class="dim">Net Greeks</span><span class="mono" style="font-size:12px">Δ'+g.delta+' Θ'+g.theta+' V'+g.vega+'</span></div>'
+    +'<div class="note" style="margin-top:8px">'+legs+'</div>';
+  document.getElementById('opt-note').textContent=d.note||'';
+}
+function drawPayoff(d){
+  const c=document.getElementById('opt-canvas'),x=c.getContext('2d'),W=c.width,H=c.height;
+  x.clearRect(0,0,W,H);
+  if(!d||!d.curve){return;}
+  const cur=d.curve,xs=cur.map(p=>p.underlying),ys=cur.map(p=>p.pnl);
+  const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+  const pad=34,yr=(ymax-ymin)||1;
+  const X=u=>pad+(u-xmin)/((xmax-xmin)||1)*(W-2*pad);
+  const Y=p=>H-pad-(p-ymin)/yr*(H-2*pad);
+  // zero line
+  const y0=Y(0);x.strokeStyle='#3a4560';x.lineWidth=1;x.beginPath();x.moveTo(pad,y0);x.lineTo(W-pad,y0);x.stroke();
+  // profit/loss fill
+  for(let seg=0;seg<2;seg++){x.beginPath();cur.forEach((p,i)=>{const xx=X(p.underlying),yy=Y(p.pnl);i?x.lineTo(xx,yy):x.moveTo(xx,yy);});
+    x.lineTo(X(xs[xs.length-1]),y0);x.lineTo(X(xs[0]),y0);x.closePath();
+    x.save();x.beginPath();if(seg===0){x.rect(0,0,W,y0);}else{x.rect(0,y0,W,H-y0);}x.clip();
+    x.fillStyle=seg===0?'rgba(47,189,133,.18)':'rgba(255,88,103,.18)';x.fill();x.restore();}
+  // payoff line
+  x.beginPath();cur.forEach((p,i)=>{const xx=X(p.underlying),yy=Y(p.pnl);i?x.lineTo(xx,yy):x.moveTo(xx,yy);});
+  x.strokeStyle='#4c8dff';x.lineWidth=2.4;x.lineJoin='round';x.stroke();
+  // spot marker
+  const sx=X(d.spot);x.strokeStyle='#8493ab';x.setLineDash([4,4]);x.beginPath();x.moveTo(sx,pad);x.lineTo(sx,H-pad);x.stroke();x.setLineDash([]);
+  x.fillStyle='#8493ab';x.font='11px monospace';x.fillText('spot '+Math.round(d.spot),sx-30,pad-4>10?pad-4:12);
+  // breakeven markers
+  (d.breakevens||[]).forEach(be=>{const bx=X(be);x.fillStyle='#e0a53a';x.beginPath();x.arc(bx,y0,3.5,0,7);x.fill();});
+}
+
 /* ---- MTF ---- */
 async function loadMtf(){
   const r=await j('/mtf?'+Q);const card=document.getElementById('mtf-card');
@@ -472,7 +538,7 @@ function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remov
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
   if(t==='mtf'&&!loaded.mtf){loaded.mtf=1;loadMtf();}
   if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadDailyStrategy();loadIdeas();}
-  if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();}
+  if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();loadOptions();}
   if(t==='trades'&&!loaded.trades){loaded.trades=1;loadTrades();}}
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.t==='login'){location.href='/login?'+Q;return;}go(b.dataset.t);});
 document.getElementById('filters').addEventListener('click',e=>{const b=e.target.closest('.fchip');if(!b)return;[...document.querySelectorAll('.fchip')].forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');applyFilter();});
@@ -868,6 +934,63 @@ async def alerts_push(request: Request, token: str | None = Query(default=None))
     pushable = alert_state.new_pushable(alerts_mod.evaluate(book), now)
     alert_state.mark_pushed(pushable, now)
     return {"push": pushable}
+
+
+@app.get("/options/strategies")
+async def options_strategies(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Available preset option strategies."""
+    _check_token(request, token)
+    from .analysis import options
+    return {"strategies": [{"key": k, "desc": v} for k, v in options.STRATEGIES.items()]}
+
+
+@app.get("/options/strategy")
+async def options_strategy(request: Request, name: str = "bull_call_spread",
+                           underlying: str = "NIFTY", dte: int = 30,
+                           token: str | None = Query(default=None)) -> dict:
+    """Build + analyse a preset strategy at the live spot/IV (Black-Scholes priced)."""
+    _check_token(request, token)
+    from .analysis import options
+    from .analysis.prices import PriceDataUnavailable, get_spot
+
+    sym = "^NSEBANK" if underlying.upper() in ("BANKNIFTY", "NIFTYBANK") else "^NSEI"
+    step = 100.0 if sym == "^NSEBANK" else 50.0
+    lot = 15 if sym == "^NSEBANK" else 75
+    try:
+        spot = get_spot(sym)
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"Need the market feed for spot ({exc}).")
+    iv = 0.14
+    try:
+        iv = max(0.05, get_spot("^INDIAVIX") / 100.0)  # India VIX as IV proxy
+    except PriceDataUnavailable:
+        pass
+    try:
+        legs = options.build_strategy(name, spot, iv, dte, lot, step)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    result = options.analyze(legs, spot, iv, dte, lot)
+    result["strategy"] = name
+    result["underlying"] = underlying.upper()
+    result["iv_pct"] = round(iv * 100, 1)
+    result["dte"] = dte
+    result["note"] = ("Theoretical (Black-Scholes, VIX as IV). Replace premiums with your "
+                      "broker's traded prices for exact P&L. Advisory — you place any trade.")
+    return result
+
+
+@app.post("/options/payoff")
+async def options_payoff(request: Request, body: dict = Body(...),
+                         token: str | None = Query(default=None)) -> dict:
+    """Analyse custom legs: body {spot, legs:[{side,type,strike,premium,lots}], lot_size?, iv?, dte?}."""
+    _check_token(request, token)
+    from .analysis import options
+    legs = body.get("legs") or []
+    spot = float(body.get("spot") or 0)
+    if not legs or spot <= 0:
+        raise HTTPException(status_code=400, detail="Provide spot and at least one leg.")
+    return options.analyze(legs, spot, body.get("iv"), int(body.get("dte") or 30),
+                           int(body.get("lot_size") or 75))
 
 
 @app.get("/mtf")
