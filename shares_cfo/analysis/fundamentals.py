@@ -27,18 +27,31 @@ COLMAP = {
 }
 
 
+# Canonical units for scoring (the single convention every threshold assumes):
+#   pe, pb, de  -> plain ratios     (de 0.72 means 0.72x)
+#   roe, promoter_holding, pledge, dividend_yield -> PERCENT numbers (14.0 == 14%)
+# Providers disagree on units, so we normalise AT INGESTION to this one convention.
+
 def _norm_de(v) -> float | None:
+    """Debt-to-equity as a ratio. yfinance reports it as a percent (72.5 -> 0.725)."""
     f = to_float(v)
     if f is None:
         return None
-    return round(f / 100.0, 3) if f > 5 else round(f, 3)  # yfinance gives % (72.5 -> 0.725)
+    return round(f / 100.0, 3) if f > 5 else round(f, 3)
 
 
-def _norm_pct(v) -> float | None:
+def _pct_number(v) -> float | None:
+    """A percentage as a plain number (14% -> 14.0).
+
+    yfinance reports ratios as fractions (0.14); Screener reports percents (14.0).
+    A value with |x| <= 1.5 is assumed a fraction and scaled up; anything larger is
+    assumed already a percent. 1.5 is a deliberately low ceiling — no ROE/pledge we
+    threshold on lives in the 0–1.5% band, so the two unit worlds never collide.
+    """
     f = to_float(v)
     if f is None:
         return None
-    return round(f, 4) if abs(f) <= 1.5 else round(f / 100.0, 4)
+    return round(f * 100.0, 2) if abs(f) <= 1.5 else round(f, 2)
 
 
 def from_yfinance(symbol: str, exchange: str = "NSE") -> dict | None:
@@ -54,8 +67,8 @@ def from_yfinance(symbol: str, exchange: str = "NSE") -> dict | None:
         "pe": to_float(info.get("trailingPE")),
         "pb": to_float(info.get("priceToBook")),
         "de": _norm_de(info.get("debtToEquity")),
-        "roe": _norm_pct(info.get("returnOnEquity")),
-        "dividend_yield": _norm_pct(info.get("dividendYield")),
+        "roe": _pct_number(info.get("returnOnEquity")),
+        "dividend_yield": _pct_number(info.get("dividendYield")),
         "market_cap": to_float(info.get("marketCap")),
         "eps": to_float(info.get("trailingEps")),
     }
@@ -86,28 +99,59 @@ def _rows_from_file(path: Path) -> list[dict]:
         return []
 
 
-def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
-    """Read the latest Screener Premium export in data/screener/ (.xlsx or .csv)."""
+def _row_name(row: dict) -> str:
+    return (str(row.get("Name") or row.get("Symbol") or row.get("NSE Code") or "")).upper()
+
+
+def _map_row(row: dict) -> dict:
+    """Turn one export row into canonical {field: value} (de as a ratio, rest as-is)."""
+    fields = {}
+    for canon, headers in COLMAP.items():
+        for hdr in headers:
+            if hdr in row and row[hdr] not in ("", None):
+                val = to_float(row[hdr])
+                if val is not None:
+                    fields[canon] = _norm_de(val) if canon == "de" else val
+                break
+    return fields
+
+
+def _latest_file() -> Path | None:
     if not SCREENER_DIR.exists():
         return None
     files = sorted(p for p in SCREENER_DIR.glob("*")
                    if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
-    for path in reversed(files):
-        for row in _rows_from_file(path):
-            name = (str(row.get("Name") or row.get("Symbol")
-                        or row.get("NSE Code") or "")).upper()
-            if symbol.upper() in name or (name and name in symbol.upper()):
-                fields = {}
-                for canon, headers in COLMAP.items():
-                    for hdr in headers:
-                        if hdr in row and row[hdr] not in ("", None):
-                            val = to_float(row[hdr])
-                            if val is not None:
-                                fields[canon] = _norm_de(val) if canon == "de" else val
-                            break
-                if fields:
-                    return {"fields": fields, "source": "screener", "confidence": "high"}
+    return files[-1] if files else None
+
+
+def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
+    """Read the latest Screener Premium export in data/screener/ (.xlsx or .csv)."""
+    latest = _latest_file()
+    if not latest:
+        return None
+    for row in _rows_from_file(latest):
+        name = _row_name(row)
+        if symbol.upper() in name or (name and name in symbol.upper()):
+            fields = _map_row(row)
+            if fields:
+                return {"fields": fields, "source": "screener", "confidence": "high"}
     return None
+
+
+def load_universe() -> list[dict]:
+    """Every company in the latest export as [{symbol, fields}], for a broad scan."""
+    latest = _latest_file()
+    if not latest:
+        return []
+    out = []
+    for row in _rows_from_file(latest):
+        name = _row_name(row)
+        if not name:
+            continue
+        fields = _map_row(row)
+        if fields:
+            out.append({"symbol": name.split()[0], "name": name, "fields": fields})
+    return out
 
 
 def screener_status() -> dict:

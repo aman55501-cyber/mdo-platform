@@ -67,7 +67,17 @@ DASHBOARD_HTML = r"""<!doctype html>
 <body>
   <div class="row"><h1>Shares CFO</h1><span class="dim" id="asof">…</span></div>
   <div id="err"></div>
+  <div class="card" id="health" style="display:none">
+    <div class="row"><span style="font-weight:700">Holdings health</span><span class="dim" id="health-counts">…</span></div>
+    <div id="health-list"></div>
+    <div class="dim" style="font-size:12px;margin-top:8px">Upload Screener data below to sharpen this (debt, pledge, valuation, ROE).</div>
+  </div>
   <div id="app"></div>
+  <div class="card" id="ideas" style="display:none">
+    <div class="row"><span style="font-weight:700">Top ideas</span><span class="dim" id="ideas-sub"></span></div>
+    <div id="ideas-list"></div>
+    <div class="dim" style="font-size:12px;margin-top:8px">Ranked from your Screener universe by quality/value. Not advice — a shortlist.</div>
+  </div>
   <div class="card" id="screener">
     <div class="row"><span style="font-weight:700">Screener Premium</span><span class="dim" id="scr-state">…</span></div>
     <div class="dim" id="scr-detail" style="margin-top:6px">Checking loaded data…</div>
@@ -126,6 +136,45 @@ function render(p){
   });
   document.getElementById('app').innerHTML=h;
 }
+function scoreColor(s){ if(s==null)return 'var(--dim)'; if(s>=65)return 'var(--gr)'; if(s>=40)return 'var(--am)'; return 'var(--rd)'; }
+async function loadHealth(){
+  try{
+    const r=await fetch('/screener/holdings?technicals=0&token='+encodeURIComponent(token));
+    if(!r.ok)return; const d=await r.json();
+    if(!d.holdings||!d.holdings.length)return;
+    document.getElementById('health').style.display='block';
+    const c=d.counts||{};
+    document.getElementById('health-counts').textContent=
+      (c['🔴']||0)+' 🔴  '+(c['🟡']||0)+' 🟡  '+(c['🟢']||0)+' 🟢';
+    let h='';
+    d.holdings.forEach(x=>{
+      const fl=(x.flags&&x.flags.length)?x.flags.map(f=>f.sev+f.text).join(' · '):'looks clean';
+      h+='<div class="hrow"><div><div>'+x.verdict+' '+x.symbol+'</div><div class="dim" style="font-size:12px">'+fl+'</div></div>'
+        +'<div style="text-align:right"><div style="font-weight:700;color:'+scoreColor(x.score)+'">'+(x.score==null?'—':x.score)+'</div><div class="dim" style="font-size:11px">'+inr(x.market_value)+'</div></div></div>';
+    });
+    document.getElementById('health-list').innerHTML=h;
+  }catch(e){}
+}
+async function loadIdeas(){
+  try{
+    const r=await fetch('/screener/scan?limit=8&min_score=55&token='+encodeURIComponent(token));
+    if(!r.ok)return; const d=await r.json();
+    if(!d.ideas||!d.ideas.length)return;
+    document.getElementById('ideas').style.display='block';
+    document.getElementById('ideas-sub').textContent=d.ranked+' of '+d.universe_size+' scored';
+    let h='';
+    d.ideas.forEach(x=>{
+      const f=x.fields||{};
+      const bits=[];
+      if(f.roe!=null)bits.push('ROE '+Math.round(f.roe)+'%');
+      if(f.de!=null)bits.push('D/E '+f.de);
+      if(f.pe!=null)bits.push('P/E '+Math.round(f.pe));
+      h+='<div class="hrow"><div><div>'+x.symbol+'</div><div class="dim" style="font-size:12px">'+bits.join(' · ')+'</div></div>'
+        +'<div style="text-align:right"><div style="font-weight:700;color:'+scoreColor(x.fundamental_score)+'">'+x.fundamental_score+'</div></div></div>';
+    });
+    document.getElementById('ideas-list').innerHTML=h;
+  }catch(e){}
+}
 async function loadScreener(){
   try{
     const r=await fetch('/fundamentals/screener/status?token='+encodeURIComponent(token));
@@ -148,10 +197,10 @@ document.getElementById('scr-btn').onclick=async function(){
     const j=await r.json();
     if(!r.ok){ msg.className='rd dim'; msg.textContent=(j&&j.detail)||('Upload failed ('+r.status+')'); return; }
     msg.className='gr dim'; msg.textContent='✅ Loaded '+(j.status&&j.status.companies||0)+' companies from '+f.name;
-    loadScreener();
+    loadScreener(); loadHealth(); loadIdeas();
   }catch(e){ msg.className='rd dim'; msg.textContent='Upload failed — server reachable?'; }
 };
-load(); loadScreener(); setInterval(load, 20000);
+load(); loadScreener(); loadHealth(); loadIdeas(); setInterval(load, 20000);
 </script>
 </body></html>"""
 
@@ -545,6 +594,124 @@ async def screener_upload(request: Request, file: UploadFile = File(...),
     dest.write_bytes(data)
     status = fun.screener_status()
     return {"uploaded": dest.name, "bytes": len(data), "status": status}
+
+
+def _clean_symbol(ticker: str) -> str:
+    """Strip NSE series suffixes so 'TRENT-EQ' / 'SARVESHWAR-BE' -> matchable symbol."""
+    s = (ticker or "").upper().strip()
+    for suf in ("-EQ", "-BE", "-BZ", "-BL", "-SM", "-ST", "-IQ"):
+        if s.endswith(suf):
+            return s[:-len(suf)]
+    return s.split("-")[0] if "-" in s else s
+
+
+@app.get("/screener/holdings")
+async def screener_holdings(request: Request, technicals: int = 1,
+                            token: str | None = Query(default=None)) -> dict:
+    """Score every stock you OWN (fundamental + optional technical), worst-first.
+
+    The CFO watchdog: which holdings carry high debt, promoter pledge, rich
+    valuation, or a broken trend. `technicals=0` for a faster fundamental-only pass.
+    """
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    from .analysis import scoring
+    from .analysis import technicals as tech_mod
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    book = await _consolidated()
+    # Aggregate market value per unique symbol across all accounts.
+    agg: dict[str, dict] = {}
+    for acc in book["accounts"]:
+        for h in acc.get("holdings", []):
+            sym = _clean_symbol(h["ticker"])
+            slot = agg.setdefault(sym, {"symbol": sym, "market_value": 0.0})
+            slot["market_value"] += h.get("market_value") or 0.0
+
+    rule = scoring.load_rule()
+    rows = []
+    for sym, slot in agg.items():
+        f = fun.get(sym)
+        t = None
+        if technicals:
+            try:
+                data = get_ohlcv(sym)
+                t = tech_mod.analyze(data["closes"], data["volumes"])
+            except PriceDataUnavailable:
+                t = None
+        sc = scoring.combine(sym, f.get("fields", {}), t, rule)
+        sc["market_value"] = round(slot["market_value"], 2)
+        sc["confidence"] = f.get("confidence")
+        rows.append(sc)
+
+    # worst-first: reds, then lowest score. None scores (no data) sink to the bottom.
+    order = {"🔴": 0, "🟡": 1, "⚪": 2, "🟢": 3}
+    rows.sort(key=lambda x: (order.get(x["verdict"], 2), x["score"] if x["score"] is not None else 999))
+    counts = {v: sum(1 for x in rows if x["verdict"] == v) for v in ("🔴", "🟡", "🟢", "⚪")}
+    return {"as_of": book["as_of"], "counts": counts, "holdings": rows,
+            "screener_loaded": fun.screener_status().get("loaded", False)}
+
+
+@app.get("/screener/scan")
+async def screener_scan(request: Request, limit: int = 20, min_score: float = 0.0,
+                        technicals: int = 0, token: str | None = Query(default=None)) -> dict:
+    """Rank the uploaded Screener universe as BUY ideas (fundamental score, then
+    optional technicals on the top names). Needs a Screener export loaded."""
+    _check_token(request, token)
+    from .analysis import fundamentals as fun
+    from .analysis import scoring
+    from .analysis import technicals as tech_mod
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    universe = fun.load_universe()
+    if not universe:
+        return {"error": "No Screener export loaded — upload one from the dashboard first.",
+                "ideas": []}
+    rule = scoring.load_rule()
+    scored = []
+    for item in universe:
+        fnd = scoring.score_fundamental(item["fields"], rule)
+        if fnd["score"] is None or fnd["score"] < min_score:
+            continue
+        scored.append({"symbol": item["symbol"], "name": item.get("name"),
+                       "fundamental_score": fnd["score"], "flags": fnd["flags"],
+                       "fields": item["fields"], "coverage": fnd["coverage"]})
+    scored.sort(key=lambda x: x["fundamental_score"], reverse=True)
+    top = scored[: max(1, min(limit, 100))]
+
+    if technicals:
+        for row in top:
+            try:
+                data = get_ohlcv(row["symbol"])
+                t = tech_mod.analyze(data["closes"], data["volumes"])
+                blended = scoring.combine(row["symbol"], row["fields"], t, rule)
+                row["technical_score"] = blended["technical_score"]
+                row["score"] = blended["score"]
+                row["verdict"] = blended["verdict"]
+                row["flags"] = blended["flags"]
+            except PriceDataUnavailable:
+                row["technical_score"] = None
+        top.sort(key=lambda x: x.get("score") or x["fundamental_score"], reverse=True)
+
+    return {"universe_size": len(universe), "ranked": len(scored),
+            "showing": len(top), "ideas": top}
+
+
+@app.get("/screener/rule")
+async def screener_rule_get(request: Request, token: str | None = Query(default=None)) -> dict:
+    """The active scoring rule (defaults merged with any saved custom rule)."""
+    _check_token(request, token)
+    from .analysis import scoring
+    return {"rule": scoring.load_rule(), "defaults": scoring.DEFAULT_RULE}
+
+
+@app.post("/screener/rule")
+async def screener_rule_set(request: Request, rule: dict = Body(...),
+                            token: str | None = Query(default=None)) -> dict:
+    """Save a custom scoring rule (any subset of thresholds/weights). Persisted."""
+    _check_token(request, token)
+    from .analysis import scoring
+    return {"saved": True, "rule": scoring.save_rule(rule)}
 
 
 @app.get("/idea/{ticker}")
