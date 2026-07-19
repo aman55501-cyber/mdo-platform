@@ -17,6 +17,14 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
 
     `symbol` is a clean NSE symbol (e.g. 'COALINDIA'). yfinance wants a suffix.
     """
+    # Prefer EODHD when a key is set (reliable server-side); fall back to yfinance.
+    from . import eodhd
+    if eodhd.enabled():
+        try:
+            return eodhd.get_ohlcv(symbol, exchange, period)
+        except Exception:
+            pass  # fall through to yfinance
+
     try:
         import yfinance as yf  # lazy: keeps the core server runnable without it
     except ImportError as exc:  # pragma: no cover
@@ -54,6 +62,13 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
 
 def get_spot(yf_symbol: str) -> float:
     """Latest price for a raw Yahoo symbol (e.g. '^NSEI' for NIFTY)."""
+    from . import eodhd
+    if eodhd.enabled():
+        try:
+            return eodhd.get_spot(yf_symbol)
+        except Exception:
+            pass  # fall through to yfinance
+
     try:
         import yfinance as yf
     except ImportError as exc:  # pragma: no cover

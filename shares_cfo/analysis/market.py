@@ -23,6 +23,11 @@ GLOBAL_TICKERS = [
 
 def _quote(yf_symbol: str) -> dict | None:
     """Last price + day % change for a raw Yahoo symbol, or None if unavailable."""
+    from . import eodhd
+    if eodhd.enabled():
+        q = eodhd.quote(yf_symbol)
+        if q:
+            return q
     try:
         import yfinance as yf
     except ImportError:
