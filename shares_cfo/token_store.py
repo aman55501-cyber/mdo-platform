@@ -1,18 +1,45 @@
-"""In-memory access-token store for headless (Railway) deployment.
+"""Access-token store — persisted to disk so logins survive container restarts.
 
-On your PC the token lives in .env. On an always-on server there's no browser and
-.env isn't the pattern, so the daily phone-login flow (/hdfc/login → /hdfc/callback)
-writes the freshly-exchanged token here, and request handlers read it. Tokens are
-same-day, so an in-process store is enough: each morning's login re-arms it; a
-process restart just needs another login.
+On an always-on server the daily phone-login (/hdfc/login → /hdfc/callback) and
+Angel's server-side login write the token here. Tokens are same-day, so we persist
+them to the state volume with today's date and auto-discard anything older — a
+container rebuild no longer forces every account to log in again.
 """
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+_FILE = Path(__file__).resolve().parent / "data" / "state" / "tokens.json"
 _TOKENS: dict[str, str] = {}
-# Which account a login is currently in progress for (HDFC's callback can't carry
-# our state, so /hdfc/login records it and /hdfc/callback reads it).
 _PENDING: dict[str, str] = {"key": "HDFC1"}
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _load() -> None:
+    """Load tokens if they're from today; otherwise start empty (expired overnight)."""
+    try:
+        if _FILE.exists():
+            data = json.loads(_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("date") == _today():
+                toks = data.get("tokens")
+                if isinstance(toks, dict):
+                    _TOKENS.update({k: v for k, v in toks.items() if v})
+    except (OSError, ValueError):
+        pass
+
+
+def _save() -> None:
+    try:
+        _FILE.parent.mkdir(parents=True, exist_ok=True)
+        _FILE.write_text(json.dumps({"date": _today(), "tokens": _TOKENS}), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def set_pending(creds_key: str) -> None:
@@ -29,6 +56,7 @@ def armed_accounts() -> list[str]:
 
 def set_token(creds_key: str, access_token: str) -> None:
     _TOKENS[creds_key.upper()] = access_token
+    _save()
 
 
 def get_token(creds_key: str) -> str | None:
@@ -37,3 +65,6 @@ def get_token(creds_key: str) -> str | None:
 
 def is_armed(creds_key: str) -> bool:
     return bool(_TOKENS.get(creds_key.upper()))
+
+
+_load()  # restore today's tokens on import
