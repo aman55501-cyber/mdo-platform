@@ -170,7 +170,8 @@ DASHBOARD_HTML = r"""<!doctype html>
   </section>
 
   <section id="s-ideas">
-    <h1 class="screen">High-conviction ideas</h1>
+    <h1 class="screen">Daily Strategy &amp; ideas</h1>
+    <div class="card" id="strategy-card"><div class="load">Building today's strategy…</div></div>
     <div class="card" id="regime-card" style="background:linear-gradient(160deg,#15110a,#111826);border-color:#3a2f18">
       <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Market regime</span><span class="frag">drives sizing</span></div>
       <div id="regime-body"><div class="load">Reading regime&hellip;</div></div>
@@ -312,15 +313,36 @@ async function loadIdeas(){
       +'<div class="signals"><div class="sig"><div class="n">India VIX</div><div class="v">'+(i.india_vix??'—')+'</div></div><div class="sig"><div class="n">NIFTY vs 200D</div><div class="v">'+(i.nifty_vs_200dma_pct!=null?(i.nifty_vs_200dma_pct>=0?'+':'')+i.nifty_vs_200dma_pct+'%':'—')+'</div></div><div class="sig"><div class="n">Risk budget</div><div class="v">'+d.risk_budget_pct+'%</div></div></div>'
       +'<div class="note">'+d.tilt+'</div>';
   }
-  const sc=await j('/screener/scan?limit=8&min_score=60&'+Q);
+  const sc=await j('/screener/scan?limit=6&min_score=60&technicals=1&'+Q);
   const box=document.getElementById('ideas');
   if(!sc.ok||!sc.d.ideas||!sc.d.ideas.length){box.innerHTML='<div class="load">'+((sc.d&&sc.d.error)||'No ideas pass the bar right now. Upload a Screener export to widen the universe.')+'</div>';document.getElementById('ideas-sub').textContent='';return;}
   document.getElementById('ideas-sub').textContent=sc.d.ranked+' of '+sc.d.universe_size+' scored';
   box.innerHTML=sc.d.ideas.map(i=>{const f=i.fields||{},bits=[];if(f.roe!=null)bits.push('ROE '+Math.round(f.roe)+'%');if(f.de!=null)bits.push('D/E '+(+f.de).toFixed(2));if(f.pe!=null)bits.push('P/E '+Math.round(f.pe));
+    const conv=i.conviction!=null?i.conviction:i.fundamental_score;
+    const sig=i.signal;
+    const patTag=sig?'<span class="tag pat">'+sig.pattern+' · '+sig.hit_rate+'% ('+sig.occurrences+'×)</span>':'<span class="tag pat">Fundamental screen</span>';
     const fl=(i.flags||[]).map(x=>'<span class="cf">'+x.sev+' '+x.text+'</span>').join('');
-    return '<div class="idea"><div class="itop"><div class="conv">'+i.fundamental_score+'</div><div><div class="isym">'+i.symbol+'</div><div class="tags"><span class="tag pat">Fundamental screen</span></div></div></div>'
+    const why=sig?'<div class="why"><b>Why:</b> '+sig.pattern+' fired — backtested <b>'+sig.hit_rate+'% hit-rate</b>, avg '+(sig.avg_return_pct>=0?'+':'')+sig.avg_return_pct+'% over '+sig.horizon+' sessions.</div>':'';
+    return '<div class="idea"><div class="itop"><div class="conv">'+Math.round(conv)+'</div><div><div class="isym">'+i.symbol+'</div><div class="tags">'+patTag+'</div></div></div>'
+      +why
       +'<div class="confl"><span class="cf">'+bits.join('</span><span class="cf">')+'</span>'+fl+'</div>'
       +'<div class="iact"><button class="btn buy" onclick="analyseIdea(\''+i.symbol+'\')">Analyse &amp; trade →</button></div></div>';}).join('');
+}
+async function loadDailyStrategy(){
+  const r=await j('/strategy/daily?'+Q);const card=document.getElementById('strategy-card');
+  if(!r.ok){card.innerHTML='<div class="load">Strategy unavailable — needs the market feed (EODHD).</div>';return;}
+  const d=r.d;const col=d.regime==='calm'?'var(--up)':d.regime==='stressed'?'var(--down)':'var(--warn)';
+  let h='<div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Daily Strategy</span><span class="frag">levels-first</span></div>'
+    +'<div style="margin-top:10px;font-size:20px;font-weight:800">'+(d.regime_emoji||'')+' '+(d.market_bias||'')+'</div>'
+    +'<div class="note" style="margin-top:4px;color:var(--dim)">'+(d.guidance||'')+' &nbsp;<span class="faint">VIX '+(d.vix??'—')+' · risk budget '+(d.risk_budget_pct||'—')+'%</span></div>';
+  (d.indices||[]).forEach(x=>{const L=x.levels,P=x.plan;
+    h+='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--hair)"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">'+x.name+'</span><span class="mono">'+Math.round(x.last).toLocaleString('en-IN')+'</span></div>'
+      +'<div class="mono" style="font-size:12.5px;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">'
+      +'<span class="down">S '+L.s2+' · '+L.s1+'</span><span class="faint">P '+L.pivot+'</span><span class="up">R '+L.r1+' · '+L.r2+'</span></div>'
+      +'<div class="note" style="margin-top:6px">'+P.rule+' <span class="faint">('+L.cpr_type+')</span></div></div>';});
+  h+='<div class="note" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--hair)"><b>Discipline:</b> '+(d.discipline||[]).join(' · ')+'</div>'
+    +'<div class="note faint" style="margin-top:6px">'+d.note+'</div>';
+  card.innerHTML=h;
 }
 async function analyseIdea(sym){
   const r=await j('/strategy/signal/'+encodeURIComponent(sym)+'?'+Q);
@@ -441,7 +463,7 @@ scrim.addEventListener('click',()=>{scrim.classList.remove('on');sheet.classList
 function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
   if(t==='mtf'&&!loaded.mtf){loaded.mtf=1;loadMtf();}
-  if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadIdeas();}
+  if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadDailyStrategy();loadIdeas();}
   if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();}
   if(t==='trades'&&!loaded.trades){loaded.trades=1;loadTrades();}}
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.t==='login'){location.href='/login?'+Q;return;}go(b.dataset.t);});
@@ -958,6 +980,7 @@ async def screener_scan(request: Request, limit: int = 20, min_score: float = 0.
     top = scored[: max(1, min(limit, 100))]
 
     if technicals:
+        from .analysis import patterns as pat
         for row in top:
             try:
                 data = get_ohlcv(row["symbol"])
@@ -967,12 +990,32 @@ async def screener_scan(request: Request, limit: int = 20, min_score: float = 0.
                 row["score"] = blended["score"]
                 row["verdict"] = blended["verdict"]
                 row["flags"] = blended["flags"]
+                fired = pat.detect(data)  # patterns that fired today + backtested edge
+                row["patterns"] = fired
+                # conviction = fundamentals + a pattern with a real edge + volume/trend
+                best = max((p for p in fired if p.get("hit_rate")), default=None,
+                           key=lambda p: p["hit_rate"])
+                row["signal"] = best
+                row["conviction"] = round(
+                    0.5 * (row["fundamental_score"] or 0)
+                    + 0.3 * (blended["technical_score"] or 0)
+                    + 0.2 * (best["hit_rate"] if best else 0), 1)
+                row["last_price"] = t.get("last_price")
             except PriceDataUnavailable:
                 row["technical_score"] = None
-        top.sort(key=lambda x: x.get("score") or x["fundamental_score"], reverse=True)
+        top.sort(key=lambda x: x.get("conviction") or x.get("score") or x["fundamental_score"],
+                 reverse=True)
 
     return {"universe_size": len(universe), "ranked": len(scored),
             "showing": len(top), "ideas": top}
+
+
+@app.get("/strategy/daily")
+async def strategy_daily(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Levels-first Daily Strategy: market bias + NIFTY/BANKNIFTY pivots + discipline."""
+    _check_token(request, token)
+    from .analysis import daily_strategy
+    return daily_strategy.build()
 
 
 @app.get("/screener/rule")

@@ -69,11 +69,14 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     data = _get(f"eod/{sym}", {"period": "d", "order": "a", "from": start})
     if not isinstance(data, list) or not data:
         raise ValueError(f"EODHD returned no EOD data for {sym}")
-    closes = [float(x["close"]) for x in data if x.get("close") is not None]
-    volumes = [float(x.get("volume") or 0) for x in data]
+    rows = [x for x in data if x.get("close") is not None]
+    closes = [float(x["close"]) for x in rows]
+    volumes = [float(x.get("volume") or 0) for x in rows]
+    highs = [float(x.get("high") or x["close"]) for x in rows]
+    lows = [float(x.get("low") or x["close"]) for x in rows]
     return {"symbol": symbol.upper(), "eodhd_symbol": sym, "closes": closes,
-            "volumes": volumes, "bars": len(closes), "source": "eodhd",
-            "confidence": "high"}
+            "volumes": volumes, "highs": highs, "lows": lows,
+            "bars": len(closes), "source": "eodhd", "confidence": "high"}
 
 
 def quote(raw_symbol: str, exchange: str = "NSE") -> dict | None:

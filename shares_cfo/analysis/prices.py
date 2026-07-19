@@ -32,8 +32,12 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
             "yfinance not installed. On your PC run:  pip install yfinance pandas numpy"
         ) from exc
 
-    suffix = ".NS" if exchange.upper() == "NSE" else ".BO"
-    yf_symbol = f"{symbol.upper()}{suffix}"
+    # Indices (^NSEI, ^NSEBANK) are used as-is by Yahoo — no exchange suffix.
+    if symbol.startswith("^"):
+        yf_symbol = symbol
+    else:
+        suffix = ".NS" if exchange.upper() == "NSE" else ".BO"
+        yf_symbol = f"{symbol.upper()}{suffix}"
     try:
         # timeout so a throttled/blocked Yahoo (common from datacenter IPs) fails fast
         # instead of hanging the request; threads=False keeps it predictable.
@@ -49,11 +53,15 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
 
     closes = [float(x) for x in df["Close"].dropna().tolist()]
     volumes = [float(x) for x in df["Volume"].fillna(0).tolist()]
+    highs = [float(x) for x in df["High"].fillna(df["Close"]).tolist()]
+    lows = [float(x) for x in df["Low"].fillna(df["Close"]).tolist()]
     return {
         "symbol": symbol.upper(),
         "yf_symbol": yf_symbol,
         "closes": closes,
         "volumes": volumes,
+        "highs": highs,
+        "lows": lows,
         "bars": len(closes),
         "source": "yfinance",
         "confidence": "low",  # free feed; upgrade to EODHD for high-confidence
