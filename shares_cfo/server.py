@@ -1589,6 +1589,23 @@ async def market_global(request: Request, token: str | None = Query(default=None
     return market.global_backdrop()
 
 
+@app.get("/debug/angel-candles")
+async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
+                              token: str | None = Query(default=None)) -> dict:
+    """Verify Angel is serving NSE stock candles (per-stock chart/technicals source)."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    tok = angel_scrip.token_for(symbol)
+    res = angel_scrip.get_candles(symbol)
+    if res and res.get("closes"):
+        return {"symbol": symbol.upper(), "angel_token": tok, "bars": res["bars"],
+                "last_close": res["closes"][-1], "source": "angel", "ok": True}
+    reason = ("symbol not found in Angel NSE scrip master" if not tok
+              else "Angel returned no candles — check ANGEL1 login + VPS IP whitelist")
+    return {"symbol": symbol.upper(), "angel_token": tok, "ok": False, "reason": reason,
+            "hint": "ANGEL1 must be connected + logged in, and your VPS IP whitelisted in SmartAPI."}
+
+
 @app.get("/market/feed-check")
 async def market_feed_check(request: Request, token: str | None = Query(default=None)) -> dict:
     """Verify the EODHD feed: which symbols resolve + a sample price. No key printed."""

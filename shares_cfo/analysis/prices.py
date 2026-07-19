@@ -17,13 +17,23 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
 
     `symbol` is a clean NSE symbol (e.g. 'COALINDIA'). yfinance wants a suffix.
     """
-    # Prefer EODHD when a key is set (reliable server-side); fall back to yfinance.
+    # Provider chain: EODHD (great for indices), then Angel (NSE stocks — EODHD
+    # doesn't license NSE equity data), then yfinance as a last resort.
     from . import eodhd
     if eodhd.enabled():
         try:
             return eodhd.get_ohlcv(symbol, exchange, period)
         except Exception:
-            pass  # fall through to yfinance
+            pass
+    if not symbol.startswith("^"):  # stocks: try Angel candles
+        try:
+            from ..brokers import angel_scrip
+            days = {"5y": 1900, "2y": 760, "1y": 380}.get(period, 380)
+            res = angel_scrip.get_candles(symbol, days=days)
+            if res and res.get("closes"):
+                return res
+        except Exception:
+            pass
 
     try:
         import yfinance as yf  # lazy: keeps the core server runnable without it
