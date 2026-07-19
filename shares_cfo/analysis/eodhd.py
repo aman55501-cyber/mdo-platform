@@ -16,20 +16,23 @@ from datetime import datetime, timedelta
 
 BASE = "https://eodhd.com/api"
 
-# Raw index symbols (yfinance-style) -> EODHD symbols. Extend as coverage is verified.
-INDEX_MAP = {
-    "^NSEI": "NSEI.INDX",        # NIFTY 50
-    "^NSEBANK": "NSEBANK.INDX",  # BANK NIFTY
-    "^INDIAVIX": "INDIAVIX.INDX",
-    "^GSPC": "GSPC.INDX",        # S&P 500
-    "^IXIC": "IXIC.INDX",        # Nasdaq Composite
-    "^DJI": "DJI.INDX",          # Dow
-    "^N225": "N225.INDX",        # Nikkei
-    "GC=F": "XAUUSD.FOREX",      # Gold (spot proxy)
-    "BZ=F": "BRENT.COMM",        # Brent (best-effort)
-    "INR=F": "USDINR.FOREX",
-    "INR=X": "USDINR.FOREX",
+# Raw index symbols (yfinance-style) -> ordered EODHD candidates. The first that
+# returns data wins (self-healing across EODHD's naming variants for indices).
+INDEX_CANDIDATES = {
+    "^NSEI": ["NSEI.INDX", "NIFTY50.INDX", "N50.INDX", "CNXN.INDX"],
+    "^NSEBANK": ["NSEBANK.INDX", "BANKNIFTY.INDX", "NIFTYBANK.INDX", "CNXBANK.INDX"],
+    "^INDIAVIX": ["INDIAVIX.INDX", "NIFVIX.INDX", "INDIA_VIX.INDX", "VIX.INDX"],
+    "^GSPC": ["GSPC.INDX"],
+    "^IXIC": ["IXIC.INDX"],
+    "^DJI": ["DJI.INDX"],
+    "^N225": ["N225.INDX"],
+    "GC=F": ["XAUUSD.FOREX", "GOLD.COMM"],
+    "BZ=F": ["BRENT.COMM", "BRN.COMM"],
+    "INR=F": ["USDINR.FOREX"],
+    "INR=X": ["USDINR.FOREX", "INR.FOREX"],
 }
+# back-compat: primary symbol for each raw index
+INDEX_MAP = {k: v[0] for k, v in INDEX_CANDIDATES.items()}
 
 
 def api_key() -> str:
@@ -61,14 +64,28 @@ def _get(path: str, params: dict) -> object:
     return r.json()
 
 
+def _candidates(raw: str, exchange: str = "NSE") -> list[str]:
+    """Ordered EODHD symbols to try (indices have several naming variants)."""
+    if raw in INDEX_CANDIDATES:
+        return INDEX_CANDIDATES[raw]
+    return [_symbol(raw, exchange)]
+
+
 def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     """Daily closes + volumes from EODHD, same shape as prices.get_ohlcv."""
     days = {"5y": 1900, "2y": 760, "1y": 380}.get(period, 380)
     start = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-    sym = _symbol(symbol, exchange)
-    data = _get(f"eod/{sym}", {"period": "d", "order": "a", "from": start})
-    if not isinstance(data, list) or not data:
-        raise ValueError(f"EODHD returned no EOD data for {sym}")
+    data, sym = None, None
+    for cand in _candidates(symbol, exchange):
+        try:
+            d = _get(f"eod/{cand}", {"period": "d", "order": "a", "from": start})
+        except Exception:
+            continue
+        if isinstance(d, list) and d:
+            data, sym = d, cand
+            break
+    if not data:
+        raise ValueError(f"EODHD returned no EOD data for {symbol}")
     rows = [x for x in data if x.get("close") is not None]
     closes = [float(x["close"]) for x in rows]
     volumes = [float(x.get("volume") or 0) for x in rows]
@@ -81,31 +98,54 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
 
 def quote(raw_symbol: str, exchange: str = "NSE") -> dict | None:
     """{'last', 'change_pct'} for the global-markets strip, or None if unavailable."""
-    sym = _symbol(raw_symbol, exchange)
-    try:
-        j = _get(f"real-time/{sym}", {})
-    except Exception:
-        return None
-    if not isinstance(j, dict):
-        return None
-    last = j.get("close")
-    chg = j.get("change_p")
-    if last in (None, "NA", "N/A"):
-        return None
-    try:
-        return {"last": round(float(last), 2),
-                "change_pct": round(float(chg), 2) if chg not in (None, "NA", "N/A") else None}
-    except (TypeError, ValueError):
-        return None
+    for sym in _candidates(raw_symbol, exchange):
+        try:
+            j = _get(f"real-time/{sym}", {})
+        except Exception:
+            continue
+        if not isinstance(j, dict):
+            continue
+        last, chg = j.get("close"), j.get("change_p")
+        if last in (None, "NA", "N/A"):
+            continue
+        try:
+            return {"last": round(float(last), 2),
+                    "change_pct": round(float(chg), 2) if chg not in (None, "NA", "N/A") else None}
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def get_spot(raw_symbol: str, exchange: str = "NSE") -> float:
     """Latest price for a symbol or index (e.g. '^NSEI', 'RELIANCE')."""
-    sym = _symbol(raw_symbol, exchange)
-    j = _get(f"real-time/{sym}", {})
-    if isinstance(j, dict):
-        for k in ("close", "previousClose"):
-            v = j.get(k)
-            if v not in (None, "NA", "N/A"):
-                return float(v)
-    raise ValueError(f"EODHD real-time gave no price for {sym}")
+    for sym in _candidates(raw_symbol, exchange):
+        try:
+            j = _get(f"real-time/{sym}", {})
+        except Exception:
+            continue
+        if isinstance(j, dict):
+            for k in ("close", "previousClose"):
+                v = j.get(k)
+                if v not in (None, "NA", "N/A"):
+                    return float(v)
+    raise ValueError(f"EODHD real-time gave no price for {raw_symbol}")
+
+
+def feed_check() -> dict:
+    """Probe key symbols so the feed can be verified from the app (no key printed)."""
+    tests = [("NIFTY", "^NSEI"), ("BANKNIFTY", "^NSEBANK"), ("INDIA VIX", "^INDIAVIX"),
+             ("RELIANCE", "RELIANCE"), ("S&P 500", "^GSPC")]
+    results = []
+    for label, raw in tests:
+        entry = {"label": label, "resolved": None, "price": None}
+        for sym in _candidates(raw):
+            try:
+                j = _get(f"real-time/{sym}", {})
+                px = j.get("close") if isinstance(j, dict) else None
+                if px not in (None, "NA", "N/A"):
+                    entry["resolved"], entry["price"] = sym, round(float(px), 2)
+                    break
+            except Exception as exc:
+                entry["error"] = str(exc)[:80]
+        results.append(entry)
+    return {"enabled": enabled(), "results": results}

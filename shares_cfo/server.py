@@ -1326,6 +1326,16 @@ async def market_global(request: Request, token: str | None = Query(default=None
     return market.global_backdrop()
 
 
+@app.get("/market/feed-check")
+async def market_feed_check(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Verify the EODHD feed: which symbols resolve + a sample price. No key printed."""
+    _check_token(request, token)
+    from .analysis import eodhd
+    if not eodhd.enabled():
+        return {"enabled": False, "message": "CFO_EODHD_API_KEY not set — add it to .env and redeploy."}
+    return eodhd.feed_check()
+
+
 @app.get("/market/regime")
 async def market_regime(request: Request, token: str | None = Query(default=None)) -> dict:
     """Market regime (calm/cautious/stressed) + the risk budget it hands the idea engine."""
