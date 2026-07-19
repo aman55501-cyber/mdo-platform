@@ -172,6 +172,9 @@ class HdfcAdapter:
                           "emargin", "product", "financed", "leverage")
             raw_mtf = {k: v for k, v in h.items()
                        if isinstance(k, str) and any(t in k.lower() for t in _mtf_terms)}
+            iv = _first(h, "investment_value", "investmentValue")  # for the MTF loan estimate
+            if iv is not None:
+                raw_mtf["investment_value"] = iv
             qty = int(to_float(_first(h, "quantity", "totalQty", "qty", "netQty")) or 0)
             avg = to_float(_first(h, "average_price", "averagePrice", "avgPrice", "buyAvg")) or 0.0
             last = to_float(_first(h, "close_price", "closePrice", "lastPrice", "ltp", "currentPrice", "marketPrice")) or 0.0
