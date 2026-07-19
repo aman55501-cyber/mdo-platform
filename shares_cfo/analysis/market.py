@@ -28,7 +28,8 @@ def _quote(yf_symbol: str) -> dict | None:
     except ImportError:
         return None
     try:
-        df = yf.download(yf_symbol, period="5d", progress=False, auto_adjust=True)
+        df = yf.download(yf_symbol, period="5d", progress=False, auto_adjust=True,
+                         timeout=6, threads=False)
         if df is None or df.empty:
             return None
         closes = df["Close"].dropna().tolist()

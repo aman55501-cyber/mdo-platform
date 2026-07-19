@@ -27,7 +27,10 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     suffix = ".NS" if exchange.upper() == "NSE" else ".BO"
     yf_symbol = f"{symbol.upper()}{suffix}"
     try:
-        df = yf.download(yf_symbol, period=period, progress=False, auto_adjust=True)
+        # timeout so a throttled/blocked Yahoo (common from datacenter IPs) fails fast
+        # instead of hanging the request; threads=False keeps it predictable.
+        df = yf.download(yf_symbol, period=period, progress=False, auto_adjust=True,
+                         timeout=8, threads=False)
     except Exception as exc:  # network / symbol errors
         raise PriceDataUnavailable(f"yfinance fetch failed for {yf_symbol}: {exc}") from exc
 
@@ -56,7 +59,8 @@ def get_spot(yf_symbol: str) -> float:
     except ImportError as exc:  # pragma: no cover
         raise PriceDataUnavailable("yfinance not installed (pip install yfinance).") from exc
     try:
-        df = yf.download(yf_symbol, period="5d", progress=False, auto_adjust=True)
+        df = yf.download(yf_symbol, period="5d", progress=False, auto_adjust=True,
+                         timeout=8, threads=False)
     except Exception as exc:
         raise PriceDataUnavailable(f"spot fetch failed for {yf_symbol}: {exc}") from exc
     if df is None or df.empty:

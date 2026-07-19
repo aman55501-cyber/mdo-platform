@@ -248,6 +248,9 @@ function renderHero(p){
   const fp=p.positions_pnl||0;document.getElementById('fopnl').innerHTML='<span class="'+(fp>=0?'up':'down')+'">'+(fp>=0?'+':'')+inr(fp)+'</span>';
   document.getElementById('statustxt').textContent='Book '+(deg?'':'complete · ')+p.book_health.fresh+'/'+p.book_health.accounts;
   document.getElementById('statuspill').querySelector('.dot').style.background=deg?'var(--down)':'var(--up)';
+  const errb=document.getElementById('err');
+  if(deg){errb.innerHTML='<a href="/login?'+Q+'" style="color:var(--warn);text-decoration:none">⚠ '+p.book_health.degraded+' account(s) not logged in — net worth is partial. Tap to log in →</a>';}
+  else{errb.textContent='';}
 }
 function holdRows(){const map={};(PORT.accounts||[]).forEach(a=>(a.holdings||[]).forEach(h=>{const s=clean(h.ticker);const m=map[s]||(map[s]={sym:s,quantity:0,market_value:0,invested:0,day_change:0,last_price:h.last_price,average_price:h.average_price,token:h.token,exchange:h.exchange});m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;m.last_price=h.last_price||m.last_price;}));return Object.values(map).sort((a,b)=>b.market_value-a.market_value);}
 function renderHolds(){
@@ -283,7 +286,7 @@ function detail(x){
 }
 function tog(el){el.parentElement.classList.toggle('open');}
 async function loadScoring(){
-  const r=await j('/screener/holdings?technicals=1&'+Q);if(!r.ok)return;const d=r.d;
+  const r=await j('/screener/holdings?technicals=0&'+Q);if(!r.ok)return;const d=r.d;
   (d.holdings||[]).forEach(x=>SCORE[x.symbol]=x);
   const bs=d.book_strength||{};setMeter('mfund','sfund',bs.fundamental);setMeter('mtech','stech',bs.technical);
   const c=d.counts||{};document.getElementById('counts').innerHTML='<div><b class="up">'+(c['🟢']||0)+'</b> <span class="dim">strong</span></div><div><b class="warn">'+(c['🟡']||0)+'</b> <span class="dim">neutral</span></div><div><b class="down">'+(c['🔴']||0)+'</b> <span class="dim">weak</span></div>';
