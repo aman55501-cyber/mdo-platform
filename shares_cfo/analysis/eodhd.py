@@ -117,7 +117,8 @@ def quote(raw_symbol: str, exchange: str = "NSE") -> dict | None:
 
 
 def get_spot(raw_symbol: str, exchange: str = "NSE") -> float:
-    """Latest price for a symbol or index (e.g. '^NSEI', 'RELIANCE')."""
+    """Latest price for a symbol or index. Tries real-time, then the EOD close
+    (NSE stocks aren't on EODHD real-time but are on EOD)."""
     for sym in _candidates(raw_symbol, exchange):
         try:
             j = _get(f"real-time/{sym}", {})
@@ -128,7 +129,14 @@ def get_spot(raw_symbol: str, exchange: str = "NSE") -> float:
                 v = j.get(k)
                 if v not in (None, "NA", "N/A"):
                     return float(v)
-    raise ValueError(f"EODHD real-time gave no price for {raw_symbol}")
+    # fall back to the latest end-of-day close
+    try:
+        d = get_ohlcv(raw_symbol, exchange, period="1y")
+        if d["closes"]:
+            return float(d["closes"][-1])
+    except Exception:
+        pass
+    raise ValueError(f"EODHD gave no price for {raw_symbol}")
 
 
 def feed_check() -> dict:
@@ -137,15 +145,23 @@ def feed_check() -> dict:
              ("RELIANCE", "RELIANCE"), ("S&P 500", "^GSPC")]
     results = []
     for label, raw in tests:
-        entry = {"label": label, "resolved": None, "price": None}
+        entry = {"label": label, "resolved": None, "price": None, "via": None}
         for sym in _candidates(raw):
             try:
                 j = _get(f"real-time/{sym}", {})
                 px = j.get("close") if isinstance(j, dict) else None
                 if px not in (None, "NA", "N/A"):
-                    entry["resolved"], entry["price"] = sym, round(float(px), 2)
+                    entry.update(resolved=sym, price=round(float(px), 2), via="real-time")
                     break
             except Exception as exc:
                 entry["error"] = str(exc)[:80]
+        if entry["resolved"] is None:  # NSE stocks: fall back to end-of-day
+            try:
+                d = get_ohlcv(raw)
+                if d.get("closes"):
+                    entry.update(resolved=d.get("eodhd_symbol"),
+                                 price=round(d["closes"][-1], 2), via="eod", error=None)
+            except Exception as exc:
+                entry.setdefault("error", str(exc)[:80])
         results.append(entry)
     return {"enabled": enabled(), "results": results}
