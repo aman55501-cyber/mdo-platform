@@ -890,6 +890,31 @@ async def execution_status(request: Request, token: str | None = Query(default=N
     return engine.status()
 
 
+@app.get("/execution/log")
+async def execution_log(request: Request, limit: int = 50,
+                        token: str | None = Query(default=None)) -> dict:
+    """The trade log: recent proposals, placements, and kill events (newest first)."""
+    _check_token(request, token)
+    from .execution import engine
+    return {"events": engine.recent(limit)}
+
+
+@app.get("/market/global")
+async def market_global(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live global-markets backdrop (S&P, Nasdaq, Brent, Gold, USD/INR, India VIX...)."""
+    _check_token(request, token)
+    from .analysis import market
+    return market.global_backdrop()
+
+
+@app.get("/market/regime")
+async def market_regime(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Market regime (calm/cautious/stressed) + the risk budget it hands the idea engine."""
+    _check_token(request, token)
+    from .analysis import market
+    return market.regime()
+
+
 @app.post("/execution/propose")
 async def execution_propose(request: Request, order: dict = Body(...),
                             token: str | None = Query(default=None)) -> dict:

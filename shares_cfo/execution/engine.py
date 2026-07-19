@@ -36,6 +36,28 @@ def _audit(event: str, detail: dict) -> None:
         pass  # never let audit I/O block or crash an order decision
 
 
+def recent(limit: int = 50) -> list[dict]:
+    """The last N audit events (proposals, sends, kills) — the trade log, newest first."""
+    if not _AUDIT.exists():
+        return []
+    try:
+        lines = _AUDIT.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in reversed(lines[-limit * 2:]):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+        if len(out) >= limit:
+            break
+    return out
+
+
 def status(cfg: TradingConfig | None = None) -> dict:
     cfg = cfg or get_trading_config()
     return {
