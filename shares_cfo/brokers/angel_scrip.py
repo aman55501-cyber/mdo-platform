@@ -53,6 +53,100 @@ def token_for(symbol: str) -> str | None:
     return _load_map().get(symbol.strip().upper())
 
 
+# --- Option chain (NFO index options: NIFTY / BANKNIFTY) ----------------------
+_OPT_CACHE = Path(__file__).resolve().parent.parent / "data" / "state" / "angel_nfo_options.json"
+QUOTE = "/rest/secure/angelbroking/market/v1/quote/"
+
+
+def _load_options() -> dict:
+    """{underlying: {expiry: {strike: {'CE': token, 'PE': token, 'lot': n}}}}, cached daily."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _OPT_CACHE.exists():
+        try:
+            c = json.loads(_OPT_CACHE.read_text(encoding="utf-8"))
+            if c.get("date") == today:
+                return c.get("idx", {})
+        except (OSError, ValueError):
+            pass
+    try:
+        rows = httpx.get(SCRIP_URL, timeout=60.0).json()
+    except Exception:
+        return {}
+    idx: dict = {}
+    for it in rows:
+        if it.get("exch_seg") != "NFO" or it.get("instrumenttype") != "OPTIDX":
+            continue
+        name = str(it.get("name", "")).upper()
+        if name not in ("NIFTY", "BANKNIFTY"):
+            continue
+        sym = str(it.get("symbol", ""))
+        typ = "CE" if sym.endswith("CE") else "PE" if sym.endswith("PE") else None
+        if not typ:
+            continue
+        try:
+            strike = str(int(float(it["strike"]) / 100))
+        except (KeyError, ValueError):
+            continue
+        exp = str(it.get("expiry", ""))
+        idx.setdefault(name, {}).setdefault(exp, {}).setdefault(strike, {})[typ] = str(it["token"])
+        idx[name][exp][strike]["lot"] = int(float(it.get("lotsize", 0) or 0))
+    if idx:
+        try:
+            _OPT_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            _OPT_CACHE.write_text(json.dumps({"date": today, "idx": idx}), encoding="utf-8")
+        except OSError:
+            pass
+    return idx
+
+
+def nearest_expiry(underlying: str) -> str | None:
+    idx = _load_options().get(underlying.upper(), {})
+    today = datetime.now().date()
+    fut = []
+    for exp in idx:
+        try:
+            d = datetime.strptime(exp, "%d%b%Y").date()
+            if d >= today:
+                fut.append((d, exp))
+        except ValueError:
+            continue
+    return min(fut)[1] if fut else None
+
+
+def option_ltps(underlying: str, expiry: str, strikes: list[int]) -> dict:
+    """{(strike, 'CE'|'PE'): ltp} for the given strikes/expiry via Angel's quote API."""
+    from ..config import get_accounts, load_account
+    from .angel import _headers
+    idx = _load_options().get(underlying.upper(), {}).get(expiry, {})
+    tok_map = {}  # token -> (strike, type)
+    for s in strikes:
+        node = idx.get(str(s), {})
+        for typ in ("CE", "PE"):
+            if node.get(typ):
+                tok_map[str(node[typ])] = (s, typ)
+    if not tok_map:
+        return {}
+    key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+    if not key:
+        return {}
+    acc = load_account(key)
+    jwt, _ = _login(acc)
+    if not jwt:
+        return {}
+    body = {"mode": "LTP", "exchangeTokens": {"NFO": list(tok_map.keys())}}
+    try:
+        r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=20.0)
+        fetched = ((r.json() or {}).get("data") or {}).get("fetched") or []
+    except Exception:
+        return {}
+    out = {}
+    for f in fetched:
+        t = str(f.get("symbolToken") or f.get("symboltoken") or "")
+        if t in tok_map and f.get("ltp") not in (None, "NA"):
+            out[tok_map[t]] = float(f["ltp"])
+    return out
+
+
 LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
 
 

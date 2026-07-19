@@ -479,6 +479,7 @@ async function runOptions(){
     +'<div><div class="k">R:R</div><div class="v">'+(d.reward_risk||'—')+'</div></div></div>'
     +'<div class="rowline"><span class="dim">Breakeven'+(d.breakevens.length>1?'s':'')+'</span><span class="mono">'+(d.breakevens.join(' / ')||'—')+'</span></div>'
     +'<div class="rowline"><span class="dim">Net premium</span><span class="mono '+(d.net_premium<0?'down':'up')+'">'+(d.net_premium<0?'debit ':'credit ')+inr(Math.abs(d.net_premium))+'</span></div>'
+    +'<div class="rowline"><span class="dim">Pricing</span><span class="mono '+(d.priced==='live'?'up':d.priced==='partial'?'warn':'dim')+'">'+(d.priced||'theoretical').toUpperCase()+(d.expiry?' · exp '+d.expiry:'')+'</span></div>'
     +'<div class="rowline"><span class="dim">Spot / IV / DTE</span><span class="mono">'+Math.round(d.spot).toLocaleString('en-IN')+' · '+d.iv_pct+'% · '+d.dte+'d</span></div>'
     +'<div class="rowline"><span class="dim">Net Greeks</span><span class="mono" style="font-size:12px">Δ'+g.delta+' Θ'+g.theta+' V'+g.vega+'</span></div>'
     +'<div class="note" style="margin-top:8px">'+legs+'</div>';
@@ -1043,14 +1044,65 @@ async def options_strategy(request: Request, name: str = "bull_call_spread",
         legs = options.build_strategy(name, spot, iv, dte, lot, step)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Overlay LIVE traded premiums from Angel where available (else keep Black-Scholes).
+    priced = "theoretical"
+    expiry = None
+    try:
+        from .brokers import angel_scrip
+        u = "BANKNIFTY" if sym == "^NSEBANK" else "NIFTY"
+        expiry = angel_scrip.nearest_expiry(u)
+        if expiry:
+            ltps = angel_scrip.option_ltps(u, expiry, [int(l["strike"]) for l in legs])
+            live = 0
+            for l in legs:
+                px = ltps.get((int(l["strike"]), l["type"]))
+                if px and px > 0:
+                    l["premium"] = round(px, 2)
+                    l["priced"] = "live"
+                    live += 1
+            if live:
+                priced = "live" if live == len(legs) else "partial"
+    except Exception:
+        pass
+
     result = options.analyze(legs, spot, iv, dte, lot)
     result["strategy"] = name
     result["underlying"] = underlying.upper()
     result["iv_pct"] = round(iv * 100, 1)
     result["dte"] = dte
-    result["note"] = ("Theoretical (Black-Scholes, VIX as IV). Replace premiums with your "
-                      "broker's traded prices for exact P&L. Advisory — you place any trade.")
+    result["priced"] = priced
+    result["expiry"] = expiry
+    result["note"] = ("Live premiums from Angel." if priced == "live"
+                      else "Some premiums live, rest Black-Scholes." if priced == "partial"
+                      else "Theoretical (Black-Scholes, VIX as IV) — live chain unavailable.")
     return result
+
+
+@app.get("/options/chain")
+async def options_chain(request: Request, underlying: str = "NIFTY", width: int = 8,
+                        token: str | None = Query(default=None)) -> dict:
+    """Live option chain (nearest expiry): strikes around spot with CE/PE LTP."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    from .analysis.prices import PriceDataUnavailable, get_spot
+
+    u = "BANKNIFTY" if underlying.upper() in ("BANKNIFTY", "NIFTYBANK") else "NIFTY"
+    step = 100 if u == "BANKNIFTY" else 50
+    sym = "^NSEBANK" if u == "BANKNIFTY" else "^NSEI"
+    try:
+        spot = get_spot(sym)
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    expiry = angel_scrip.nearest_expiry(u)
+    if not expiry:
+        return {"underlying": u, "error": "Option chain unavailable — ensure ANGEL1 is connected."}
+    atm = round(spot / step) * step
+    strikes = [atm + i * step for i in range(-width, width + 1)]
+    ltps = angel_scrip.option_ltps(u, expiry, strikes)
+    rows = [{"strike": s, "ce": ltps.get((s, "CE")), "pe": ltps.get((s, "PE")),
+             "atm": s == atm} for s in strikes]
+    return {"underlying": u, "expiry": expiry, "spot": round(spot, 2), "atm": atm, "chain": rows}
 
 
 @app.post("/options/payoff")
