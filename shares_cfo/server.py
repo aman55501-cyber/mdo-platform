@@ -1508,7 +1508,7 @@ async def debug_hdfc_history(request: Request, key: str | None = Query(default=N
     return data. Read-only. Temporary; removed once the endpoint is identified.
     """
     _check_token(request, token)
-    from datetime import timedelta
+    from datetime import datetime as _dt, timedelta, timezone as _tz
     from .brokers.hdfc import HdfcAdapter
 
     target = key or (token_store.armed_accounts() or ["HDFC1"])[0]
@@ -1530,7 +1530,7 @@ async def debug_hdfc_history(request: Request, key: str | None = Query(default=N
         pass
 
     today = utc_now_iso()[:10]
-    frm = (datetime.now(timezone.utc) - timedelta(days=40)).strftime("%Y-%m-%d")
+    frm = (_dt.now(_tz.utc) - timedelta(days=40)).strftime("%Y-%m-%d")
     paths = ["/historical", "/historical-data", "/chart", "/charts", "/candle", "/candles",
              "/historical/candle", "/market/historical", "/instruments/historical",
              "/price/historical", "/historical-chart", "/quote/historical",
@@ -1558,6 +1558,9 @@ async def debug_hdfc_history(request: Request, key: str | None = Query(default=N
         return {"account": target, "sample": {"symbol": sym, "token": tok, "exchange": exch},
                 "found": results,
                 "note": "Any 200 with candle data = the endpoint to wire. Paste this back."}
+    except Exception as exc:
+        return {"account": target, "error": str(exc)[:200],
+                "sample": {"symbol": sym, "token": tok, "exchange": exch}}
     finally:
         await adapter.close()
 
