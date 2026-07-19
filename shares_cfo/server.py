@@ -1011,6 +1011,62 @@ async def alerts_push(request: Request, token: str | None = Query(default=None))
     return {"push": pushable}
 
 
+@app.get("/alerts/notify-status")
+async def alerts_notify_status(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Which push channels are configured (ntfy / telegram)."""
+    _check_token(request, token)
+    from . import notify
+    return {"channels": notify.configured()}
+
+
+@app.get("/alerts/test")
+async def alerts_test(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Send a test push to your configured channel(s)."""
+    _check_token(request, token)
+    from . import notify
+    if not notify.configured():
+        return {"sent": [], "hint": "Set CFO_NTFY_TOPIC (or Telegram) in .env and redeploy."}
+    sent = notify.send("Shares CFO", "✅ Test alert — push notifications are working.")
+    return {"sent": sent}
+
+
+async def _alert_poller() -> None:
+    """Background: during market hours, push new critical alerts to your phone."""
+    import asyncio
+    import time
+    from datetime import datetime, timedelta, timezone
+    from . import notify
+    from .analysis import alert_state
+    from .analysis import alerts as alerts_mod
+
+    await asyncio.sleep(30)  # let startup settle
+    while True:
+        try:
+            if notify.configured():
+                ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+                market = ist.weekday() < 5 and (9 * 60 + 15) <= (ist.hour * 60 + ist.minute) <= (15 * 60 + 45)
+                if market:
+                    book = await _consolidated()
+                    now = time.time()
+                    pushable = alert_state.new_pushable(alerts_mod.evaluate(book), now)
+                    for a in pushable:
+                        body = a.get("why", "")
+                        if a.get("action"):
+                            body += f"\n→ {a['action']}"
+                        notify.send(f"{a.get('severity', '')} {a.get('what', 'Alert')}", body)
+                    if pushable:
+                        alert_state.mark_pushed(pushable, now)
+        except Exception:
+            pass
+        await asyncio.sleep(600)  # every 10 min
+
+
+@app.on_event("startup")
+async def _start_poller() -> None:
+    import asyncio
+    asyncio.create_task(_alert_poller())
+
+
 @app.get("/options/strategies")
 async def options_strategies(request: Request, token: str | None = Query(default=None)) -> dict:
     """Available preset option strategies."""
