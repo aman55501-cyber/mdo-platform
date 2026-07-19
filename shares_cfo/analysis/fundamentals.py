@@ -63,29 +63,50 @@ def from_yfinance(symbol: str, exchange: str = "NSE") -> dict | None:
             "source": "yfinance", "confidence": "low"}
 
 
+def _rows_from_file(path: Path) -> list[dict]:
+    """Yield each data row as a dict of {header: value}. Accepts .csv or .xlsx.
+
+    Screener's 'Export to Excel' gives an .xlsx, so we read that natively (via
+    pandas) and fall back to csv for plain exports — no manual conversion needed.
+    """
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        try:
+            import pandas as pd
+        except ImportError:
+            return []
+        try:
+            df = pd.read_excel(path, dtype=str).fillna("")
+        except Exception:
+            return []
+        return df.to_dict(orient="records")
+    try:
+        with path.open(encoding="utf-8-sig") as fh:
+            return list(csv.DictReader(fh))
+    except OSError:
+        return []
+
+
 def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
-    """Read the latest Screener Premium CSV export in data/screener/ (if present)."""
+    """Read the latest Screener Premium export in data/screener/ (.xlsx or .csv)."""
     if not SCREENER_DIR.exists():
         return None
-    files = sorted(SCREENER_DIR.glob("*.csv"))
+    files = sorted(p for p in SCREENER_DIR.glob("*")
+                   if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
     for path in reversed(files):
-        try:
-            with path.open(encoding="utf-8-sig") as fh:
-                for row in csv.DictReader(fh):
-                    name = (row.get("Name") or row.get("Symbol") or row.get("NSE Code") or "").upper()
-                    if symbol.upper() in name or name in symbol.upper():
-                        fields = {}
-                        for canon, headers in COLMAP.items():
-                            for hdr in headers:
-                                if hdr in row and row[hdr] not in ("", None):
-                                    val = to_float(row[hdr])
-                                    if val is not None:
-                                        fields[canon] = _norm_de(val) if canon == "de" else val
-                                    break
-                        if fields:
-                            return {"fields": fields, "source": "screener", "confidence": "high"}
-        except OSError:
-            continue
+        for row in _rows_from_file(path):
+            name = (str(row.get("Name") or row.get("Symbol")
+                        or row.get("NSE Code") or "")).upper()
+            if symbol.upper() in name or (name and name in symbol.upper()):
+                fields = {}
+                for canon, headers in COLMAP.items():
+                    for hdr in headers:
+                        if hdr in row and row[hdr] not in ("", None):
+                            val = to_float(row[hdr])
+                            if val is not None:
+                                fields[canon] = _norm_de(val) if canon == "de" else val
+                            break
+                if fields:
+                    return {"fields": fields, "source": "screener", "confidence": "high"}
     return None
 
 
