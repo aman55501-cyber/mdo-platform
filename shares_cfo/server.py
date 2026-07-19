@@ -642,14 +642,22 @@ async def screener_holdings(request: Request, technicals: int = 1,
         sc = scoring.combine(sym, f.get("fields", {}), t, rule)
         sc["market_value"] = round(slot["market_value"], 2)
         sc["confidence"] = f.get("confidence")
+        if t:  # raw technical facts for the UI (volume action, RSI, trend)
+            sc["tech"] = {"rsi14": t.get("rsi14"), "vol_x": t.get("volume_surge_x"),
+                          "above_200dma": t.get("above_200dma"), "dma_signal": t.get("dma_signal"),
+                          "sma50": t.get("sma50"), "sma200": t.get("sma200")}
         rows.append(sc)
 
     # worst-first: reds, then lowest score. None scores (no data) sink to the bottom.
     order = {"🔴": 0, "🟡": 1, "⚪": 2, "🟢": 3}
     rows.sort(key=lambda x: (order.get(x["verdict"], 2), x["score"] if x["score"] is not None else 999))
     counts = {v: sum(1 for x in rows if x["verdict"] == v) for v in ("🔴", "🟡", "🟢", "⚪")}
-    return {"as_of": book["as_of"], "counts": counts, "holdings": rows,
-            "screener_loaded": fun.screener_status().get("loaded", False)}
+    fs = [x["fundamental_score"] for x in rows if x["fundamental_score"] is not None]
+    ts = [x["technical_score"] for x in rows if x["technical_score"] is not None]
+    book_strength = {"fundamental": round(sum(fs) / len(fs)) if fs else None,
+                     "technical": round(sum(ts) / len(ts)) if ts else None}
+    return {"as_of": book["as_of"], "counts": counts, "book_strength": book_strength,
+            "holdings": rows, "screener_loaded": fun.screener_status().get("loaded", False)}
 
 
 @app.get("/screener/scan")
@@ -712,6 +720,74 @@ async def screener_rule_set(request: Request, rule: dict = Body(...),
     _check_token(request, token)
     from .analysis import scoring
     return {"saved": True, "rule": scoring.save_rule(rule)}
+
+
+@app.get("/screener/watchlist")
+async def screener_watchlist(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Your holding symbols as a ready-to-use list for building a Screener watchlist.
+
+    Copy `symbols` into a Screener watchlist so your Premium export always covers
+    exactly what you own — then upload that export back to score every holding.
+    """
+    _check_token(request, token)
+    book = await _consolidated()
+    syms = sorted({_clean_symbol(h["ticker"])
+                   for acc in book["accounts"] for h in acc.get("holdings", [])})
+    return {"count": len(syms), "symbols": syms,
+            "as_text": ", ".join(syms),
+            "note": "screener.in → Create watchlist → add these names → Export to Excel → upload here."}
+
+
+def _mprofit_save(file: "UploadFile") -> Path:
+    from . import mprofit
+    name = (file.filename or "").strip()
+    ext = Path(name).suffix.lower()
+    if ext not in (".xlsx", ".xls", ".csv"):
+        raise HTTPException(status_code=400, detail="Upload an MProfit .xlsx or .csv export.")
+    mprofit.MPROFIT_DIR.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c for c in Path(name).stem if c.isalnum() or c in ("-", "_"))[:40] or "mprofit"
+    return mprofit.MPROFIT_DIR / f"{utc_now_iso().replace(':', '').replace('.', '')}_{safe}{ext}"
+
+
+@app.get("/reconcile/mprofit/status")
+async def mprofit_status(request: Request, token: str | None = Query(default=None)) -> dict:
+    """What MProfit export is loaded (active file, position count)."""
+    _check_token(request, token)
+    from . import mprofit
+    return mprofit.status()
+
+
+@app.post("/reconcile/mprofit/upload")
+async def mprofit_upload(request: Request, file: UploadFile = File(...),
+                         token: str | None = Query(default=None)) -> dict:
+    """Upload an MProfit holdings export straight from your phone → the drop-zone."""
+    _check_token(request, token)
+    from . import mprofit
+    dest = _mprofit_save(file)
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (15 MB max).")
+    dest.write_bytes(data)
+    return {"uploaded": dest.name, "bytes": len(data), "status": mprofit.status()}
+
+
+@app.get("/reconcile/mprofit")
+async def mprofit_reconcile(request: Request, cost_tol_pct: float = 1.0,
+                            token: str | None = Query(default=None)) -> dict:
+    """Diff the live broker book against your latest MProfit export.
+
+    Surfaces quantity mismatches, average-cost drift, and holdings that exist on
+    only one side — the exact gaps to investigate.
+    """
+    _check_token(request, token)
+    from . import mprofit
+    book = await _consolidated()
+    broker = [{"symbol": h["ticker"], "quantity": h.get("quantity"),
+               "average_price": h.get("average_price")}
+              for acc in book["accounts"] for h in acc.get("holdings", [])]
+    result = mprofit.reconcile(broker, cost_tol_pct=cost_tol_pct)
+    result["as_of"] = book["as_of"]
+    return result
 
 
 @app.get("/idea/{ticker}")
