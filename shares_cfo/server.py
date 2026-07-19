@@ -360,6 +360,13 @@ async def root() -> str:
     return DASHBOARD_HTML
 
 
+@app.get("/preview", response_class=HTMLResponse)
+async def preview() -> str:
+    """Interactive design prototype (mock data, no auth) — the reference for the redesign."""
+    from .preview import PREVIEW_HTML
+    return PREVIEW_HTML
+
+
 @app.get("/health")
 async def health(request: Request, token: str | None = Query(default=None)) -> dict:
     _check_token(request, token)
