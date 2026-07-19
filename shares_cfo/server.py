@@ -232,6 +232,15 @@ DASHBOARD_HTML = r"""<!doctype html>
   <button data-t="login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg>Login</button>
 </nav>
 
+<div class="scrim" id="cscrim"></div>
+<div class="sheet" id="csheet" role="dialog" aria-modal="true" aria-label="Chart" style="max-height:82vh;overflow-y:auto">
+  <div class="grab"></div>
+  <div style="display:flex;justify-content:space-between;align-items:baseline"><span id="c-sym" style="font-weight:800;font-size:18px">—</span><span id="c-last" class="mono dim"></span></div>
+  <canvas id="cchart" width="900" height="360" style="width:100%;height:auto;margin-top:12px;display:block"></canvas>
+  <div style="display:flex;gap:14px;margin-top:6px;font-size:11px" class="dim"><span><span style="color:var(--acc)">━</span> price</span><span><span style="color:var(--warn)">━</span> 50-DMA</span><span><span style="color:var(--purp)">━</span> 200-DMA</span><span><span style="color:var(--up)">┄</span> R</span><span><span style="color:var(--down)">┄</span> S</span></div>
+  <div id="c-lvls" class="note" style="margin-top:8px"></div>
+</div>
+
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
   <div class="grab"></div>
@@ -305,7 +314,9 @@ function detail(x){
   m+=cell('Debt/Eq',f.de!=null?(+f.de).toFixed(2):'—',f.de!=null?(f.de>1?'high':'low'):'—',f.de>1?'down':'up');
   m+=cell('ROE',f.roe!=null?Math.round(f.roe)+'%':'—',f.roe!=null?(f.roe>=15?'strong':'ok'):'—',f.roe>=15?'up':'');
   const p=x.last_price||0;
-  return '<div class="metrics">'+m+'</div><div class="actions">'
+  return '<div class="metrics">'+m+'</div>'
+    +'<div style="padding:10px 13px 0"><button class="btn ghost" style="width:100%" onclick="openChart(\''+x.sym+'\')">📈 Chart · levels</button></div>'
+    +'<div class="actions">'
     +'<button class="btn buy" onclick="ticket(\'BUY\',\''+x.sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Buy</button>'
     +'<button class="btn sell" onclick="ticket(\'SELL\',\''+x.sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Sell</button>'
     +'<button class="btn hedge" onclick="go(\'hedge\')">Hedge</button></div>';
@@ -412,6 +423,36 @@ async function loadTrades(){
     const t=(e.ts||'').replace('T',' ').slice(5,16);
     return '<div class="tr"><span class="side '+sc+'">'+(o.side||e.event)+'</span><div><div style="font-weight:600">'+(o.symbol||e.event)+' <span class="dim" style="font-size:12px">'+(o.quantity?o.quantity+' @ '+px(o.price):'')+'</span></div><div class="dim" style="font-size:11.5px">'+(o.stop_loss?'SL '+o.stop_loss+' · R:R '+(o.risk_reward||'—'):t)+'</div></div><span class="stt '+e.event+'">'+e.event.replace('_',' ')+'</span></div>';}).join('');
 }
+
+/* ---- CHART ---- */
+const cscrim=document.getElementById('cscrim'),csheet=document.getElementById('csheet');
+async function openChart(sym){
+  document.getElementById('c-sym').textContent=sym;document.getElementById('c-last').textContent='loading…';
+  document.getElementById('c-lvls').textContent='';cscrim.classList.add('on');csheet.classList.add('on');
+  const ct=document.getElementById('cchart').getContext('2d');ct.clearRect(0,0,900,360);
+  const r=await j('/chart/'+encodeURIComponent(sym)+'?'+Q);
+  if(!r.ok){document.getElementById('c-last').textContent=(r.d.detail||'chart unavailable');return;}
+  drawChart(r.d);
+}
+function drawChart(d){
+  document.getElementById('c-last').textContent=px(d.last)+(d.source?' · '+d.source:'');
+  const c=document.getElementById('cchart'),x=c.getContext('2d'),W=c.width,H=c.height,pad=40;
+  x.clearRect(0,0,W,H);
+  const series=d.closes||[];if(!series.length)return;
+  const L=d.levels||{};
+  const all=series.concat((d.sma50||[]).filter(v=>v!=null),(d.sma200||[]).filter(v=>v!=null));
+  const lvlvals=L.pivot?[L.s2,L.s1,L.pivot,L.r1,L.r2]:[];
+  const ymin=Math.min(...all,...lvlvals),ymax=Math.max(...all,...lvlvals),yr=(ymax-ymin)||1;
+  const X=i=>pad+i/((series.length-1)||1)*(W-2*pad),Y=v=>H-pad-(v-ymin)/yr*(H-2*pad);
+  // level lines
+  const drawLvl=(v,col,lbl)=>{if(v==null)return;const yy=Y(v);x.strokeStyle=col;x.setLineDash([5,4]);x.globalAlpha=.6;x.beginPath();x.moveTo(pad,yy);x.lineTo(W-pad,yy);x.stroke();x.globalAlpha=1;x.setLineDash([]);x.fillStyle=col;x.font='10px monospace';x.fillText(lbl+' '+Math.round(v),W-pad-54,yy-3);};
+  drawLvl(L.r2,'#2fbd85','R2');drawLvl(L.r1,'#2fbd85','R1');drawLvl(L.pivot,'#8493ab','P');drawLvl(L.s1,'#ff5867','S1');drawLvl(L.s2,'#ff5867','S2');
+  const line=(arr,col,w)=>{x.beginPath();let started=false;arr.forEach((v,i)=>{if(v==null){started=false;return;}const xx=X(i),yy=Y(v);if(started)x.lineTo(xx,yy);else x.moveTo(xx,yy);started=true;});x.strokeStyle=col;x.lineWidth=w;x.lineJoin='round';x.stroke();};
+  line(d.sma200||[],'#a78bfa',1.5);line(d.sma50||[],'#e0a53a',1.5);line(series,'#4c8dff',2.2);
+  const lx=X(series.length-1),ly=Y(series[series.length-1]);x.fillStyle='#4c8dff';x.beginPath();x.arc(lx,ly,3.5,0,7);x.fill();
+  if(L.pivot){document.getElementById('c-lvls').innerHTML='<b>Levels:</b> S '+L.s2+' / '+L.s1+' · P '+L.pivot+' · R '+L.r1+' / '+L.r2+' &nbsp;<span class="faint">('+(L.cpr_type||'')+')</span>';}
+}
+cscrim.addEventListener('click',()=>{cscrim.classList.remove('on');csheet.classList.remove('on');});
 
 /* ---- OPTIONS ---- */
 let optStrategiesLoaded=false;
@@ -755,6 +796,39 @@ async def analysis(request: Request, ticker: str, token: str | None = Query(defa
         "confidence": data["confidence"],
         "bars": data["bars"],
         "technicals": tech,
+    }
+
+
+@app.get("/chart/{ticker}")
+async def chart(request: Request, ticker: str, bars: int = 130,
+                token: str | None = Query(default=None)) -> dict:
+    """Price + 50/200-DMA series + pivot S/R levels for a symbol's chart."""
+    _check_token(request, token)
+    from .analysis import levels
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    try:
+        data = get_ohlcv(_clean_symbol(ticker), period="1y")
+    except PriceDataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    closes = data["closes"]
+
+    def sma_series(vals: list[float], w: int) -> list:
+        return [None] * min(w - 1, len(vals)) + [
+            sum(vals[i - w + 1:i + 1]) / w for i in range(w - 1, len(vals))
+        ]
+
+    s50, s200 = sma_series(closes, 50), sma_series(closes, 200)
+    n = max(1, min(bars, len(closes)))
+    lvl = levels.from_ohlcv(data)
+    return {
+        "symbol": _clean_symbol(ticker).upper(),
+        "source": data.get("source"),
+        "closes": [round(c, 2) for c in closes[-n:]],
+        "sma50": [round(x, 2) if x is not None else None for x in s50[-n:]],
+        "sma200": [round(x, 2) if x is not None else None for x in s200[-n:]],
+        "last": round(closes[-1], 2),
+        "levels": lvl,
     }
 
 
