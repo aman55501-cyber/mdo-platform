@@ -121,7 +121,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   .stt{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:auto;flex:none}
   .stt.SENT{background:rgba(47,189,133,.15);color:var(--up)}.stt.PROPOSE{background:rgba(132,147,171,.15);color:var(--dim)}.stt.KILL_SWITCH{background:rgba(255,88,103,.15);color:var(--down)}
   .note{font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5}
-  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(4,1fr);padding:8px 6px calc(8px + env(safe-area-inset-bottom))}
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:8px 6px calc(8px + env(safe-area-inset-bottom))}
   .nav button{background:0;border:0;color:var(--faint);font-family:var(--sans);font-size:10.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
   .nav button svg{width:22px;height:22px}.nav button[aria-current="true"]{color:var(--acc)}
   .scrim{position:fixed;inset:0;background:rgba(4,7,13,.66);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}.scrim.on{opacity:1;pointer-events:auto}
@@ -204,6 +204,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   <button data-t="ideas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0012 3z"/></svg>Ideas</button>
   <button data-t="hedge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>Hedge</button>
   <button data-t="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 15l5-5 4 3 7-8"/></svg>Trades</button>
+  <button data-t="login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg>Login</button>
 </nav>
 
 <div class="scrim" id="scrim"></div>
@@ -415,7 +416,7 @@ function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remov
   if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadIdeas();}
   if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();}
   if(t==='trades'&&!loaded.trades){loaded.trades=1;loadTrades();}}
-document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.t);});
+document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.t==='login'){location.href='/login?'+Q;return;}go(b.dataset.t);});
 document.getElementById('filters').addEventListener('click',e=>{const b=e.target.closest('.fchip');if(!b)return;[...document.querySelectorAll('.fchip')].forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');applyFilter();});
 function applyFilter(){const f=(document.querySelector('.fchip[aria-pressed="true"]')||{}).textContent||'All';document.querySelectorAll('#holds .h').forEach(h=>{const v=h.dataset.v,vol=parseFloat(h.dataset.vol||0);let s=true;if(f==='Strong')s=v==='strong';else if(f==='Weak')s=v==='weak';else if(f==='Vol surge')s=vol>=2;h.style.display=s?'':'none';});}
 
@@ -1104,6 +1105,49 @@ async def _day_pnl() -> float:
         return float(book.get("positions_pnl", 0.0)) + float(book.get("unrealised_pnl", 0.0))
     except Exception:
         return 0.0
+
+
+@app.get("/debug/holdings-fields")
+async def debug_holdings_fields(request: Request, key: str | None = Query(default=None),
+                                token: str | None = Query(default=None)) -> dict:
+    """Show the RAW field NAMES HDFC returns for holdings/margins, so MTF can be
+    wired against the real schema. Returns field names + only MTF-ish values —
+    not your positions. Temporary; removed once MTF is mapped."""
+    _check_token(request, token)
+    from .brokers.hdfc import HdfcAdapter
+    from .brokers import hdfc_endpoints as ep
+
+    # first account that has a same-day token, unless one is named
+    target = key
+    if not target:
+        armed = token_store.armed_accounts()
+        target = armed[0] if armed else "HDFC1"
+    account = load_account(target)
+    stored = token_store.get_token(target)
+    if stored:
+        account.access_token = stored
+    adapter = HdfcAdapter(account)
+    mtf_like = ("mtf", "margin", "fund", "collateral", "loan", "pledge", "emargin",
+                "product", "delivery", "cnc", "financed", "leverage")
+    try:
+        raw_h = await adapter._get(ep.HOLDINGS)
+        rows = adapter._rows(raw_h, "holdings", "data", "holding")
+        field_names = sorted({k for r in rows if isinstance(r, dict) for k in r.keys()})
+        sample_mtf = {}
+        if rows and isinstance(rows[0], dict):
+            for k, v in rows[0].items():
+                if any(t in k.lower() for t in mtf_like):
+                    sample_mtf[k] = v
+        raw_f = await adapter._get(ep.FUNDS)
+        funds_top = list(raw_f.get("data", raw_f).keys()) if isinstance(raw_f.get("data", raw_f), dict) else []
+        return {"account": target, "holding_field_names": field_names,
+                "mtf_like_fields_on_first_row": sample_mtf,
+                "funds_top_level_keys": funds_top,
+                "note": "Paste this back — I'll map MTF from the real field names."}
+    except SharesCFOError as exc:
+        return {"error": str(exc), "hint": "This account may need login first at /login."}
+    finally:
+        await adapter.close()
 
 
 @app.get("/execution/status")
