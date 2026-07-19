@@ -32,4 +32,13 @@ class TenderRepository {
 
   Future<void> setStatus(String id, TenderStatus s) =>
       _db.from('tenders').update({'status': s.name}).eq('id', id);
+
+  Future<void> setPursued(String id, bool pursued) =>
+      _db.from('tenders').update({'pursued': pursued}).eq('id', id);
+
+  Future<void> setBidStage(String id, String stage) =>
+      _db.from('tenders').update({'bid_stage': stage}).eq('id', id);
+
+  Future<void> setChecklist(String id, Map<String, dynamic> checklist) =>
+      _db.from('tenders').update({'bid_checklist': checklist}).eq('id', id);
 }

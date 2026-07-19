@@ -47,6 +47,9 @@ class Tender {
   final String? pdfUrl;
   final TenderStatus status;
   final bool hearted;
+  final bool pursued;
+  final String bidStage;
+  final Map<String, dynamic> bidChecklist;
   final List<TenderLocation> locations;
 
   Tender({
@@ -74,6 +77,9 @@ class Tender {
     this.pdfUrl,
     this.status = TenderStatus.live,
     this.hearted = false,
+    this.pursued = false,
+    this.bidStage = 'interested',
+    this.bidChecklist = const {},
     this.locations = const [],
   });
 
@@ -105,6 +111,9 @@ class Tender {
       pdfUrl: m['pdf_url'],
       status: statusFrom(m['status']),
       hearted: m['hearted'] ?? false,
+      pursued: m['pursued'] ?? false,
+      bidStage: m['bid_stage'] ?? 'interested',
+      bidChecklist: (m['bid_checklist'] as Map?)?.cast<String, dynamic>() ?? {},
       locations: locations,
     );
   }

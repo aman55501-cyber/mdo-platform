@@ -4,6 +4,7 @@ import '../models/tender.dart';
 import '../services/eligibility.dart';
 import '../services/notifications.dart';
 import '../services/tender_repository.dart';
+import 'bid_desk_screen.dart';
 import 'dashboard_screen.dart';
 import 'eligibility_screen.dart';
 import 'list_screen.dart';
@@ -75,6 +76,22 @@ class _HomeShellState extends State<HomeShell> {
     await _load();
   }
 
+  Future<void> _pursue(Tender t, bool v) async {
+    await _repo.setPursued(t.id, v);
+    await _load();
+  }
+
+  Future<void> _bidStage(Tender t, String s) async {
+    await _repo.setBidStage(t.id, s);
+    await _load();
+  }
+
+  Future<void> _bidToggle(Tender t, String key, bool v) async {
+    final m = Map<String, dynamic>.from(t.bidChecklist)..[key] = v;
+    await _repo.setChecklist(t.id, m);
+    await _load();
+  }
+
   void _open(Tender t) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => TenderDetailScreen(
@@ -86,6 +103,10 @@ class _HomeShellState extends State<HomeShell> {
         },
         onStatus: (s) async {
           await _status(t, s);
+          if (mounted) Navigator.of(context).pop();
+        },
+        onPursue: (v) async {
+          await _pursue(t, v);
           if (mounted) Navigator.of(context).pop();
         },
       ),
@@ -115,7 +136,7 @@ class _HomeShellState extends State<HomeShell> {
       );
     }
 
-    final titles = ['Map', 'Tenders', 'Eligibility', 'Dashboard'];
+    final titles = ['Map', 'Tenders', 'Eligibility', 'Bid Desk', 'Dashboard'];
     final pages = [
       MapScreen(org: _org!, tenders: _tenders, onOpen: _open),
       ListScreen(
@@ -125,6 +146,13 @@ class _HomeShellState extends State<HomeShell> {
           onOpen: _open,
           onHeart: _heart),
       EligibilityScreen(org: _org!, tenders: _tenders, onOpen: _open),
+      BidDeskScreen(
+          org: _org!,
+          tenders: _tenders,
+          onOpen: _open,
+          onStage: _bidStage,
+          onToggle: _bidToggle,
+          onUnpursue: (t) => _pursue(t, false)),
       DashboardScreen(
           org: _org!, tenders: _tenders, eligibleIds: _eligibleIds),
     ];
@@ -147,8 +175,11 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
               icon: Icon(Icons.fact_check_outlined), label: 'Eligibility'),
           NavigationDestination(
+              icon: Icon(Icons.gavel_outlined), label: 'Bid Desk'),
+          NavigationDestination(
               icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
         ],
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
       ),
     );
   }

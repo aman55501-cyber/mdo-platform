@@ -13,12 +13,14 @@ class TenderDetailScreen extends StatelessWidget {
   final OrgProfile org;
   final void Function(TenderStatus) onStatus;
   final VoidCallback onHeart;
+  final void Function(bool) onPursue;
   const TenderDetailScreen(
       {super.key,
       required this.tender,
       required this.org,
       required this.onStatus,
-      required this.onHeart});
+      required this.onHeart,
+      required this.onPursue});
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +96,25 @@ class TenderDetailScreen extends StatelessWidget {
                 ? 'No document attached'
                 : 'Open tender document'),
           ),
+          const SizedBox(height: 10),
+          // Pursue → adds the tender to the Bid Desk with its action plan.
+          tender.pursued
+              ? OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      foregroundColor: c.ok),
+                  onPressed: () => onPursue(false),
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('In Bid Desk · tap to remove'),
+                )
+              : FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      backgroundColor: c.brand),
+                  onPressed: () => onPursue(true),
+                  icon: const Icon(Icons.gavel_outlined),
+                  label: const Text('Pursue this bid'),
+                ),
           const SizedBox(height: 16),
           _statusPicker(context),
         ],
