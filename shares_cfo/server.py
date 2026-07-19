@@ -40,6 +40,14 @@ log = logging.getLogger("shares_cfo.server")
 
 app = FastAPI(title="Shares CFO", version="0.1.0")
 
+# Inject any app-connected accounts (added via the Login tab) into the environment
+# so config.load_account picks them up alongside .env-defined accounts.
+from . import account_store  # noqa: E402
+try:
+    account_store.apply_to_env()
+except Exception:  # never let a bad store block startup
+    pass
+
 # Self-contained mobile web dashboard, served at "/". Open it in your phone's
 # browser: http://<PC-LAN-IP>:8000/?token=<CFO_API_TOKEN>
 DASHBOARD_HTML = r"""<!doctype html>
@@ -710,14 +718,76 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
             f"<div><div>{label}</div><div style='color:#8b949e;font-size:12px'>{key} · {code}</div></div>"
             f"<div style='text-align:right'><div style='color:{badge};font-size:12px'>● {status}</div>{link}</div></div>"
         )
+    add_form = (
+        "<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:16px;padding:14px'>"
+        "<div style='font-weight:700;margin-bottom:4px'>Connect another account</div>"
+        "<div style='color:#8b949e;font-size:12px;margin-bottom:10px'>Adds a new account — stored securely on your server, no VPS editing.</div>"
+        "<input id='ac_key' placeholder='Account name (e.g. HDFC3 or ANGEL1)' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<input id='ac_apikey' placeholder='API key' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<input id='ac_apisecret' placeholder='API secret (HDFC)' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<input id='ac_client' placeholder='Client code' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<input id='ac_totp' placeholder='TOTP secret (Angel only)' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<input id='ac_mpin' placeholder='MPIN (Angel only)' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
+        "<button onclick='addAcc()' style='width:100%;margin-top:8px;padding:11px;border:0;border-radius:9px;background:#58a6ff;color:#04122b;font-weight:700'>Connect account</button>"
+        "<div id='ac_msg' style='font-size:13px;margin-top:8px;color:#8b949e'></div></div>"
+        "<script>async function addAcc(){var m=document.getElementById('ac_msg');m.textContent='Connecting…';"
+        "var b={creds_key:ac_key.value,api_key:ac_apikey.value,api_secret:ac_apisecret.value,client_code:ac_client.value,totp_secret:ac_totp.value,mpin:ac_mpin.value};"
+        f"var r=await fetch('/accounts/add?token={t}',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(b)}});"
+        "var j=await r.json();if(r.ok){m.style.color='#3fb950';m.textContent='✅ '+j.account+' connected. '+j.next;setTimeout(function(){location.reload();},1200);}"
+        "else{m.style.color='#f85149';m.textContent=j.detail||'Failed';}}</script>"
+    )
     return (
         "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<div style='font-family:sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;padding:16px'>"
-        "<h2>Shares CFO — morning login</h2>"
+        "<h2>Shares CFO — accounts &amp; login</h2>"
         "<p style='color:#8b949e'>Tap Log in for each account (2FA on that holder's phone). Same-day tokens.</p>"
         f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:12px'>{rows}</div>"
+        f"{add_form}"
         f"<p style='margin-top:16px'><a href='/?token={t}' style='color:#58a6ff'>→ Open dashboard</a></p></div>"
     )
+
+
+@app.get("/accounts")
+async def accounts_list(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Configured accounts + which are logged in + which are app-connected."""
+    _check_token(request, token)
+    armed = set(token_store.armed_accounts())
+    stored = set(account_store.load().keys())
+    out = []
+    for key in get_accounts():
+        try:
+            acc = load_account(key)
+            out.append({"key": key, "label": acc.label, "broker": acc.broker,
+                        "client_code": acc.client_code, "logged_in": key in armed,
+                        "source": "app" if key in stored else "env"})
+        except SharesCFOError:
+            out.append({"key": key, "label": key, "broker": "?", "logged_in": False,
+                        "needs_setup": True, "source": "app" if key in stored else "env"})
+    return {"accounts": out}
+
+
+@app.post("/accounts/add")
+async def accounts_add(request: Request, body: dict = Body(...),
+                       token: str | None = Query(default=None)) -> dict:
+    """Connect a broker account from the app (persisted to the state volume, no VPS edit).
+
+    Body: {creds_key, api_key, api_secret?, client_code?, totp_secret?, mpin?}.
+    Secrets are stored server-side only and never returned.
+    """
+    _check_token(request, token)
+    key = str(body.get("creds_key", "")).strip().upper()
+    if not key:
+        raise HTTPException(status_code=400, detail="Account name (e.g. HDFC3) is required.")
+    # default the HDFC OAuth callback to this host if not supplied
+    if not body.get("redirect_url"):
+        base = str(request.base_url).rstrip("/")
+        body["redirect_url"] = f"{base}/hdfc/callback"
+    try:
+        result = account_store.add(key, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"connected": True, **result,
+            "next": f"Now log in {key} from the Login tab (2FA on that holder's phone)."}
 
 
 @app.get("/hdfc/login")
