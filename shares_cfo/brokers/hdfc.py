@@ -166,6 +166,12 @@ class HdfcAdapter:
             if is_derivative:
                 self.last_holdings_excluded += 1
                 continue
+            # Capture any MTF / margin-funding fields HDFC exposes so the MTF view
+            # can subtract the loan. Field names vary; we keep whatever looks relevant.
+            _mtf_terms = ("mtf", "margin", "fund", "collateral", "loan", "pledge",
+                          "emargin", "product", "financed", "leverage")
+            raw_mtf = {k: v for k, v in h.items()
+                       if isinstance(k, str) and any(t in k.lower() for t in _mtf_terms)}
             qty = int(to_float(_first(h, "quantity", "totalQty", "qty", "netQty")) or 0)
             avg = to_float(_first(h, "average_price", "averagePrice", "avgPrice", "buyAvg")) or 0.0
             last = to_float(_first(h, "close_price", "closePrice", "lastPrice", "ltp", "currentPrice", "marketPrice")) or 0.0
@@ -183,6 +189,7 @@ class HdfcAdapter:
                 "isin": _first(h, "isin", "ISIN", default=""),
                 "security_id": str(_first(h, "security_id", "securityId", "instrument_token", default="")),
                 "token": _digits(_first(h, "instrument_token", "security_id", default="")),
+                "raw_mtf": raw_mtf,
             })
         return out
 

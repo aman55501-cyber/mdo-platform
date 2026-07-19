@@ -121,9 +121,9 @@ DASHBOARD_HTML = r"""<!doctype html>
   .stt{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:auto;flex:none}
   .stt.SENT{background:rgba(47,189,133,.15);color:var(--up)}.stt.PROPOSE{background:rgba(132,147,171,.15);color:var(--dim)}.stt.KILL_SWITCH{background:rgba(255,88,103,.15);color:var(--down)}
   .note{font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5}
-  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(5,1fr);padding:8px 6px calc(8px + env(safe-area-inset-bottom))}
-  .nav button{background:0;border:0;color:var(--faint);font-family:var(--sans);font-size:10.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
-  .nav button svg{width:22px;height:22px}.nav button[aria-current="true"]{color:var(--acc)}
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(6,1fr);padding:8px 2px calc(8px + env(safe-area-inset-bottom))}
+  .nav button{background:0;border:0;color:var(--faint);font-family:var(--sans);font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
+  .nav button svg{width:21px;height:21px}.nav button[aria-current="true"]{color:var(--acc)}
   .scrim{position:fixed;inset:0;background:rgba(4,7,13,.66);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}.scrim.on{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:460px;margin:0 auto;background:var(--panel);border:1px solid var(--bd);border-bottom:0;border-radius:20px 20px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));transform:translateY(103%);transition:transform .26s cubic-bezier(.2,.7,.2,1)}
   .sheet.on{transform:translateY(0)}
@@ -191,6 +191,11 @@ DASHBOARD_HTML = r"""<!doctype html>
     </div>
   </section>
 
+  <section id="s-mtf">
+    <h1 class="screen">MTF — margin funding</h1>
+    <div class="card" id="mtf-card"><div class="load">Loading MTF view…</div></div>
+  </section>
+
   <section id="s-trades">
     <h1 class="screen">Trade log</h1>
     <div class="card" id="exec-status"></div>
@@ -200,7 +205,8 @@ DASHBOARD_HTML = r"""<!doctype html>
 </div>
 
 <nav class="nav" id="nav">
-  <button data-t="home" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Portfolio</button>
+  <button data-t="home" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</button>
+  <button data-t="mtf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M6 3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6a3 3 0 013-3z"/><path d="M7 15h4"/></svg>MTF</button>
   <button data-t="ideas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0012 3z"/></svg>Ideas</button>
   <button data-t="hedge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>Hedge</button>
   <button data-t="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 15l5-5 4 3 7-8"/></svg>Trades</button>
@@ -224,7 +230,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <script>
 const token=new URLSearchParams(location.search).get('token')||'';
 const Q='token='+encodeURIComponent(token);
-const loaded={ideas:0,hedge:0,trades:0};
+const loaded={ideas:0,hedge:0,trades:0,mtf:0};
 let PORT=null,CURR=null,HEDGE=null;
 const SCORE={};
 function inr(n){if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+' Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+' L';return s+'₹'+Math.round(a).toLocaleString('en-IN');}
@@ -367,6 +373,27 @@ async function loadTrades(){
     return '<div class="tr"><span class="side '+sc+'">'+(o.side||e.event)+'</span><div><div style="font-weight:600">'+(o.symbol||e.event)+' <span class="dim" style="font-size:12px">'+(o.quantity?o.quantity+' @ '+px(o.price):'')+'</span></div><div class="dim" style="font-size:11.5px">'+(o.stop_loss?'SL '+o.stop_loss+' · R:R '+(o.risk_reward||'—'):t)+'</div></div><span class="stt '+e.event+'">'+e.event.replace('_',' ')+'</span></div>';}).join('');
 }
 
+/* ---- MTF ---- */
+async function loadMtf(){
+  const r=await j('/mtf?'+Q);const card=document.getElementById('mtf-card');
+  if(!r.ok){card.innerHTML='<div class="load">MTF view unavailable.</div>';return;}
+  const d=r.d,adj=d.mtf_loan>0;
+  const sColor=d.status==='loan_detected'?'var(--up)':d.status==='none_found'?'var(--dim)':'var(--warn)';
+  let h='<div class="lbl">True net worth <span class="faint">(after MTF loan)</span></div>'
+    +'<div class="nw mono">'+inr(d.true_net_worth)+'</div>';
+  if(adj)h+='<div class="dim" style="font-size:13px;margin-top:2px">reported '+inr(d.reported_net_worth)+' − loan '+inr(d.mtf_loan)+'</div>';
+  h+='<div class="grid2"><div class="stat"><div class="lbl">Gross holdings</div><div class="v mono">'+inr(d.gross_holdings)+'</div></div>'
+    +'<div class="stat"><div class="lbl">MTF loan</div><div class="v mono '+(adj?'down':'')+'">'+(adj?'−'+inr(d.mtf_loan):'—')+'</div></div>'
+    +'<div class="stat"><div class="lbl">Interest / day</div><div class="v mono '+(adj?'down':'')+'">'+(adj?inr(d.daily_interest):'—')+'</div></div>'
+    +'<div class="stat"><div class="lbl">Leverage</div><div class="v mono">'+(d.leverage||1)+'×</div></div></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--hair)"><span class="h2">MTF positions</span><span class="chip" style="background:rgba(132,147,171,.14);color:'+sColor+'">'+d.status.replace(/_/g,' ')+'</span></div>';
+  if(d.mtf_positions&&d.mtf_positions.length){d.mtf_positions.forEach(p=>{h+='<div class="tr"><div><div style="font-weight:600">'+p.ticker+'</div>'+(p.product?'<div class="dim" style="font-size:11.5px">'+p.product+'</div>':'')+'</div><div class="right"><div class="mono">'+inr(p.value)+'</div>'+(p.loan?'<div class="mono down" style="font-size:12px">loan '+inr(p.loan)+'</div>':'')+'</div></div>';});}
+  else{h+='<div class="note" style="margin-top:10px">'+d.note+'</div>';}
+  if(d.status!=='loan_detected'&&d.fields_seen&&Object.keys(d.fields_seen).length){h+='<div class="note" style="margin-top:8px">Fields seen: '+Object.keys(d.fields_seen).join(', ')+'</div>';}
+  h+='<div class="note" style="margin-top:10px">MTF rate assumed '+d.annual_rate_pct+'% p.a. (set CFO_MTF_RATE in .env to change).</div>';
+  card.innerHTML=h;
+}
+
 /* ---- TICKET ---- */
 const scrim=document.getElementById('scrim'),sheet=document.getElementById('sheet');
 function ticket(side,sym,ltp,tok,exch,sig){
@@ -413,6 +440,7 @@ scrim.addEventListener('click',()=>{scrim.classList.remove('on');sheet.classList
 /* ---- nav + filters ---- */
 function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
+  if(t==='mtf'&&!loaded.mtf){loaded.mtf=1;loadMtf();}
   if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadIdeas();}
   if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();}
   if(t==='trades'&&!loaded.trades){loaded.trades=1;loadTrades();}}
@@ -748,6 +776,17 @@ async def alerts_push(request: Request, token: str | None = Query(default=None))
     pushable = alert_state.new_pushable(alerts_mod.evaluate(book), now)
     alert_state.mark_pushed(pushable, now)
     return {"push": pushable}
+
+
+@app.get("/mtf")
+async def mtf_view(request: Request, token: str | None = Query(default=None)) -> dict:
+    """MTF view: true net worth after the margin loan + interest, from the live book."""
+    _check_token(request, token)
+    from . import mtf
+    book = await _consolidated()
+    result = mtf.analyze(book)
+    result["as_of"] = book["as_of"]
+    return result
 
 
 @app.get("/exposure")

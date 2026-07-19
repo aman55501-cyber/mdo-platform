@@ -23,6 +23,7 @@ class Holding:
     isin: str = ""
     security_id: str = ""
     token: str = ""                # numeric instrument token (for fetch-ltp)
+    raw_mtf: dict = field(default_factory=dict)  # any MTF/margin-funding fields HDFC exposes
 
     @property
     def market_value(self) -> float:
@@ -42,6 +43,7 @@ class Holding:
             "isin": self.isin,
             "security_id": self.security_id,
             "market_value": round(self.market_value, 2),
+            "raw_mtf": self.raw_mtf,
         }
 
 
