@@ -174,12 +174,19 @@ DASHBOARD_HTML = r"""<!doctype html>
       <div class="meterrow"><span class="name">Technical</span><span class="meter"><i id="mtech" style="background:linear-gradient(90deg,var(--up),#5fd8a6)"></i></span><span class="score mono" id="stech">&mdash;</span></div>
       <div class="counts" id="counts"></div>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 2px 10px">
-      <span class="lbl">Holdings <span class="faint" id="hold-count"></span></span>
-      <select id="acct-sel" class="sel"><option value="ALL">All accounts</option></select>
+    <div class="card"><div class="lbl">Accounts</div><div id="acct-list" style="margin-top:8px"><div class="load" style="padding:8px">…</div></div></div>
+    <div class="card"><div class="lbl">Today's movers</div><div id="movers" style="margin-top:6px"><div class="load" style="padding:8px">…</div></div></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="htop" style="padding:15px 16px;cursor:pointer" onclick="toggleHoldings()">
+        <div style="min-width:0"><div class="h2">All holdings <span class="faint" id="hold-count"></span></div><div class="sub" id="hold-sub">tap to view the full list</div></div>
+        <svg class="chev" id="hold-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-left:auto"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </div>
+      <div id="allhold-body" style="display:none;padding:0 14px 14px">
+        <select id="acct-sel" class="sel" style="max-width:100%;width:100%;margin-bottom:8px"><option value="ALL">All accounts</option></select>
+        <div class="filters" id="filters"><button class="fchip" aria-pressed="true">All</button><button class="fchip" aria-pressed="false">Strong</button><button class="fchip" aria-pressed="false">Weak</button><button class="fchip" aria-pressed="false">Vol surge</button></div>
+        <div class="holds" id="holds"><div class="load">Loading&hellip;</div></div>
+      </div>
     </div>
-    <div class="filters" id="filters"><button class="fchip" aria-pressed="true">All</button><button class="fchip" aria-pressed="false">Strong</button><button class="fchip" aria-pressed="false">Weak</button><button class="fchip" aria-pressed="false">Vol surge</button></div>
-    <div class="holds" id="holds"><div class="load">Loading your book&hellip;</div></div>
     <div class="card" id="screener" style="margin-top:12px">
       <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Screener Premium</span><span class="dim" id="scr-state">&hellip;</span></div>
       <div class="dim" id="scr-detail" style="margin-top:6px;font-size:13px">Upload your Screener export to power fundamentals &amp; ideas.</div>
@@ -287,7 +294,7 @@ async function j(url,opt){const r=await fetch(url,opt);const d=await r.json().ca
 async function loadPortfolio(){
   const r=await j('/portfolio?'+Q);
   if(!r.ok){document.getElementById('err').textContent='Server '+r.status+' — check the token in your link.';return;}
-  document.getElementById('err').textContent='';PORT=r.d;renderHero(PORT);renderHolds();
+  document.getElementById('err').textContent='';PORT=r.d;renderHero(PORT);renderAccounts();renderMovers();if(document.getElementById('allhold-body').style.display!=='none')renderHolds();
 }
 function renderHero(p){
   const dc=p.day_change>=0,up=p.unrealised_pnl>=0,deg=p.book_health.degraded>0;
@@ -605,6 +612,26 @@ document.getElementById('tk-confirm').addEventListener('click',async function(){
   else{this.textContent=r.status===501?'Send not live yet':'Rejected';document.getElementById('tk-guardtxt').innerHTML='<b>'+(r.status===501?'Order-send pending broker docs.':'Rejected.')+'</b> '+(r.d.detail||'');}
 });
 scrim.addEventListener('click',()=>{scrim.classList.remove('on');sheet.classList.remove('on');});
+
+/* ---- accounts + movers (homepage summary) ---- */
+function allHoldings(){const map={};(PORT.accounts||[]).forEach(a=>(a.holdings||[]).forEach(h=>{const s=clean(h.ticker);const m=map[s]||(map[s]={sym:s,quantity:0,market_value:0,invested:0,day_change:0});m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;}));return Object.values(map);}
+function renderAccounts(){
+  let h='';(PORT.accounts||[]).forEach(a=>{const val=(a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0);const n=(a.holdings||[]).length;const ok=a.ok!==false&&a.status!=='degraded';
+    h+='<div class="rowline"><span>'+(ok?'':'<span class="down">● </span>')+(a.label||a.creds_key)+' <span class="acctchip">'+a.creds_key+'</span></span><span class="mono">'+inr(val)+' <span class="faint" style="font-size:11px">'+n+'</span></span></div>';});
+  document.getElementById('acct-list').innerHTML=h||'<div class="dim" style="font-size:13px">No accounts loaded.</div>';
+}
+function renderMovers(){
+  const all=allHoldings();if(!all.length){document.getElementById('movers').innerHTML='<div class="dim" style="font-size:13px;padding:6px 0">No holdings yet.</div>';return;}
+  const anyDay=all.some(x=>Math.abs(x.day_change)>0.5);
+  all.forEach(x=>{x.pnl=x.market_value-x.invested;x.pnlpct=x.invested?x.pnl/x.invested*100:0;x.daypct=x.invested?x.day_change/x.invested*100:0;});
+  const key=anyDay?'daypct':'pnlpct';const val=anyDay?'day_change':'pnl';
+  const s=[...all].sort((a,b)=>b[key]-a[key]);
+  const gain=s.filter(x=>x[key]>0).slice(0,3),lose=s.filter(x=>x[key]<0).slice(-3).reverse();
+  const row=(x,up)=>'<div class="rowline"><span>'+(up?'▲':'▼')+' '+x.sym+'</span><span class="mono '+(up?'up':'down')+'">'+(x[val]>=0?'+':'')+inr(x[val])+' <span class="faint">'+(x[key]>=0?'+':'')+x[key].toFixed(1)+'%</span></span></div>';
+  let h='';gain.forEach(x=>h+=row(x,true));if(gain.length&&lose.length)h+='<div style="height:1px;background:var(--hair);margin:8px 0"></div>';lose.forEach(x=>h+=row(x,false));
+  document.getElementById('movers').innerHTML=h||'<div class="dim" style="font-size:13px;padding:6px 0">Flat today.</div>';
+}
+function toggleHoldings(){const b=document.getElementById('allhold-body'),c=document.getElementById('hold-chev'),open=b.style.display!=='none';b.style.display=open?'none':'block';c.style.transform=open?'':'rotate(180deg)';if(!open)renderHolds();}
 
 /* ---- Screener upload ---- */
 async function loadScreener(){
