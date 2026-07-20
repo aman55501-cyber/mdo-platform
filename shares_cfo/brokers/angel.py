@@ -30,14 +30,43 @@ POSITIONS = "/rest/secure/angelbroking/order/v1/getPosition"
 RMS = "/rest/secure/angelbroking/user/v1/getRMS"
 
 
+_PUBLIC_IP_CACHE: str | None = None
+
+
+def _public_ip() -> str:
+    """This host's public IP for Angel's X-ClientPublicIP header.
+
+    Angel's newer security validates this header against the app's whitelisted
+    static IP, and rejects secure endpoints (AG8001 "Invalid Token") when it's
+    the 127.0.0.1 default. Prefer an explicit ANGEL_PUBLIC_IP; otherwise detect
+    it once (cached for the process) so no manual .env edit is needed.
+    """
+    global _PUBLIC_IP_CACHE
+    env = os.environ.get("ANGEL_PUBLIC_IP", "").strip()
+    if env:
+        return env
+    if _PUBLIC_IP_CACHE:
+        return _PUBLIC_IP_CACHE
+    for url in ("https://api.ipify.org", "https://checkip.amazonaws.com"):
+        try:
+            ip = httpx.get(url, timeout=5.0).text.strip()
+            if ip and ip.count(".") == 3:
+                _PUBLIC_IP_CACHE = ip
+                return ip
+        except Exception:
+            continue
+    return "127.0.0.1"
+
+
 def _headers(account: AccountConfig, jwt: str | None = None) -> dict:
+    pub = _public_ip()
     h = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "X-UserType": "USER",
         "X-SourceID": "WEB",
-        "X-ClientLocalIP": os.environ.get("ANGEL_LOCAL_IP", "127.0.0.1"),
-        "X-ClientPublicIP": os.environ.get("ANGEL_PUBLIC_IP", "127.0.0.1"),
+        "X-ClientLocalIP": os.environ.get("ANGEL_LOCAL_IP", pub),
+        "X-ClientPublicIP": pub,
         "X-MACAddress": os.environ.get("ANGEL_MAC", "AA:BB:CC:DD:EE:FF"),
         "X-PrivateKey": account.api_key,
     }

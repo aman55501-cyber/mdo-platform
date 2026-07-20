@@ -1912,10 +1912,9 @@ async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
 async def debug_angel_holdings(request: Request, token: str | None = Query(default=None)) -> dict:
     """Raw Angel getAllHolding structure (keys/counts, not full positions) to fix parsing."""
     _check_token(request, token)
-    import os as _os
     import httpx
     from .brokers import angel_scrip
-    from .brokers.angel import HOLDINGS, RMS, _headers
+    from .brokers.angel import HOLDINGS, RMS, _headers, _public_ip
     key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
     if not key:
         return {"error": "no Angel account configured"}
@@ -1926,7 +1925,7 @@ async def debug_angel_holdings(request: Request, token: str | None = Query(defau
     # Same JWT against a *different* secure endpoint (RMS/funds). Separates a
     # portfolio-scope problem (RMS ok, holdings rejected) from a blanket IP/token
     # rejection (both rejected). No balances echoed — only the accept/reject verdict.
-    probe = {"public_ip_header": _os.environ.get("ANGEL_PUBLIC_IP", "127.0.0.1 (unset)")}
+    probe = {"public_ip_header": _public_ip()}
     try:
         rr = httpx.get(acc.base_url + RMS, headers=_headers(acc, jwt), timeout=30).json()
         probe["rms_secure_endpoint"] = ("ok" if (rr.get("success") or rr.get("status"))
