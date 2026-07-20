@@ -110,7 +110,7 @@ class AngelAdapter:
         token_store.set_token(self._acct.creds_key, jwt)
         return jwt
 
-    async def _get(self, path: str) -> dict:
+    async def _get(self, path: str, _retried: bool = False) -> dict:
         jwt = await self._ensure_login()
         try:
             resp = await self._http.get(path, headers=_headers(self._acct, jwt))
@@ -122,6 +122,14 @@ class AngelAdapter:
         if resp.status_code >= 400:
             raise BrokerError(f"Angel GET {path} failed [HTTP {resp.status_code}]: {resp.text[:200]}")
         payload = resp.json()
+        # Angel returns HTTP 200 for "Invalid Token" (AG8001) when a *cached* JWT has
+        # been invalidated (e.g. a newer login elsewhere) — the 401 path never fires.
+        # Clear the stale token and re-login *once*, then retry, so the book self-heals
+        # instead of looping on a dead JWT forever.
+        if (isinstance(payload, dict) and not _retried
+                and (payload.get("errorCode") or payload.get("errorcode")) == "AG8001"):
+            token_store.set_token(self._acct.creds_key, "")
+            return await self._get(path, _retried=True)
         # Angel returns HTTP 200 even for logical failures (e.g. AG8001 "Invalid Token"),
         # with success/status=false and data="". Surface these instead of letting the
         # row parser read the empty data as "0 holdings" — a silent, wrong ₹0.

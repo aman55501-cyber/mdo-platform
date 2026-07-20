@@ -1909,16 +1909,24 @@ async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
 
 
 @app.get("/debug/angel-holdings")
-async def debug_angel_holdings(request: Request, token: str | None = Query(default=None)) -> dict:
-    """Raw Angel getAllHolding structure (keys/counts, not full positions) to fix parsing."""
+async def debug_angel_holdings(request: Request, token: str | None = Query(default=None),
+                               fresh: int = Query(default=0)) -> dict:
+    """Raw Angel getAllHolding structure (keys/counts, not full positions) to fix parsing.
+
+    ?fresh=1 discards any cached JWT and forces a brand-new server-side login first,
+    so we can tell a stale-cache rejection from a genuinely refused fresh token.
+    """
     _check_token(request, token)
     import httpx
+    from . import token_store
     from .brokers import angel_scrip
     from .brokers.angel import HOLDINGS, RMS, _headers, _public_ip
     key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
     if not key:
         return {"error": "no Angel account configured"}
     acc = load_account(key)
+    if fresh:
+        token_store.set_token(acc.creds_key, "")  # drop cached JWT -> force fresh login
     jwt, note = angel_scrip._login(acc)
     if not jwt:
         return {"login": note, "error": "login failed"}
