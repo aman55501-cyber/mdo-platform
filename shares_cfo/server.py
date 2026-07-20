@@ -938,6 +938,50 @@ async def portfolio(request: Request, token: str | None = Query(default=None)) -
     return await _consolidated()
 
 
+def _clean_sym(t: str) -> str:
+    import re
+    return re.sub(r"-(EQ|BE|BZ|BL|SM|ST|IQ)$", "", (t or "").upper()).split("-")[0]
+
+
+@app.get("/income/ideas")
+async def income_ideas(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Covered-call + cash-secured-put income proposals across the family book.
+
+    Covered calls are per account/holder (you can only write calls on shares held in
+    that account); CSPs are sized against total ledger cash. Proposals only — placement
+    goes through the guarded execution path.
+    """
+    _check_token(request, token)
+    from .analysis import income
+    from .brokers import angel_scrip
+    book = await _consolidated()
+    # Per-holding list tagged with the holder (account) — covered calls are per account.
+    holdings = []
+    seen_syms: dict[str, dict] = {}
+    for a in book.get("accounts", []):
+        if a.get("ok") is False or a.get("status") == "degraded":
+            continue
+        label = a.get("label") or a.get("creds_key")
+        for h in a.get("holdings", []):
+            sym = _clean_sym(h.get("ticker", ""))
+            if not sym:
+                continue
+            row = {"sym": sym, "quantity": h.get("quantity") or 0,
+                   "last_price": h.get("last_price") or 0,
+                   "holder": label, "account": a.get("creds_key")}
+            holdings.append(row)
+            # CSP candidate = a stock you already own (so you'd be glad to own more)
+            if sym not in seen_syms and row["last_price"]:
+                seen_syms[sym] = {"sym": sym, "last_price": row["last_price"]}
+    ccs = income.covered_calls(holdings, angel_scrip)
+    csps = income.cash_secured_puts(list(seen_syms.values()), book.get("cash", 0), angel_scrip)
+    return {"as_of": book.get("as_of"), "cash": book.get("cash", 0),
+            "covered_calls": ccs, "cash_secured_puts": csps,
+            "summary": income.summarise(ccs, csps),
+            "note": "Premiums are live from the NFO chain where available, else Black-Scholes "
+                    "(India VIX as IV). Proposals only — nothing is placed."}
+
+
 _VOL_CACHE: dict = {"ts": 0.0, "data": None}
 
 

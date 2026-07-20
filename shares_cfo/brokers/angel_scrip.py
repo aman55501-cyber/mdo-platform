@@ -147,6 +147,140 @@ def option_ltps(underlying: str, expiry: str, strikes: list[int]) -> dict:
     return out
 
 
+# --- Stock (single-stock) F&O options: OPTSTK -------------------------------
+# For covered calls on holdings + cash-secured puts. Indexed like the index chain
+# but only future expiries are kept, so the cache stays small.
+_STK_CACHE = Path(__file__).resolve().parent.parent / "data" / "state" / "angel_nfo_stkopts.json"
+
+
+def _load_stock_options() -> dict:
+    """{underlying: {expiry: {strike: {'CE':tok,'PE':tok,'lot':n}}}} for OPTSTK, cached daily."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _STK_CACHE.exists():
+        try:
+            c = json.loads(_STK_CACHE.read_text(encoding="utf-8"))
+            if c.get("date") == today:
+                return c.get("stk", {})
+        except (OSError, ValueError):
+            pass
+    try:
+        rows = httpx.get(SCRIP_URL, timeout=60.0).json()
+    except Exception:
+        return {}
+    tdate = datetime.now().date()
+    stk: dict = {}
+    for it in rows:
+        if it.get("exch_seg") != "NFO" or it.get("instrumenttype") != "OPTSTK":
+            continue
+        exp = str(it.get("expiry", ""))
+        try:  # keep only future expiries to bound cache size
+            if datetime.strptime(exp, "%d%b%Y").date() < tdate:
+                continue
+        except ValueError:
+            continue
+        sym = str(it.get("symbol", ""))
+        typ = "CE" if sym.endswith("CE") else "PE" if sym.endswith("PE") else None
+        if not typ:
+            continue
+        name = str(it.get("name", "")).upper()
+        try:
+            strike = str(int(float(it["strike"]) / 100))
+        except (KeyError, ValueError):
+            continue
+        node = stk.setdefault(name, {}).setdefault(exp, {}).setdefault(strike, {})
+        node[typ] = str(it["token"])
+        node["lot"] = int(float(it.get("lotsize", 0) or 0))
+    if stk:
+        try:
+            _STK_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            _STK_CACHE.write_text(json.dumps({"date": today, "stk": stk}), encoding="utf-8")
+        except OSError:
+            pass
+    return stk
+
+
+def _nearest_future_expiry(chain: dict) -> str | None:
+    today = datetime.now().date()
+    fut = []
+    for exp in chain:
+        try:
+            d = datetime.strptime(exp, "%d%b%Y").date()
+            if d >= today:
+                fut.append((d, exp))
+        except ValueError:
+            continue
+    return min(fut)[1] if fut else None
+
+
+def fno_meta(symbol: str) -> dict | None:
+    """Nearest-expiry F&O metadata for a stock, or None if it isn't F&O-eligible.
+
+    {lot, expiry, dte, strikes:[int], tokens:{"<strike>_CE":tok, "<strike>_PE":tok}}
+    """
+    chain = _load_stock_options().get(symbol.strip().upper())
+    if not chain:
+        return None
+    exp = _nearest_future_expiry(chain)
+    if not exp:
+        return None
+    node = chain[exp]
+    try:
+        dte = max(0, (datetime.strptime(exp, "%d%b%Y").date() - datetime.now().date()).days)
+    except ValueError:
+        dte = 30
+    lot = 0
+    strikes, tokens = [], {}
+    for sk, v in node.items():
+        try:
+            ski = int(sk)
+        except ValueError:
+            continue
+        strikes.append(ski)
+        if v.get("CE"):
+            tokens[f"{ski}_CE"] = v["CE"]
+        if v.get("PE"):
+            tokens[f"{ski}_PE"] = v["PE"]
+        lot = lot or int(v.get("lot") or 0)
+    if not strikes:
+        return None
+    return {"lot": lot, "expiry": exp, "dte": dte, "strikes": sorted(strikes), "tokens": tokens}
+
+
+def option_full(tokens: list[str]) -> dict:
+    """{token: {'ltp':float,'oi':int}} via Angel FULL quote (LTP + open interest)."""
+    from ..config import get_accounts, load_account
+    from .angel import _headers
+    tokens = [str(t) for t in tokens if t]
+    if not tokens:
+        return {}
+    key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+    if not key:
+        return {}
+    acc = load_account(key)
+    jwt, _ = _login(acc)
+    if not jwt:
+        return {}
+    out: dict = {}
+    # FULL quote caps at ~50 tokens/call; chunk to be safe.
+    for i in range(0, len(tokens), 45):
+        chunk = tokens[i:i + 45]
+        body = {"mode": "FULL", "exchangeTokens": {"NFO": chunk}}
+        try:
+            r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=20.0)
+            fetched = ((r.json() or {}).get("data") or {}).get("fetched") or []
+        except Exception:
+            continue
+        for f in fetched:
+            t = str(f.get("symbolToken") or f.get("symboltoken") or "")
+            if not t:
+                continue
+            ltp = f.get("ltp")
+            oi = f.get("opnInterest") or f.get("openInterest") or f.get("oi")
+            out[t] = {"ltp": float(ltp) if ltp not in (None, "NA", "") else None,
+                      "oi": int(float(oi)) if oi not in (None, "NA", "") else None}
+    return out
+
+
 LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
 
 
