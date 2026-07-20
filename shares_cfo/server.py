@@ -89,6 +89,8 @@ DASHBOARD_HTML = r"""<!doctype html>
   .filters{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}.filters::-webkit-scrollbar{display:none}
   .fchip{flex:none;font-size:13px;font-weight:600;padding:7px 13px;border-radius:999px;border:1px solid var(--bd);color:var(--dim);background:transparent}
   .fchip[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:#04122b}
+  .sel{background:var(--elev);color:var(--tx);border:1px solid var(--bd);border-radius:9px;padding:7px 11px;font-size:13px;font-weight:600;font-family:var(--sans);max-width:56%;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238493ab' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+  .acctchip{font-size:9.5px;font-weight:700;letter-spacing:.02em;padding:2px 6px;border-radius:5px;background:rgba(76,141,255,.12);color:var(--acc);text-transform:uppercase}
   .holds{display:flex;flex-direction:column;gap:10px}
   .h{background:var(--panel);border:1px solid var(--bd);border-radius:14px;overflow:hidden}.h.weak{border-color:rgba(255,88,103,.4)}
   .htop{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer}
@@ -172,7 +174,10 @@ DASHBOARD_HTML = r"""<!doctype html>
       <div class="meterrow"><span class="name">Technical</span><span class="meter"><i id="mtech" style="background:linear-gradient(90deg,var(--up),#5fd8a6)"></i></span><span class="score mono" id="stech">&mdash;</span></div>
       <div class="counts" id="counts"></div>
     </div>
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 10px"><span class="lbl">Holdings</span><span class="faint" style="font-size:11px">tap for numbers &amp; actions</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 2px 10px">
+      <span class="lbl">Holdings <span class="faint" id="hold-count"></span></span>
+      <select id="acct-sel" class="sel"><option value="ALL">All accounts</option></select>
+    </div>
     <div class="filters" id="filters"><button class="fchip" aria-pressed="true">All</button><button class="fchip" aria-pressed="false">Strong</button><button class="fchip" aria-pressed="false">Weak</button><button class="fchip" aria-pressed="false">Vol surge</button></div>
     <div class="holds" id="holds"><div class="load">Loading your book&hellip;</div></div>
     <div class="card" id="screener" style="margin-top:12px">
@@ -269,8 +274,8 @@ DASHBOARD_HTML = r"""<!doctype html>
 const token=new URLSearchParams(location.search).get('token')||'';
 const Q='token='+encodeURIComponent(token);
 const loaded={ideas:0,hedge:0,trades:0,mtf:0};
-let PORT=null,CURR=null,HEDGE=null;
-const SCORE={};
+let PORT=null,CURR=null,HEDGE=null,acctSelBuilt=false;
+const SCORE={},ACCT_LABELS={};
 function inr(n){if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+' Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+' L';return s+'₹'+Math.round(a).toLocaleString('en-IN');}
 function pct(f){return f==null||isNaN(f)?'—':(f*100).toFixed(1)+'%';}
 function px(n){if(n==null||isNaN(n))return '₹—';return '₹'+(Math.abs(n)<100?(+n).toFixed(2):Math.round(n).toLocaleString('en-IN'));}
@@ -296,18 +301,34 @@ function renderHero(p){
   const errb=document.getElementById('err');
   if(deg){errb.innerHTML='<a href="/login?'+Q+'" style="color:var(--warn);text-decoration:none">⚠ '+p.book_health.degraded+' account(s) not logged in — net worth is partial. Tap to log in →</a>';}
   else{errb.textContent='';}
+  if(!acctSelBuilt){
+    const sel=document.getElementById('acct-sel');
+    (p.accounts||[]).forEach(a=>{if(a.creds_key){ACCT_LABELS[a.creds_key]=a.label||a.creds_key;
+      const o=document.createElement('option');o.value=a.creds_key;o.textContent=(a.label||a.creds_key)+((a.holdings&&a.holdings.length)?' ('+a.holdings.length+')':'');sel.appendChild(o);}});
+    sel.onchange=renderHolds;acctSelBuilt=true;
+  }
 }
-function holdRows(){const map={};(PORT.accounts||[]).forEach(a=>(a.holdings||[]).forEach(h=>{const s=clean(h.ticker);const m=map[s]||(map[s]={sym:s,quantity:0,market_value:0,invested:0,day_change:0,last_price:h.last_price,average_price:h.average_price,token:h.token,exchange:h.exchange});m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;m.last_price=h.last_price||m.last_price;}));return Object.values(map).sort((a,b)=>b.market_value-a.market_value);}
+function holdRows(){const sel=(document.getElementById('acct-sel')||{}).value||'ALL';const map={};
+  (PORT.accounts||[]).forEach(a=>{if(sel!=='ALL'&&a.creds_key!==sel)return;(a.holdings||[]).forEach(h=>{
+    const s=clean(h.ticker);const key=sel==='ALL'?s:s+'@'+a.creds_key;
+    const m=map[key]||(map[key]={sym:s,quantity:0,market_value:0,invested:0,day_change:0,last_price:h.last_price,average_price:h.average_price,token:h.token,exchange:h.exchange,accts:{}});
+    m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;m.last_price=h.last_price||m.last_price;m.accts[a.creds_key]=1;});});
+  return Object.values(map).sort((a,b)=>b.market_value-a.market_value);}
 function renderHolds(){
-  if(!PORT)return;const rows=holdRows();if(!rows.length){document.getElementById('holds').innerHTML='<div class="load">No holdings in the live book yet.</div>';return;}
+  if(!PORT)return;const rows=holdRows();
+  const cnt=document.getElementById('hold-count');if(cnt)cnt.textContent='· '+rows.length;
+  if(!rows.length){document.getElementById('holds').innerHTML='<div class="load">No holdings for this account.</div>';return;}
+  const sel=(document.getElementById('acct-sel')||{}).value||'ALL';
   let h='';rows.forEach(x=>{
-    const e=SCORE[x.sym]||{},cls=verdictClass(e.verdict),pnl=x.market_value-x.invested,gp=pnl>=0;
+    const e=SCORE[x.sym]||{},cls=verdictClass(e.verdict),pnl=x.market_value-x.invested,gp=pnl>=0,pp=x.invested?pnl/x.invested*100:0;
     const fc=e.fundamental_score!=null?'<span class="chip '+(e.fundamental_score>=65?'s':e.fundamental_score>=40?'n':'w')+'">F '+e.fundamental_score+'</span>':'';
     const tc=e.technical_score!=null?'<span class="chip '+(e.technical_score>=60?'s':e.technical_score>=40?'n':'w')+'">T '+e.technical_score+'</span>':'';
     const flag=(e.flags&&e.flags.length)?'<span class="down" style="font-size:11px">● '+e.flags[0].text+'</span>':'';
+    const na=Object.keys(x.accts||{});
+    const ac=(sel==='ALL'&&na.length)?'<span class="acctchip">'+(na.length>1?na.length+' accts':(ACCT_LABELS[na[0]]||na[0]))+'</span>':'';
     h+='<div class="h '+cls+'" data-sym="'+x.sym+'" data-vol="'+((e.tech||{}).vol_x||0)+'" data-v="'+cls+'"><div class="htop" onclick="tog(this)">'
-      +'<span class="sev"></span><div><div class="sym">'+x.sym+' '+fc+tc+'</div><div class="sub">'+x.quantity.toLocaleString('en-IN')+' @ '+px(x.average_price)+' &nbsp;'+flag+'</div></div>'
-      +'<div class="right"><div class="val mono">'+inr(x.market_value)+'</div><div class="mono '+(gp?'up':'down')+'" style="font-size:12.5px">'+(gp?'+':'')+inr(pnl)+'</div></div>'
+      +'<span class="sev"></span><div style="min-width:0"><div class="sym">'+x.sym+' '+fc+tc+' '+ac+'</div><div class="sub">'+x.quantity.toLocaleString('en-IN')+' @ '+px(x.average_price)+' &nbsp;'+flag+'</div></div>'
+      +'<div class="right"><div class="val mono">'+inr(x.market_value)+'</div><div class="mono '+(gp?'up':'down')+'" style="font-size:12.5px">'+(gp?'+':'')+inr(pnl)+' <span class="faint">'+(gp?'+':'')+pp.toFixed(1)+'%</span></div></div>'
       +'<svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></div>'
       +'<div class="detail">'+detail(x)+'</div></div>';
   });
