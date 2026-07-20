@@ -91,6 +91,9 @@ DASHBOARD_HTML = r"""<!doctype html>
   .fchip[aria-pressed="true"]{background:var(--acc);border-color:var(--acc);color:#04122b}
   .sel{background:var(--elev);color:var(--tx);border:1px solid var(--bd);border-radius:9px;padding:7px 11px;font-size:13px;font-weight:600;font-family:var(--sans);max-width:56%;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238493ab' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
   .acctchip{font-size:9.5px;font-weight:700;letter-spacing:.02em;padding:2px 6px;border-radius:5px;background:rgba(76,141,255,.12);color:var(--acc);text-transform:uppercase}
+  .snews a:active{opacity:.6}
+  .newsitem{display:block;padding:9px 0;border-top:1px solid var(--hair);text-decoration:none;color:var(--tx)}
+  .newsitem:first-child{border-top:0}
   .holds{display:flex;flex-direction:column;gap:10px}
   .h{background:var(--panel);border:1px solid var(--bd);border-radius:14px;overflow:hidden}.h.weak{border-color:rgba(255,88,103,.4)}
   .htop{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer}
@@ -176,6 +179,8 @@ DASHBOARD_HTML = r"""<!doctype html>
     </div>
     <div class="card"><div class="lbl">Accounts</div><div id="acct-list" style="margin-top:8px"><div class="load" style="padding:8px">…</div></div></div>
     <div class="card"><div class="lbl">Today's movers</div><div id="movers" style="margin-top:6px"><div class="load" style="padding:8px">…</div></div></div>
+    <div class="card"><div class="lbl">Volume spikes <span class="faint" style="font-size:10px">vs 20-day avg</span></div><div id="volspikes" style="margin-top:8px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">News on your holdings</span><span class="faint" style="font-size:10px">Google News</span></div><div id="homenews" style="margin-top:4px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div></div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="htop" style="padding:15px 16px;cursor:pointer" onclick="toggleHoldings()">
         <div style="min-width:0"><div class="h2">All holdings <span class="faint" id="hold-count"></span></div><div class="sub" id="hold-sub">tap to view the full list</div></div>
@@ -282,7 +287,7 @@ const token=new URLSearchParams(location.search).get('token')||'';
 const Q='token='+encodeURIComponent(token);
 const loaded={ideas:0,hedge:0,trades:0,mtf:0};
 let PORT=null,CURR=null,HEDGE=null,acctSelBuilt=false;
-const SCORE={},ACCT_LABELS={};
+const SCORE={},ACCT_LABELS={},HOLD={};
 function inr(n){if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+' Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+' L';return s+'₹'+Math.round(a).toLocaleString('en-IN');}
 function pct(f){return f==null||isNaN(f)?'—':(f*100).toFixed(1)+'%';}
 function px(n){if(n==null||isNaN(n))return '₹—';return '₹'+(Math.abs(n)<100?(+n).toFixed(2):Math.round(n).toLocaleString('en-IN'));}
@@ -295,6 +300,7 @@ async function loadPortfolio(){
   const r=await j('/portfolio?'+Q);
   if(!r.ok){document.getElementById('err').textContent='Server '+r.status+' — check the token in your link.';return;}
   document.getElementById('err').textContent='';PORT=r.d;renderHero(PORT);renderAccounts();renderMovers();if(document.getElementById('allhold-body').style.display!=='none')renderHolds();
+  if(!window._homeExtras){window._homeExtras=1;loadVolumeSpikes();loadHomeNews();}
 }
 function renderHero(p){
   const dc=p.day_change>=0,up=p.unrealised_pnl>=0,deg=p.book_health.degraded>0;
@@ -337,29 +343,44 @@ function renderHolds(){
       +'<span class="sev"></span><div style="min-width:0"><div class="sym">'+x.sym+' '+fc+tc+' '+ac+'</div><div class="sub">'+x.quantity.toLocaleString('en-IN')+' @ '+px(x.average_price)+' &nbsp;'+flag+'</div></div>'
       +'<div class="right"><div class="val mono">'+inr(x.market_value)+'</div><div class="mono '+(gp?'up':'down')+'" style="font-size:12.5px">'+(gp?'+':'')+inr(pnl)+' <span class="faint">'+(gp?'+':'')+pp.toFixed(1)+'%</span></div></div>'
       +'<svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></div>'
-      +'<div class="detail">'+detail(x)+'</div></div>';
+      +'<div class="detail" id="det-'+x.sym+'"></div></div>';
+    HOLD[x.sym]=x;
   });
   document.getElementById('holds').innerHTML=h;applyFilter();
 }
-function detail(x){
-  const e=SCORE[x.sym]||{},f=e.fields||{},t=e.tech||{},dch=x.invested?(x.day_change/x.invested*100):null,vol=t.vol_x,rsi=t.rsi14;
-  const cell=(k,d,note,c,st)=>'<div class="m"><div class="k">'+k+'</div><div class="d'+(c?' '+c:'')+'"'+(st||'')+'>'+d+'</div>'+(note?'<div class="note '+(c||'dim')+'">'+note+'</div>':'')+'</div>';
+function tog(el){const h=el.parentElement;h.classList.toggle('open');if(h.classList.contains('open')&&!h.dataset.loaded){h.dataset.loaded=1;loadStockDetail(h.dataset.sym);}}
+async function loadStockDetail(sym){
+  const box=document.getElementById('det-'+sym);if(!box)return;
+  const x=HOLD[sym]||{},e=SCORE[sym]||{},f=e.fields||{};
+  box.innerHTML='<div class="load" style="padding:14px">Loading '+sym+'…</div>';
+  const cr=await j('/chart/'+encodeURIComponent(sym)+'?'+Q);const d=cr.ok?cr.d:{};
+  const cell=(k,v,note,c)=>'<div class="m"><div class="k">'+k+'</div><div class="d'+(c?' '+c:'')+'">'+v+'</div>'+(note?'<div class="note '+(c||'dim')+'">'+note+'</div>':'')+'</div>';
+  const rsi=d.rsi14,vol=d.vol_x,dch=d.day_change_pct;
   let m='';
-  m+=cell('Price action',(dch==null?'—':(dch>=0?'+':'')+dch.toFixed(1)+'%'),'LTP '+px(x.last_price),dch==null?'':dch>=0?'up':'down');
-  m+=cell('Volume 20d',vol!=null?vol.toFixed(1)+'×':'—',vol!=null?(vol>=2?'surge':'normal'):'—','',vol!=null?' style="color:'+(vol>=2?'var(--acc)':vol>=1?'var(--up)':'var(--dim)')+'"':'');
-  m+=cell('RSI 14',rsi!=null?Math.round(rsi):'—',rsi!=null?(rsi>70?'overbought':rsi<35?'oversold':'neutral'):'—',rsi!=null?(rsi>70?'warn':rsi<35?'down':''):'');
-  m+=cell('P/E',f.pe!=null?(+f.pe).toFixed(0):'—',f.pe!=null?(f.pe>60?'rich':f.pe<20?'cheap':'fair'):'—',f.pe>60?'down':'');
-  m+=cell('Debt/Eq',f.de!=null?(+f.de).toFixed(2):'—',f.de!=null?(f.de>1?'high':'low'):'—',f.de>1?'down':'up');
-  m+=cell('ROE',f.roe!=null?Math.round(f.roe)+'%':'—',f.roe!=null?(f.roe>=15?'strong':'ok'):'—',f.roe>=15?'up':'');
-  const p=x.last_price||0;
-  return '<div class="metrics">'+m+'</div>'
-    +'<div style="padding:10px 13px 0"><button class="btn ghost" style="width:100%" onclick="openChart(\''+x.sym+'\')">📈 Chart · levels</button></div>'
-    +'<div class="actions">'
-    +'<button class="btn buy" onclick="ticket(\'BUY\',\''+x.sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Buy</button>'
-    +'<button class="btn sell" onclick="ticket(\'SELL\',\''+x.sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Sell</button>'
+  m+=cell('Price',px(d.last||x.last_price)+' ',(dch!=null?(dch>=0?'+':'')+dch+'% today':''),dch>=0?'up':'down');
+  m+=cell('Day range',(d.day_low!=null?px(d.day_low)+'–'+px(d.day_high):'—'),'',' ');
+  m+=cell('52-wk',(d.wk52_low!=null?px(d.wk52_low)+'–'+px(d.wk52_high):'—'),(d.from_52w_high_pct!=null?d.from_52w_high_pct+'% from high':''),' ');
+  m+=cell('Volume',vol!=null?vol.toFixed(1)+'×':'—',vol!=null?(vol>=2?'surge':'normal'):'',vol>=2?'':(vol>=1?'up':'dim'));
+  m+=cell('RSI 14',rsi!=null?Math.round(rsi):'—',rsi!=null?(rsi>70?'overbought':rsi<35?'oversold':'neutral'):'',rsi>70?'warn':rsi<35?'down':'');
+  m+=cell('Trend',d.above_200dma===true?'Up':d.above_200dma===false?'Down':'—',(d.dma_signal||'').replace(/_/g,' '),d.above_200dma?'up':d.above_200dma===false?'down':'');
+  if(f.pe!=null)m+=cell('P/E',(+f.pe).toFixed(0),f.pe>60?'rich':f.pe<20?'cheap':'fair',f.pe>60?'down':'');
+  if(f.de!=null)m+=cell('Debt/Eq',(+f.de).toFixed(2),f.de>1?'high':'low',f.de>1?'down':'up');
+  if(f.roe!=null)m+=cell('ROE',Math.round(f.roe)+'%',f.roe>=15?'strong':'ok',f.roe>=15?'up':'');
+  if(f.promoter_holding!=null)m+=cell('Promoter',Math.round(f.promoter_holding)+'%','holding',' ');
+  if(f.pledge!=null)m+=cell('Pledge',Math.round(f.pledge)+'%',f.pledge>20?'high':f.pledge>5?'watch':'clean',f.pledge>20?'down':f.pledge>5?'warn':'up');
+  if(x.sector)m+=cell('Sector',x.sector,'',' ');
+  const L=d.levels||{};const lvl=L.pivot?'<div class="note" style="padding:10px 13px 0;font-size:11.5px"><b>Levels:</b> S '+L.s1+' · P '+L.pivot+' · R '+L.r1+'</div>':'';
+  const p=d.last||x.last_price||0;
+  box.innerHTML='<div class="metrics">'+m+'</div>'+lvl
+    +'<div class="snews" id="news-'+sym+'"><div class="load" style="padding:8px 13px">loading news…</div></div>'
+    +'<div style="padding:8px 13px 0"><button class="btn ghost" style="width:100%" onclick="openChart(\''+sym+'\')">📈 Chart &amp; levels</button></div>'
+    +'<div class="actions"><button class="btn buy" onclick="ticket(\'BUY\',\''+sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Buy</button>'
+    +'<button class="btn sell" onclick="ticket(\'SELL\',\''+sym+'\','+p+',\''+(x.token||'')+'\',\''+(x.exchange||'NSE')+'\')">Sell</button>'
     +'<button class="btn hedge" onclick="go(\'hedge\')">Hedge</button></div>';
+  const nr=await j('/news/'+encodeURIComponent(sym)+'?'+Q);const nb=document.getElementById('news-'+sym);
+  if(nr.ok&&nr.d.news&&nr.d.news.length){nb.innerHTML='<div class="lbl" style="padding:10px 13px 2px">Latest news</div>'+nr.d.news.slice(0,4).map(a=>'<a href="'+a.link+'" target="_blank" style="display:block;padding:8px 13px;border-top:1px solid var(--hair);text-decoration:none;color:var(--tx)"><div style="font-size:13px;font-weight:600;line-height:1.35">'+a.title+'</div><div class="faint" style="font-size:11px;margin-top:2px">'+(a.source||'')+(a.when?' · '+a.when:'')+'</div></a>').join('');}
+  else{nb.innerHTML='<div class="dim" style="padding:8px 13px;font-size:12px">No recent news found.</div>';}
 }
-function tog(el){el.parentElement.classList.toggle('open');}
 async function loadScoring(){
   const r=await j('/screener/holdings?technicals=0&'+Q);if(!r.ok)return;const d=r.d;
   (d.holdings||[]).forEach(x=>SCORE[x.symbol]=x);
@@ -632,6 +653,21 @@ function renderMovers(){
   document.getElementById('movers').innerHTML=h||'<div class="dim" style="font-size:13px;padding:6px 0">Flat today.</div>';
 }
 function toggleHoldings(){const b=document.getElementById('allhold-body'),c=document.getElementById('hold-chev'),open=b.style.display!=='none';b.style.display=open?'none':'block';c.style.transform=open?'':'rotate(180deg)';if(!open)renderHolds();}
+async function loadVolumeSpikes(){
+  const r=await j('/holdings/volume?'+Q);const box=document.getElementById('volspikes');if(!box)return;
+  if(!r.ok||!r.d.volume_spikes||!r.d.volume_spikes.length){box.innerHTML='<div class="dim" style="font-size:12px;padding:4px 0">No unusual volume, or feed loading.</div>';return;}
+  const top=r.d.volume_spikes.slice(0,5),mx=Math.max(...top.map(x=>x.vol_x),2);
+  box.innerHTML=top.map(x=>{const col=x.vol_x>=2?'var(--purp,#c98bff)':x.vol_x>=1?'var(--up)':'var(--dim)';
+    return '<div style="margin:7px 0"><div class="rowline" style="margin:0"><span>'+x.symbol+'</span><span class="mono" style="font-weight:700;color:'+col+'">'+x.vol_x.toFixed(1)+'×</span></div><div class="volbar" style="height:5px;border-radius:3px;background:var(--elev);margin-top:4px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.min(100,x.vol_x/mx*100)+'%;background:'+col+'"></i></div></div>';}).join('');
+}
+async function loadHomeNews(){
+  const box=document.getElementById('homenews');if(!box||!PORT)return;
+  const rows=allHoldings().sort((a,b)=>b.market_value-a.market_value).slice(0,3);
+  let items=[];
+  for(const x of rows){const nr=await j('/news/'+encodeURIComponent(x.sym)+'?'+Q);if(nr.ok&&nr.d.news&&nr.d.news.length){items.push({sym:x.sym,...nr.d.news[0]});}}
+  if(!items.length){box.innerHTML='<div class="dim" style="font-size:12px;padding:4px 0">No recent news found.</div>';return;}
+  box.innerHTML=items.map(a=>'<a class="newsitem" href="'+a.link+'" target="_blank"><div style="font-size:13.5px;font-weight:600;line-height:1.35">'+a.title+'</div><div class="faint" style="font-size:11px;margin-top:3px">'+a.sym+' · '+(a.source||'')+(a.when?' · '+a.when:'')+'</div></a>').join('');
+}
 
 /* ---- Screener upload ---- */
 async function loadScreener(){
@@ -871,6 +907,41 @@ async def portfolio(request: Request, token: str | None = Query(default=None)) -
     return await _consolidated()
 
 
+_VOL_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+@app.get("/holdings/volume")
+async def holdings_volume(request: Request, top: int = 12,
+                          token: str | None = Query(default=None)) -> dict:
+    """Volume spikes among your biggest holdings (today vs 20-day avg). Cached ~5 min."""
+    _check_token(request, token)
+    import time
+    if _VOL_CACHE["data"] and (time.time() - _VOL_CACHE["ts"]) < 300:
+        return _VOL_CACHE["data"]
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+    book = await _consolidated()
+    agg: dict[str, float] = {}
+    for acc in book["accounts"]:
+        for h in acc.get("holdings", []):
+            agg[_clean_symbol(h["ticker"])] = agg.get(_clean_symbol(h["ticker"]), 0.0) + (h.get("market_value") or 0.0)
+    syms = [s for s, _ in sorted(agg.items(), key=lambda x: -x[1])[:top]]
+    out = []
+    for s in syms:
+        try:
+            d = get_ohlcv(s, period="1y")
+            vols = d.get("volumes", [])
+            if len(vols) > 21 and vols[-1]:
+                v20 = sum(vols[-21:-1]) / 20
+                if v20:
+                    out.append({"symbol": s, "vol_x": round(vols[-1] / v20, 2)})
+        except PriceDataUnavailable:
+            continue
+    out.sort(key=lambda x: -x["vol_x"])
+    result = {"as_of": book["as_of"], "volume_spikes": out}
+    _VOL_CACHE.update(ts=time.time(), data=result)
+    return result
+
+
 @app.get("/analysis/{ticker}")
 async def analysis(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
     """Technical read for one NSE symbol (e.g. /analysis/COALINDIA). Free (yfinance)."""
@@ -921,16 +992,35 @@ async def chart(request: Request, ticker: str, bars: int = 130,
             sum(vals[i - w + 1:i + 1]) / w for i in range(w - 1, len(vals))
         ]
 
+    from .analysis import technicals as tech_mod
     s50, s200 = sma_series(closes, 50), sma_series(closes, 200)
     n = max(1, min(bars, len(closes)))
     lvl = levels.from_ohlcv(data)
+    highs, lows, vols = data.get("highs", []), data.get("lows", []), data.get("volumes", [])
+    last = closes[-1]
+    prev = closes[-2] if len(closes) > 1 else last
+    t = tech_mod.analyze(closes, vols)
+    win = closes[-252:] if len(closes) >= 30 else closes
+    hi52 = max(highs[-252:]) if highs else max(win)
+    lo52 = min(lows[-252:]) if lows else min(win)
+    vol20 = (sum(vols[-21:-1]) / 20) if len(vols) > 21 else (sum(vols) / len(vols) if vols else 0)
     return {
         "symbol": _clean_symbol(ticker).upper(),
         "source": data.get("source"),
         "closes": [round(c, 2) for c in closes[-n:]],
         "sma50": [round(x, 2) if x is not None else None for x in s50[-n:]],
         "sma200": [round(x, 2) if x is not None else None for x in s200[-n:]],
-        "last": round(closes[-1], 2),
+        "last": round(last, 2),
+        "day_change_pct": round((last / prev - 1) * 100, 2) if prev else 0.0,
+        "day_high": round(highs[-1], 2) if highs else None,
+        "day_low": round(lows[-1], 2) if lows else None,
+        "wk52_high": round(hi52, 2), "wk52_low": round(lo52, 2),
+        "from_52w_high_pct": round((last / hi52 - 1) * 100, 1) if hi52 else None,
+        "volume": int(vols[-1]) if vols else None,
+        "vol_x": round(vols[-1] / vol20, 2) if vol20 else None,
+        "rsi14": t.get("rsi14"), "sma50_val": t.get("sma50"), "sma200_val": t.get("sma200"),
+        "above_200dma": t.get("above_200dma"), "dma_signal": t.get("dma_signal"),
+        "momentum": t.get("momentum"),
         "levels": lvl,
     }
 
