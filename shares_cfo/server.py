@@ -175,6 +175,16 @@ DASHBOARD_HTML = r"""<!doctype html>
     <div style="display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 10px"><span class="lbl">Holdings</span><span class="faint" style="font-size:11px">tap for numbers &amp; actions</span></div>
     <div class="filters" id="filters"><button class="fchip" aria-pressed="true">All</button><button class="fchip" aria-pressed="false">Strong</button><button class="fchip" aria-pressed="false">Weak</button><button class="fchip" aria-pressed="false">Vol surge</button></div>
     <div class="holds" id="holds"><div class="load">Loading your book&hellip;</div></div>
+    <div class="card" id="screener" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Screener Premium</span><span class="dim" id="scr-state">&hellip;</span></div>
+      <div class="dim" id="scr-detail" style="margin-top:6px;font-size:13px">Upload your Screener export to power fundamentals &amp; ideas.</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="file" id="scr-file" accept=".xlsx,.xls,.csv" style="color:var(--dim);font-size:13px;max-width:60%">
+        <button class="btn hedge" id="scr-btn" style="flex:0 0 auto;padding:9px 16px">Upload</button>
+      </div>
+      <div class="dim" id="scr-msg" style="margin-top:6px;font-size:12px"></div>
+      <div class="dim" style="margin-top:8px;font-size:11.5px">screener.in → Watchlist/Screen → Export to Excel → pick it here.</div>
+    </div>
   </section>
 
   <section id="s-ideas">
@@ -575,6 +585,26 @@ document.getElementById('tk-confirm').addEventListener('click',async function(){
 });
 scrim.addEventListener('click',()=>{scrim.classList.remove('on');sheet.classList.remove('on');});
 
+/* ---- Screener upload ---- */
+async function loadScreener(){
+  try{const r=await j('/fundamentals/screener/status?'+Q);if(!r.ok)return;const s=r.d;
+    const st=document.getElementById('scr-state'),d=document.getElementById('scr-detail');
+    if(s.loaded){st.textContent='● loaded';st.className='up';d.innerHTML=s.companies+' companies · <span class="dim">'+s.active_file+'</span>';}
+    else{st.textContent='● none';st.className='warn';d.textContent='Upload your Screener export to power fundamentals & ideas.';}
+  }catch(e){}
+}
+document.getElementById('scr-btn').onclick=async function(){
+  const f=document.getElementById('scr-file').files[0],msg=document.getElementById('scr-msg');
+  if(!f){msg.textContent='Pick a file first.';return;}
+  msg.className='dim';msg.textContent='Uploading '+f.name+'…';
+  const fd=new FormData();fd.append('file',f);
+  try{const r=await fetch('/fundamentals/screener/upload?'+Q,{method:'POST',body:fd});const jr=await r.json();
+    if(!r.ok){msg.className='down';msg.textContent=(jr&&jr.detail)||'Upload failed';return;}
+    msg.className='up';msg.textContent='✅ Loaded '+(jr.status&&jr.status.companies||0)+' companies. Ideas tab is ready.';
+    loadScreener();loaded.ideas=0;
+  }catch(e){msg.className='down';msg.textContent='Upload failed — try again.';}
+};
+
 /* ---- nav + filters ---- */
 function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
@@ -589,7 +619,7 @@ function applyFilter(){const f=(document.querySelector('.fchip[aria-pressed="tru
 /* sparkline (decorative until history endpoint) */
 (function(){const c=document.getElementById('spark');if(!c)return;const x=c.getContext('2d'),W=c.width,Hh=c.height,n=30,pts=[];let v=.8;for(let i=0;i<n;i++){v+=Math.sin(i/3)*.006+.006;pts.push(v);}const mn=Math.min(...pts),mx=Math.max(...pts),X=i=>i/(n-1)*W,Y=val=>Hh-6-((val-mn)/(mx-mn))*(Hh-14);x.beginPath();pts.forEach((p,i)=>{i?x.lineTo(X(i),Y(p)):x.moveTo(X(i),Y(p));});x.lineTo(W,Hh);x.lineTo(0,Hh);x.closePath();const g=x.createLinearGradient(0,0,0,Hh);g.addColorStop(0,'rgba(47,189,133,.25)');g.addColorStop(1,'rgba(47,189,133,0)');x.fillStyle=g;x.fill();x.beginPath();pts.forEach((p,i)=>{i?x.lineTo(X(i),Y(p)):x.moveTo(X(i),Y(p));});x.strokeStyle='#2fbd85';x.lineWidth=2.2;x.lineJoin='round';x.stroke();})();
 
-loadPortfolio().then(loadScoring);
+loadPortfolio().then(loadScoring);loadScreener();
 setInterval(()=>{loadPortfolio();},20000);
 </script>
 </body></html>"""
@@ -693,7 +723,22 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
     return book
 
 
-async def _consolidated() -> dict:
+_BOOK_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+async def _consolidated(force: bool = False) -> dict:
+    """Consolidated book across all accounts, cached ~15s so many tabs share one
+    fetch (with 5 accounts a full fetch is slow; every tab re-fetching made the app
+    crawl)."""
+    import time
+    if not force and _BOOK_CACHE["data"] and (time.time() - _BOOK_CACHE["ts"]) < 15:
+        return _BOOK_CACHE["data"]
+    result = await _consolidated_uncached()
+    _BOOK_CACHE.update(ts=time.time(), data=result)
+    return result
+
+
+async def _consolidated_uncached() -> dict:
     sectors = SectorMap()
     books = [await _fetch_account(k, sectors) for k in get_accounts()]
 

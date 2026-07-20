@@ -189,7 +189,13 @@ def get(symbol: str, exchange: str = "NSE") -> dict:
     """Merged fundamentals: later providers override earlier, with provenance."""
     merged: dict = {}
     provenance: dict = {}
-    for provider in (from_yfinance, from_screener):
+    # yfinance is blocked/slow from datacenter IPs, so it hangs per holding. Only use
+    # it if explicitly enabled; otherwise fundamentals come from the Screener upload.
+    import os
+    providers = [from_screener]
+    if os.environ.get("CFO_ENABLE_YF_FUNDAMENTALS", "").strip().lower() in ("1", "true", "yes"):
+        providers = [from_yfinance, from_screener]
+    for provider in providers:
         res = provider(symbol, exchange)
         if not res:
             continue
