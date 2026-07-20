@@ -1922,10 +1922,24 @@ async def debug_angel_holdings(request: Request, token: str | None = Query(defau
     jwt, note = angel_scrip._login(acc)
     if not jwt:
         return {"login": note, "error": "login failed"}
+    # Token *shape* only (never the token): a jwtToken that already carries a
+    # "Bearer " prefix would make our f"Bearer {jwt}" a double-Bearer and get
+    # every secure call rejected with AG8001. eyJ = a normal unprefixed JWT.
+    probe = {"public_ip_header": _public_ip(),
+             "login_note": note,
+             "jwt_already_has_bearer": jwt.lower().startswith("bearer"),
+             "jwt_looks_like_jwt": jwt.startswith("eyJ"),
+             "jwt_len": len(jwt)}
+    # Candles = a *third* secure endpoint (historical). If it works while RMS/
+    # holdings don't, the token is fine and it's a per-endpoint permission gate.
+    try:
+        cres, _cdbg = angel_scrip.fetch("RELIANCE")
+        probe["candles_secure_endpoint"] = "ok" if (cres and cres.get("closes")) else "REJECTED/empty"
+    except Exception as exc:
+        probe["candles_secure_endpoint"] = f"error: {str(exc)[:120]}"
     # Same JWT against a *different* secure endpoint (RMS/funds). Separates a
     # portfolio-scope problem (RMS ok, holdings rejected) from a blanket IP/token
     # rejection (both rejected). No balances echoed — only the accept/reject verdict.
-    probe = {"public_ip_header": _public_ip()}
     try:
         rr = httpx.get(acc.base_url + RMS, headers=_headers(acc, jwt), timeout=30).json()
         probe["rms_secure_endpoint"] = ("ok" if (rr.get("success") or rr.get("status"))
