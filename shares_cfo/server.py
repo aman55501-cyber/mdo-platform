@@ -893,6 +893,15 @@ async def analysis(request: Request, ticker: str, token: str | None = Query(defa
     }
 
 
+@app.get("/news/{ticker}")
+async def news(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
+    """Recent news headlines for a stock (Google News, free)."""
+    _check_token(request, token)
+    from .analysis import news as news_mod
+    return {"ticker": _clean_symbol(ticker).upper(),
+            "news": news_mod.get_news(_clean_symbol(ticker))}
+
+
 @app.get("/chart/{ticker}")
 async def chart(request: Request, ticker: str, bars: int = 130,
                 token: str | None = Query(default=None)) -> dict:
