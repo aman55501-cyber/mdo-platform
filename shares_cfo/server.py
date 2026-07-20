@@ -1912,9 +1912,10 @@ async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
 async def debug_angel_holdings(request: Request, token: str | None = Query(default=None)) -> dict:
     """Raw Angel getAllHolding structure (keys/counts, not full positions) to fix parsing."""
     _check_token(request, token)
+    import os as _os
     import httpx
     from .brokers import angel_scrip
-    from .brokers.angel import HOLDINGS, _headers
+    from .brokers.angel import HOLDINGS, RMS, _headers
     key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
     if not key:
         return {"error": "no Angel account configured"}
@@ -1922,14 +1923,25 @@ async def debug_angel_holdings(request: Request, token: str | None = Query(defau
     jwt, note = angel_scrip._login(acc)
     if not jwt:
         return {"login": note, "error": "login failed"}
+    # Same JWT against a *different* secure endpoint (RMS/funds). Separates a
+    # portfolio-scope problem (RMS ok, holdings rejected) from a blanket IP/token
+    # rejection (both rejected). No balances echoed — only the accept/reject verdict.
+    probe = {"public_ip_header": _os.environ.get("ANGEL_PUBLIC_IP", "127.0.0.1 (unset)")}
+    try:
+        rr = httpx.get(acc.base_url + RMS, headers=_headers(acc, jwt), timeout=30).json()
+        probe["rms_secure_endpoint"] = ("ok" if (rr.get("success") or rr.get("status"))
+                                        else f"REJECTED: {rr.get('message')} ({rr.get('errorCode') or rr.get('errorcode') or ''})")
+    except Exception as exc:
+        probe["rms_secure_endpoint"] = f"error: {str(exc)[:120]}"
     try:
         r = httpx.get(acc.base_url + HOLDINGS, headers=_headers(acc, jwt), timeout=30)
         j = r.json()
     except Exception as exc:
-        return {"error": str(exc)[:200]}
+        return {"error": str(exc)[:200], **probe}
     data = j.get("data")
     info = {"account": key, "http": r.status_code, "message": j.get("message"),
-            "errorcode": j.get("errorcode"), "data_type": type(data).__name__}
+            "errorcode": j.get("errorCode") or j.get("errorcode"),
+            "data_type": type(data).__name__, **probe}
     if isinstance(data, dict):
         info["data_keys"] = list(data.keys())
         h = data.get("holdings")
