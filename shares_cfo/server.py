@@ -642,13 +642,17 @@ function renderAccounts(){
   document.getElementById('acct-list').innerHTML=h||'<div class="dim" style="font-size:13px">No accounts loaded.</div>';
 }
 function renderMovers(){
-  const all=allHoldings();if(!all.length){document.getElementById('movers').innerHTML='<div class="dim" style="font-size:13px;padding:6px 0">No holdings yet.</div>';return;}
+  let all=allHoldings();if(!all.length){document.getElementById('movers').innerHTML='<div class="dim" style="font-size:13px;padding:6px 0">No holdings yet.</div>';return;}
+  // Ignore stale/tiny lots (< ₹5k) so a single old share can't dominate the movers list.
+  all=all.filter(x=>Math.abs(x.market_value)>=5000);
   const anyDay=all.some(x=>Math.abs(x.day_change)>0.5);
-  all.forEach(x=>{x.pnl=x.market_value-x.invested;x.pnlpct=x.invested?x.pnl/x.invested*100:0;x.daypct=x.invested?x.day_change/x.invested*100:0;});
-  const key=anyDay?'daypct':'pnlpct';const val=anyDay?'day_change':'pnl';
+  // Daily % is measured vs *yesterday's close value* (market_value − today's rupee move),
+  // NOT vs cost basis — dividing by cost inflates a multibagger's move to hundreds of %.
+  all.forEach(x=>{x.pnl=x.market_value-x.invested;x.pnlpct=x.invested?x.pnl/x.invested*100:0;const prev=x.market_value-x.day_change;x.daypct=prev?x.day_change/prev*100:0;});
+  const key=anyDay?'day_change':'pnl';const pctk=anyDay?'daypct':'pnlpct';const val=key;
   const s=[...all].sort((a,b)=>b[key]-a[key]);
   const gain=s.filter(x=>x[key]>0).slice(0,3),lose=s.filter(x=>x[key]<0).slice(-3).reverse();
-  const row=(x,up)=>'<div class="rowline"><span>'+(up?'▲':'▼')+' '+x.sym+'</span><span class="mono '+(up?'up':'down')+'">'+(x[val]>=0?'+':'')+inr(x[val])+' <span class="faint">'+(x[key]>=0?'+':'')+x[key].toFixed(1)+'%</span></span></div>';
+  const row=(x,up)=>'<div class="rowline"><span>'+(up?'▲':'▼')+' '+x.sym+'</span><span class="mono '+(up?'up':'down')+'">'+(x[val]>=0?'+':'')+inr(x[val])+' <span class="faint">'+(x[pctk]>=0?'+':'')+x[pctk].toFixed(1)+'%</span></span></div>';
   let h='';gain.forEach(x=>h+=row(x,true));if(gain.length&&lose.length)h+='<div style="height:1px;background:var(--hair);margin:8px 0"></div>';lose.forEach(x=>h+=row(x,false));
   document.getElementById('movers').innerHTML=h||'<div class="dim" style="font-size:13px;padding:6px 0">Flat today.</div>';
 }
@@ -1902,6 +1906,44 @@ async def debug_angel_candles(request: Request, symbol: str = "RELIANCE",
     return {"ok": False, "debug": dbg,
             "hint": "If login says missing TOTP/MPIN, connect ANGEL1 fully in the Login tab. "
                     "If candle_status is 403/rejected, whitelist VPS IP 72.60.97.133 in SmartAPI."}
+
+
+@app.get("/debug/angel-holdings")
+async def debug_angel_holdings(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Raw Angel getAllHolding structure (keys/counts, not full positions) to fix parsing."""
+    _check_token(request, token)
+    import httpx
+    from .brokers import angel_scrip
+    from .brokers.angel import HOLDINGS, _headers
+    key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+    if not key:
+        return {"error": "no Angel account configured"}
+    acc = load_account(key)
+    jwt, note = angel_scrip._login(acc)
+    if not jwt:
+        return {"login": note, "error": "login failed"}
+    try:
+        r = httpx.get(acc.base_url + HOLDINGS, headers=_headers(acc, jwt), timeout=30)
+        j = r.json()
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+    data = j.get("data")
+    info = {"account": key, "http": r.status_code, "message": j.get("message"),
+            "errorcode": j.get("errorcode"), "data_type": type(data).__name__}
+    if isinstance(data, dict):
+        info["data_keys"] = list(data.keys())
+        h = data.get("holdings")
+        info["holdings_count"] = len(h) if isinstance(h, list) else None
+        if isinstance(h, list) and h:
+            info["first_holding_keys"] = list(h[0].keys())
+        info["totalholding"] = data.get("totalholding")
+    elif isinstance(data, list):
+        info["data_count"] = len(data)
+        if data:
+            info["first_row_keys"] = list(data[0].keys())
+    else:
+        info["raw_snippet"] = r.text[:300]
+    return info
 
 
 @app.get("/market/feed-check")
