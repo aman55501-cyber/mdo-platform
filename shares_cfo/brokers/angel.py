@@ -92,7 +92,15 @@ class AngelAdapter:
             raise TokenExpiredError(self._acct.creds_key)
         if resp.status_code >= 400:
             raise BrokerError(f"Angel GET {path} failed [HTTP {resp.status_code}]: {resp.text[:200]}")
-        return resp.json()
+        payload = resp.json()
+        # Angel returns HTTP 200 even for logical failures (e.g. AG8001 "Invalid Token"),
+        # with success/status=false and data="". Surface these instead of letting the
+        # row parser read the empty data as "0 holdings" — a silent, wrong ₹0.
+        if isinstance(payload, dict) and (payload.get("success") is False or payload.get("status") is False):
+            msg = payload.get("message") or "request rejected"
+            code = payload.get("errorCode") or payload.get("errorcode") or ""
+            raise BrokerError(f"Angel {path} rejected: {msg}{f' ({code})' if code else ''}")
+        return payload
 
     @staticmethod
     def _rows(data: dict) -> list[dict]:
