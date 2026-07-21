@@ -64,7 +64,7 @@ DASHBOARD_HTML = r"""<!doctype html>
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
-  .app{max-width:460px;margin:0 auto;padding:14px 14px 92px;min-height:100vh}
+  .app{max-width:460px;margin:0 auto;padding:calc(56px + env(safe-area-inset-top)) 14px 94px;min-height:100vh}
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   .dim{color:var(--dim)}.faint{color:var(--faint)}.up{color:var(--up)}.down{color:var(--down)}.warn{color:var(--warn)}
   .card{background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:12px}
@@ -85,7 +85,17 @@ DASHBOARD_HTML = r"""<!doctype html>
   .mvn{font-weight:650;font-size:14px}
   .mvr{margin-left:auto;text-align:right;font-family:var(--mono)}
   .mvhead{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:10px 0 2px}
-  .bar{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 12px}
+  /* fixed top app bar */
+  .appbar{position:fixed;top:0;left:0;right:0;z-index:16;max-width:460px;margin:0 auto;
+    background:rgba(12,17,26,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--bd);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:calc(env(safe-area-inset-top) + 9px) 15px 9px}
+  .ttl{display:flex;align-items:center;gap:9px;font-weight:750;font-size:16px;min-width:0}
+  .ttl .mark{width:26px;height:26px;border-radius:8px;flex:none;background:linear-gradient(150deg,var(--acc),#2f6bd0);display:grid;place-items:center;font-size:14px;color:#07101f;font-weight:800}
+  .ttl .dot{width:7px;height:7px;border-radius:50%;background:var(--up);flex:none}
+  .hdrnw{text-align:right;line-height:1.15;flex:none}
+  .hdrnw .v{font-family:var(--mono);font-weight:750;font-size:15px;letter-spacing:-.3px}
+  .hdrnw .d{font-size:11px;font-weight:600;margin-top:1px}
   .brand{display:flex;align-items:center;gap:9px;font-weight:700}
   .brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(150deg,var(--acc),#2f6bd0);display:grid;place-items:center;font-size:14px}
   .pill{font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--bd);display:inline-flex;align-items:center;gap:6px;color:var(--dim)}
@@ -164,7 +174,10 @@ DASHBOARD_HTML = r"""<!doctype html>
   .iseg{display:flex;gap:6px;margin:12px 0 2px}
   .iseg button{flex:1;background:var(--elev);border:1px solid var(--bd);color:var(--dim);border-radius:9px;padding:8px 0;font-weight:700;font-size:12.5px}
   .iseg button.on{background:rgba(51,214,159,.13);border-color:#2f5c4b;color:var(--up)}
-  .nav button svg{width:21px;height:21px}.nav button[aria-current="true"]{color:var(--acc)}
+  .nav button svg{width:21px;height:21px}
+  .nav button{position:relative;transition:color .15s}
+  .nav button[aria-current="true"]{color:var(--acc)}
+  .nav button[aria-current="true"]::before{content:"";position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:22px;height:3px;border-radius:0 0 3px 3px;background:var(--acc)}
   .scrim{position:fixed;inset:0;background:rgba(4,7,13,.66);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}.scrim.on{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:460px;margin:0 auto;background:var(--panel);border:1px solid var(--bd);border-bottom:0;border-radius:20px 20px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));transform:translateY(103%);transition:transform .26s cubic-bezier(.2,.7,.2,1)}
   .sheet.on{transform:translateY(0)}
@@ -175,7 +188,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   .rrbar{display:flex;height:8px;border-radius:5px;overflow:hidden;margin-top:12px}
   .guard{display:flex;gap:9px;margin-top:14px;padding:11px 12px;border-radius:11px;background:rgba(224,165,58,.09);border:1px solid rgba(224,165,58,.3);font-size:12.5px;line-height:1.5}
   .confirm{width:100%;margin-top:14px;border:0;border-radius:12px;padding:14px 0;font-weight:800;font-size:15px;background:var(--elev);color:var(--faint)}
-  h1.screen{font-size:20px;font-weight:800;margin:2px 2px 12px}
+  h1.screen{display:none}
   section{display:none}section.on{display:block}
   .load{color:var(--faint);text-align:center;padding:24px;font-size:13px}
   #err{color:var(--down);text-align:center;font-size:13px;margin:6px 0}
@@ -183,7 +196,10 @@ DASHBOARD_HTML = r"""<!doctype html>
 </style></head>
 <body>
 <div class="app">
-  <div class="bar"><div class="brand"><span class="mark">&#8377;</span>Shares CFO</div><span class="pill" id="statuspill"><span class="dot"></span><span id="statustxt">&hellip;</span></span></div>
+  <div class="appbar">
+    <div class="ttl"><span class="mark">&#8377;</span><span id="hdr-title">Home</span><span class="dot" id="hdr-dot" title=""></span></div>
+    <div class="hdrnw"><div class="v" id="hdr-nw">&#8377;&mdash;</div><div class="d dim" id="hdr-day">&hellip;</div></div>
+  </div>
   <div id="err"></div>
 
   <section id="s-home" class="on">
@@ -358,8 +374,12 @@ function renderHero(p){
   document.getElementById('upnl').innerHTML='<span class="'+(up?'up':'down')+'">'+(up?'+':'−')+inr(Math.abs(p.unrealised_pnl))+'</span> <span class="dim" style="font-size:13px">'+pct(Math.abs(p.unrealised_pnl_pct))+'</span>';
   document.getElementById('cash').textContent=inr(p.cash);document.getElementById('inv').textContent=inr(p.invested_value);
   const fp=p.positions_pnl||0;document.getElementById('fopnl').innerHTML='<span class="'+(fp>=0?'up':'down')+'">'+(fp>=0?'+':'')+inr(fp)+'</span>';
-  document.getElementById('statustxt').textContent='Book '+(deg?'':'complete · ')+p.book_health.fresh+'/'+p.book_health.accounts;
-  document.getElementById('statuspill').querySelector('.dot').style.background=deg?'var(--down)':'var(--up)';
+  // fixed header: always-visible net worth + today's move + book-health dot
+  document.getElementById('hdr-nw').textContent=inr(p.net_worth);
+  const hd=document.getElementById('hdr-day');
+  hd.className='d '+(dc?'up':'down');hd.textContent=(dc?'▲':'▼')+' '+(dc?'+':'−')+pct(Math.abs(p.day_change_pct));
+  const hdot=document.getElementById('hdr-dot');hdot.style.background=deg?'var(--down)':'var(--up)';
+  hdot.title='Book '+(deg?'partial':'complete')+' '+p.book_health.fresh+'/'+p.book_health.accounts;
   const errb=document.getElementById('err');
   if(deg){errb.innerHTML='<a href="/login?'+Q+'" style="color:var(--warn);text-decoration:none">⚠ '+p.book_health.degraded+' account(s) not logged in — net worth is partial. Tap to log in →</a>';}
   else{errb.textContent='';}
@@ -846,8 +866,10 @@ function incomeTicket(strat,i){
 }
 
 /* ---- nav + filters ---- */
+const TITLES={home:'Home',mtf:'MTF',ideas:'Ideas',income:'Income',hedge:'Hedge',trades:'Trades'};
 function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-'+t).classList.add('on');
-  document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
+  document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));
+  const ht=document.getElementById('hdr-title');if(ht)ht.textContent=TITLES[t]||'Shares CFO';window.scrollTo(0,0);
   if(t==='mtf'&&!loaded.mtf){loaded.mtf=1;loadMtf();}
   if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadDailyStrategy();loadIdeas();loadOI();}
   if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();loadOptions();}
