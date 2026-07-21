@@ -1973,6 +1973,89 @@ async def screener_scan(request: Request, limit: int = 20, min_score: float = 0.
             "showing": len(top), "ideas": top}
 
 
+_HC_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+def _horizon(sessions) -> str:
+    try:
+        s = int(sessions or 0)
+    except (TypeError, ValueError):
+        s = 0
+    if s <= 0:
+        return "Swing · 1–3 wk"
+    if s <= 3:
+        return "Short · 1–3 d"
+    if s <= 15:
+        return "Swing · 1–3 wk"
+    return "Positional · 1 mo+"
+
+
+@app.get("/ideas/high-conviction")
+async def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
+                                token: str | None = Query(default=None)) -> dict:
+    """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R.
+
+    Fundamentals (Screener) rank the universe; technicals + a backtested pattern set
+    conviction; strategy.signal defines the risk. Heavy (fetches candles) so cached.
+    """
+    _check_token(request, token)
+    import time
+    if _HC_CACHE["data"] and (time.time() - _HC_CACHE["ts"]) < 900:
+        return _HC_CACHE["data"]
+    from .analysis import fundamentals as fun, scoring, technicals as tech_mod, patterns as pat, strategy
+    from .analysis.prices import PriceDataUnavailable, get_ohlcv
+
+    universe = fun.load_universe()
+    if not universe:
+        return {"error": "No Screener export loaded — upload one to power ideas.", "ideas": []}
+    rule = scoring.load_rule()
+    scored = []
+    for item in universe:
+        f = scoring.score_fundamental(item["fields"], rule)
+        if f["score"] is not None and f["score"] >= 55:
+            scored.append({"symbol": item["symbol"], "name": item.get("name"),
+                           "fundamental_score": f["score"], "fields": item["fields"]})
+    scored.sort(key=lambda x: x["fundamental_score"], reverse=True)
+    ideas = []
+    for row in scored[:25]:  # only deep-analyse the fundamentally strongest
+        try:
+            data = get_ohlcv(row["symbol"])
+            t = tech_mod.analyze(data["closes"], data["volumes"])
+            blended = scoring.combine(row["symbol"], row["fields"], t, rule)
+            fired = pat.detect(data)
+            best = max((p for p in fired if p.get("hit_rate")), default=None,
+                       key=lambda p: p["hit_rate"])
+            conviction = round(0.5 * (row["fundamental_score"] or 0)
+                               + 0.3 * (blended["technical_score"] or 0)
+                               + 0.2 * (best["hit_rate"] if best else 0), 1)
+            if conviction < min_conviction:
+                continue
+            last = t.get("last_price") or 0.0
+            sig = strategy.signal(row["symbol"], t, last, risk_budget=10000.0)
+            if sig.get("action") != "BUY":
+                continue
+            ideas.append({
+                "symbol": row["symbol"], "name": row.get("name"), "conviction": conviction,
+                "fundamental_score": row["fundamental_score"],
+                "technical_score": blended["technical_score"], "verdict": blended["verdict"],
+                "horizon": _horizon(best.get("horizon") if best else None),
+                "entry": sig["entry"], "stop_loss": sig["stop_loss"], "target": sig["target"],
+                "reward_risk": sig["reward_risk"], "last_price": last,
+                "pattern": best.get("pattern") if best else None,
+                "hit_rate": best.get("hit_rate") if best else None,
+                "avg_return_pct": best.get("avg_return_pct") if best else None,
+                "flags": blended.get("flags", []),
+            })
+        except (PriceDataUnavailable, Exception):
+            continue
+    ideas.sort(key=lambda x: x["conviction"], reverse=True)
+    data = {"ideas": ideas[:10], "min_conviction": min_conviction,
+            "note": "High-conviction only: strong fundamentals + a backtested pattern edge + a "
+                    "defined-risk entry. Advisory — verify before acting."}
+    _HC_CACHE.update(ts=time.time(), data=data)
+    return data
+
+
 @app.get("/strategy/daily")
 async def strategy_daily(request: Request, token: str | None = Query(default=None)) -> dict:
     """Levels-first Daily Strategy: market bias + NIFTY/BANKNIFTY pivots + discipline."""

@@ -92,9 +92,9 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .mv .s{font-weight:500}.mv .c{font-family:var(--fm)}
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);
-  display:grid;grid-template-columns:repeat(6,1fr);padding-bottom:env(safe-area-inset-bottom)}
+  display:grid;grid-template-columns:repeat(7,1fr);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);
-  letter-spacing:.04em;font-size:10px;font-weight:600;text-transform:uppercase;padding:14px 0 13px;cursor:pointer;min-height:50px}
+  letter-spacing:.01em;font-size:9.5px;font-weight:600;text-transform:uppercase;padding:14px 1px 13px;cursor:pointer;min-height:50px;white-space:nowrap}
 .tabs button.on{color:var(--a700);border-top-color:var(--acc)}
 section{display:none}section.on{display:block}
 .load{padding:26px;text-align:center;color:var(--n500);font-family:var(--fh);letter-spacing:.1em;font-size:11px;text-transform:uppercase}
@@ -144,6 +144,10 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
   </div></section>
 
+  <section id="s-ideas"><div class="wrap">
+    <div class="panel span2"><div class="ph"><span class="t">High-conviction ideas</span><span class="lbl">fundamental + technical + backtest</span></div><div id="ideas-list"><div class="load">scanning for setups</div></div></div>
+  </div></section>
+
   <section id="s-news"><div class="wrap">
     <div class="panel span2"><div class="ph"><span class="t">News on your holdings</span><span class="lbl">Google News</span></div><div id="news-list"><div class="load">loading news</div></div></div>
   </div></section>
@@ -153,6 +157,7 @@ a{color:var(--a700);text-decoration:none}
   <button data-t="settings">Settings</button>
   <button data-t="portfolio" class="on">Portfolio</button>
   <button data-t="positions">Positions</button>
+  <button data-t="ideas">Ideas</button>
   <button data-t="chart">Chart</button>
   <button data-t="news">News</button>
   <button data-t="login">Login</button>
@@ -256,7 +261,25 @@ async function loadPositions(){
       +'</div><div class="rr"><div class="p '+cl(mtm)+'">'+inr(mtm)+'</div><div class="c muted">'+p.holder+'</div></div></div>';
   }).join('');
 }
-let newsLoaded=0,setLoaded=0;
+let newsLoaded=0,setLoaded=0,ideasLoaded=0;
+async function loadIdeas(){
+  const box=document.getElementById('ideas-list');const r=await j('/ideas/high-conviction?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}
+  if(r.d.error){box.innerHTML='<div class="load">'+r.d.error+'</div>';return;}
+  const ii=r.d.ideas||[];
+  if(!ii.length){box.innerHTML='<div class="load">No high-conviction setups right now — the bar is intentionally high.</div>';return;}
+  box.innerHTML=ii.map(i=>{
+    const flag=(i.flags&&i.flags.length)?(i.flags[0].text||i.flags[0]):'';
+    return '<div class="row" style="flex-direction:column;align-items:stretch;gap:8px">'
+      +'<div style="display:flex;align-items:baseline"><span class="rn" style="font-size:16px;font-weight:600">'+i.symbol+'</span>'
+      +'<span class="rsub" style="margin-left:9px;border:1px solid var(--n400);padding:1px 6px">'+i.horizon+'</span>'
+      +'<span class="mono" style="margin-left:auto;font-weight:600;color:var(--a700)">CONV '+i.conviction+'</span></div>'
+      +'<div class="mono" style="display:flex;gap:16px;font-size:13px;flex-wrap:wrap"><span class="sec">Entry <b style="color:var(--text)">'+i.entry+'</b></span><span class="down">SL '+i.stop_loss+'</span><span class="up">TGT '+i.target+'</span><span class="sec">R:R <b style="color:var(--text)">'+i.reward_risk+'</b></span></div>'
+      +(i.pattern?'<div class="rsub" style="color:var(--n600)">'+i.pattern.replace(/_/g,\' \')+' · '+i.hit_rate+'% hit · avg '+(i.avg_return_pct>=0?\'+\':\'\')+i.avg_return_pct+'% over horizon</div>':'')
+      +'<div class="rsub">F '+i.fundamental_score+' · T '+(i.technical_score!=null?i.technical_score:'—')+(flag?' · <span class="down">⚠ '+flag+'</span>':'')+'</div>'
+      +'</div>';
+  }).join('')+'<div class="pb rsub" style="color:var(--n500)">'+(r.d.note||'')+'</div>';
+}
 async function loadSettings(){
   const r=await j('/accounts?'+Q),box=document.getElementById('set-accs');
   if(r.ok&&r.d.accounts){document.getElementById('set-acc-n').textContent=r.d.accounts.length+' configured';
@@ -284,6 +307,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
   if(t==='positions'){loadPositions();if(!posLoaded){posLoaded=1;setInterval(()=>{if(document.getElementById('s-positions').classList.contains('on'))loadPositions();},20000);}}
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
+  if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='news'&&!newsLoaded){newsLoaded=1;loadNews();}});
 
 mktStatus();setInterval(mktStatus,30000);
