@@ -22,7 +22,7 @@ TERMINAL_HTML = r"""<!doctype html><html><head>
   --fh:'IBM Plex Sans Condensed',sans-serif;--fb:'IBM Plex Sans',sans-serif;--fm:'IBM Plex Mono',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:13px;line-height:1.4;-webkit-font-smoothing:antialiased}
+body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 .mono{font-family:var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
 .up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--n500)}.sec{color:var(--n600)}
 .lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;color:var(--n500);font-weight:600;font-size:10.5px}
@@ -71,7 +71,7 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .nwrow .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.08em;font-size:9px;color:var(--n500)}
 .nwrow .v{font-family:var(--fm);font-size:13px;font-weight:600;margin-top:3px}
 /* rows */
-.row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--n200)}
+.row{display:flex;align-items:center;gap:10px;padding:12px 13px;border-top:1px solid var(--n200);min-height:52px}
 .row:first-child{border-top:0}
 .rn{font-weight:500}.rsub{font-size:10px;color:var(--n500);font-family:var(--fh);letter-spacing:.05em}
 .rr{margin-left:auto;text-align:right}
@@ -92,7 +92,7 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);
   display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);
-  letter-spacing:.1em;font-size:10px;font-weight:600;text-transform:uppercase;padding:12px 0 11px;cursor:pointer}
+  letter-spacing:.1em;font-size:11px;font-weight:600;text-transform:uppercase;padding:15px 0 14px;cursor:pointer;min-height:52px}
 .tabs button.on{color:var(--a700);border-top-color:var(--acc)}
 section{display:none}section.on{display:block}
 .load{padding:26px;text-align:center;color:var(--n500);font-family:var(--fh);letter-spacing:.1em;font-size:11px;text-transform:uppercase}
