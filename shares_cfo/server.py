@@ -1179,6 +1179,92 @@ async def ideas_oi(request: Request, token: str | None = Query(default=None)) ->
                     "the second day the app runs."}
 
 
+import re as _re
+
+_POS_RE_OPT = _re.compile(r"^([A-Z0-9&\-]+)\s+(\d+(?:\.\d+)?)(CE|PE)\s*(.*)$", _re.I)
+_POS_RE_FUT = _re.compile(r"^([A-Z0-9&\-]+)\s+FUT\s*(.*)$", _re.I)
+
+
+def _parse_contract(label: str) -> dict:
+    """Best-effort split of an HDFC F&O label into underlying/opt/strike/expiry."""
+    label = (label or "").strip().upper()
+    m = _POS_RE_OPT.match(label)
+    if m:
+        return {"underlying": m.group(1), "strike": m.group(2), "opt": m.group(3).upper(),
+                "expiry": m.group(4).strip(), "kind": "option"}
+    m = _POS_RE_FUT.match(label)
+    if m:
+        return {"underlying": m.group(1), "strike": "", "opt": "", "expiry": m.group(2).strip(),
+                "kind": "future"}
+    return {"underlying": label.split()[0] if label else "", "strike": "", "opt": "",
+            "expiry": "", "kind": "equity"}
+
+
+@app.get("/positions/live")
+async def positions_live(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live F&O positions across accounts, enriched with Angel LTP / OI / volume.
+
+    Base position (qty, avg, LTP, P&L) comes from each broker; OI + volume + live
+    price-change are added from Angel's FULL quote where the contract resolves.
+    """
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    book = await _consolidated()
+    rows, tokmap = [], {}  # angel_token -> row index
+    for a in book.get("accounts", []):
+        if a.get("ok") is False:
+            continue
+        holder = a.get("label") or a.get("creds_key")
+        for p in a.get("positions", []):
+            c = _parse_contract(p.get("ticker", ""))
+            row = {"account": a.get("creds_key"), "holder": holder,
+                   "label": p.get("ticker"), "kind": c["kind"], "opt": c["opt"],
+                   "strike": c["strike"], "underlying": c["underlying"],
+                   "product": p.get("product_type"), "quantity": p.get("quantity"),
+                   "average_price": p.get("average_price"), "last_price": p.get("last_price"),
+                   "pnl": p.get("pnl"), "day_pnl": p.get("day_pnl"),
+                   "oi": None, "volume": None, "change_pct": None}
+            if c["kind"] in ("option", "future"):
+                atok = angel_scrip.resolve_nfo_token(c["underlying"], c["opt"], c["strike"], c["expiry"])
+                if atok:
+                    tokmap.setdefault(atok, []).append(len(rows))
+            rows.append(row)
+    if tokmap:
+        try:
+            quotes = angel_scrip.option_full(list(tokmap.keys()))
+        except Exception:
+            quotes = {}
+        for atok, idxs in tokmap.items():
+            q = quotes.get(str(atok)) or {}
+            for i in idxs:
+                rows[i]["oi"] = q.get("oi")
+                rows[i]["volume"] = q.get("volume")
+                rows[i]["change_pct"] = q.get("change_pct")
+                if q.get("ltp") and not rows[i]["last_price"]:
+                    rows[i]["last_price"] = q["ltp"]
+    fno = [r for r in rows if r["kind"] in ("option", "future")]
+    day = sum((r["day_pnl"] or 0) for r in rows)
+    realized = sum((r["pnl"] or 0) for r in rows)
+    return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
+            "day_pnl": round(day, 2), "realized_pnl": round(realized, 2),
+            "note": "LTP/P&L from the holding broker; OI + volume + live change from Angel "
+                    "where the contract resolves on the NFO chain."}
+
+
+@app.get("/debug/hdfc-positions")
+async def debug_hdfc_positions(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Raw position labels per account — to refine F&O contract parsing/OI mapping."""
+    _check_token(request, token)
+    book = await _consolidated()
+    out = []
+    for a in book.get("accounts", []):
+        for p in a.get("positions", []):
+            out.append({"account": a.get("creds_key"), "label": p.get("ticker"),
+                        "parsed": _parse_contract(p.get("ticker", "")),
+                        "product": p.get("product_type"), "qty": p.get("quantity")})
+    return {"count": len(out), "positions": out}
+
+
 _VOL_CACHE: dict = {"ts": 0.0, "data": None}
 
 

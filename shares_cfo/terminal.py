@@ -26,7 +26,21 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .mono{font-family:var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
 .up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--n500)}.sec{color:var(--n600)}
 .lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;color:var(--n500);font-weight:600;font-size:10.5px}
-.app{max-width:520px;margin:0 auto;background:var(--bg);min-height:100vh;padding-bottom:118px}
+.app{width:100%;max-width:520px;margin:0 auto;background:var(--bg);min-height:100vh;padding-bottom:118px}
+/* Samsung Z Fold 7 + tablets: unfolded inner screen is wide + near-square, so the
+   single 520px column wastes it. Widen and flow panels into two terminal columns;
+   the cover (folded) screen stays single-column. */
+@media (min-width:740px){
+  .app,.tabs,.hdr{max-width:900px}
+  .wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .wrap>.panel{margin-bottom:0}
+  .span2{grid-column:1/-1}
+  .nwbig{font-size:36px}
+}
+@media (min-width:1100px){
+  .app,.tabs,.hdr{max-width:1180px}
+  .wrap{grid-template-columns:1fr 1fr 1fr}
+}
 /* header */
 .hdr{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--n300);
   display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px}
@@ -96,7 +110,7 @@ a{color:var(--a700);text-decoration:none}
   <div class="tick"><div class="tickrow" id="tickrow"><span class="ti muted">loading feed…</span></div></div>
 
   <section id="s-markets" class="on"><div class="wrap" id="markets-wrap">
-    <div class="panel"><div class="pb">
+    <div class="panel span2"><div class="pb">
       <div class="lbl">Consolidated net worth</div>
       <div class="nwbig" id="nw">₹—</div><div class="mono" id="nwday" style="font-size:12px;margin-top:3px">—</div>
       <div class="nwrow">
@@ -110,14 +124,23 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-chart"><div class="soon"><div class="b">Chart · F&amp;O edge</div><div style="margin-top:8px;font-size:12px">Next slice — line/candle, PCR, Max&nbsp;Pain, OI.</div></div></section>
-  <section id="s-trade"><div class="soon"><div class="b">Order ticket · positions</div><div style="margin-top:8px;font-size:12px">Next slice — CASH/FUT/OPT ticket + live positions.</div></div></section>
+
+  <section id="s-positions"><div class="wrap">
+    <div class="panel span2"><div class="pb" style="display:flex;gap:20px">
+      <div><div class="lbl">Day MTM</div><div class="mono" id="pos-day" style="font-size:20px;font-weight:600">—</div></div>
+      <div><div class="lbl">Realized</div><div class="mono" id="pos-real" style="font-size:20px;font-weight:600">—</div></div>
+      <div style="margin-left:auto;text-align:right"><div class="lbl">F&amp;O legs</div><div class="mono" id="pos-n" style="font-size:20px;font-weight:600">—</div></div>
+    </div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
+  </div></section>
+
   <section id="s-income"><div class="soon"><div class="b">Income engine</div><div style="margin-top:8px;font-size:12px">Next slice — capital ladder + premium streams.</div></div></section>
 </div>
 
 <div class="tabs" id="tabs">
   <button data-t="markets" class="on">Markets</button>
   <button data-t="chart">Chart</button>
-  <button data-t="trade">Trade</button>
+  <button data-t="positions">Positions</button>
   <button data-t="income">Income</button>
 </div>
 
@@ -194,10 +217,32 @@ function renderMovers(p){
   document.getElementById('lose').innerHTML=l.map(row).join('')||'<div class="mv muted">—</div>';
 }
 
+const kfmt=n=>{if(n==null)return '—';const a=Math.abs(n);if(a>=1e7)return (n/1e7).toFixed(2)+'Cr';if(a>=1e5)return (n/1e5).toFixed(2)+'L';if(a>=1e3)return (n/1e3).toFixed(1)+'k';return ''+n;};
+let posLoaded=0;
+async function loadPositions(){
+  const box=document.getElementById('pos-list');const r=await j('/positions/live?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}
+  const d=r.d,ps=(d.positions||[]);
+  document.getElementById('pos-day').innerHTML='<span class="'+cl(d.day_pnl)+'">'+inr(d.day_pnl)+'</span>';
+  document.getElementById('pos-real').innerHTML='<span class="'+cl(d.realized_pnl)+'">'+inr(d.realized_pnl)+'</span>';
+  document.getElementById('pos-n').textContent=d.fno_count||0;
+  if(!ps.length){box.innerHTML='<div class="load">No open positions in HDFC1 / HDFC2. F&amp;O legs appear here live.</div>';return;}
+  box.innerHTML=ps.map(p=>{
+    const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;
+    const meta=[]; if(p.oi!=null)meta.push('OI '+kfmt(p.oi)); if(p.volume!=null)meta.push('Vol '+kfmt(p.volume));
+    if(ch!=null)meta.push('<span class="'+cl(ch)+'">'+sp(ch)+'</span>');
+    return '<div class="row"><div style="flex:1;min-width:0">'
+      +'<div class="rn">'+p.label+'  <span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span></div>'
+      +'<div class="rsub" style="margin-top:3px">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+'</div>'
+      +(meta.length?'<div class="rsub mono" style="margin-top:3px;color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
+      +'</div><div class="rr"><div class="p '+cl(mtm)+'">'+inr(mtm)+'</div><div class="c muted">'+p.holder+'</div></div></div>';
+  }).join('');
+}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   const t=b.dataset.t;document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
-  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);});
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
+  if(t==='positions'){loadPositions();if(!posLoaded){posLoaded=1;setInterval(()=>{if(document.getElementById('s-positions').classList.contains('on'))loadPositions();},20000);}}});
 
 mktStatus();setInterval(mktStatus,30000);
 loadTicker();setInterval(loadTicker,30000);

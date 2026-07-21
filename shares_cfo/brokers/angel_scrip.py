@@ -327,9 +327,48 @@ def option_full(tokens: list[str]) -> dict:
                 continue
             ltp = f.get("ltp")
             oi = f.get("opnInterest") or f.get("openInterest") or f.get("oi")
+            vol = f.get("tradeVolume") or f.get("volume") or f.get("totBuyQuan")
+            netchg = f.get("netChange") or f.get("changePercentage") or f.get("percentChange")
             out[t] = {"ltp": float(ltp) if ltp not in (None, "NA", "") else None,
-                      "oi": int(float(oi)) if oi not in (None, "NA", "") else None}
+                      "oi": int(float(oi)) if oi not in (None, "NA", "") else None,
+                      "volume": int(float(vol)) if vol not in (None, "NA", "") else None,
+                      "change_pct": float(netchg) if netchg not in (None, "NA", "") else None}
     return out
+
+
+def resolve_nfo_token(name: str, opt: str = "", strike: str = "", expiry: str = "") -> str | None:
+    """Best-effort Angel NFO instrument token for an F&O contract from a broker label.
+
+    Matches an OPTSTK/OPTIDX (opt=CE/PE, strike) or FUTSTK/FUTIDX (opt empty) by
+    underlying name + strike, taking the nearest future expiry when the exact expiry
+    can't be matched. Returns None if nothing plausible is found.
+    """
+    name = (name or "").strip().upper()
+    if not name:
+        return None
+    opt = (opt or "").strip().upper()
+    try:
+        strike_i = int(float(strike)) if strike not in ("", None) else None
+    except (TypeError, ValueError):
+        strike_i = None
+    if opt in ("CE", "PE"):
+        chain = _load_stock_options().get(name)
+        if chain and strike_i is not None:
+            exp = _nearest_future_expiry(chain)
+            node = chain.get(exp, {}).get(str(strike_i), {}) if exp else {}
+            if node.get(opt):
+                return str(node[opt])
+        # index options (NIFTY/BANKNIFTY)
+        idx = _load_options().get(name)
+        if idx and strike_i is not None:
+            exp = nearest_expiry(name)
+            node = idx.get(exp, {}).get(str(strike_i), {}) if exp else {}
+            if node.get(opt):
+                return str(node[opt])
+        return None
+    # futures
+    f = _load_futures().get(name)
+    return f["token"] if f else None
 
 
 LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
