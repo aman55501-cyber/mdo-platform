@@ -25,7 +25,7 @@ TERMINAL_HTML = r"""<!doctype html><html><head>
 body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 .mono{font-family:var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
 .up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--n500)}.sec{color:var(--n600)}
-.lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;color:var(--n500);font-weight:600;font-size:10.5px}
+.lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;color:var(--n600);font-weight:600;font-size:11px}
 .app{width:100%;max-width:520px;margin:0 auto;background:var(--bg);min-height:100vh;padding-bottom:118px}
 /* Samsung Z Fold 7 + tablets: unfolded inner screen is wide + near-square, so the
    single 520px column wastes it. Widen and flow panels into two terminal columns;
@@ -50,38 +50,38 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .sd{width:7px;height:7px;background:var(--n500)}
 .sd.open{background:var(--up);box-shadow:0 0 8px var(--up);animation:pulse 1.6s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.hnw{text-align:right}.hnw .v{font-family:var(--fm);font-weight:600;font-size:14px}.hnw .d{font-size:10px;font-family:var(--fm)}
+.hnw{text-align:right}.hnw .v{font-family:var(--fm);font-weight:600;font-size:15px}.hnw .d{font-size:11px;font-family:var(--fm);font-weight:500}
 /* ticker */
 .tick{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--n300);background:var(--n100);padding:6px 0}
 .tickrow{display:inline-block;padding-left:100%;animation:mar 40s linear infinite}
-.ti{display:inline-block;margin:0 18px;font-size:11px}
+.ti{display:inline-block;margin:0 14px;font-size:12px}
 .ti .n{font-family:var(--fh);letter-spacing:.08em;color:var(--n600);margin-right:6px}
 .ti .v{font-family:var(--fm)}
 @keyframes mar{0%{transform:translateX(0)}100%{transform:translateX(-100%)}}
 /* panels */
 .wrap{padding:14px 16px}
 .panel{border:1px solid var(--n300);background:var(--panel);margin-bottom:12px}
-.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--n200)}
-.ph .t{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:var(--n700);font-weight:600}
-.pb{padding:10px 12px}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--n200)}
+.ph .t{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--n700);font-weight:600}
+.pb{padding:13px 14px}
 /* net worth hero */
-.nwbig{font-family:var(--fm);font-size:30px;font-weight:600;letter-spacing:-.5px}
+.nwbig{font-family:var(--fm);font-size:34px;font-weight:600;letter-spacing:-.5px;margin-top:2px}
 .nwrow{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid var(--n200);margin-top:12px}
 .nwrow>div{padding:10px 4px 2px;border-right:1px solid var(--n200)}.nwrow>div:last-child{border-right:0}
-.nwrow .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.08em;font-size:9px;color:var(--n500)}
-.nwrow .v{font-family:var(--fm);font-size:13px;font-weight:600;margin-top:3px}
+.nwrow .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.07em;font-size:9.5px;color:var(--n600)}
+.nwrow .v{font-family:var(--fm);font-size:14px;font-weight:600;margin-top:4px}
 /* rows */
 .row{display:flex;align-items:center;gap:10px;padding:12px 13px;border-top:1px solid var(--n200);min-height:52px}
 .row:first-child{border-top:0}
-.rn{font-weight:500}.rsub{font-size:10px;color:var(--n500);font-family:var(--fh);letter-spacing:.05em}
+.rn{font-weight:500;font-size:14px}.rsub{font-size:11px;color:var(--n600);font-family:var(--fh);letter-spacing:.04em}
 .rr{margin-left:auto;text-align:right}
 .rr .p{font-family:var(--fm);font-weight:600}.rr .c{font-family:var(--fm);font-size:11px}
 .bar{height:4px;background:var(--n200);margin-top:5px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--acc)}
 /* heatmap */
 .heat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200)}
-.hc{background:var(--panel);padding:9px 8px;min-height:52px;display:flex;flex-direction:column;justify-content:space-between}
-.hc .hn{font-family:var(--fh);text-transform:uppercase;letter-spacing:.06em;font-size:9.5px;color:var(--n700)}
-.hc .hp{font-family:var(--fm);font-size:12px;font-weight:600}
+.hc{background:var(--panel);padding:10px 9px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between}
+.hc .hn{font-family:var(--fh);text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;color:var(--n700);font-weight:500}
+.hc .hp{font-family:var(--fm);font-size:13px;font-weight:600}
 /* two-col movers */
 .two{display:grid;grid-template-columns:1fr 1fr}
 .two>div{padding:10px 12px}.two>div:first-child{border-right:1px solid var(--n200)}
