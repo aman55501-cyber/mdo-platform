@@ -51,6 +51,8 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .sd.open{background:var(--up);box-shadow:0 0 8px var(--up);animation:pulse 1.6s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .hnw{text-align:right}.hnw .v{font-family:var(--fm);font-weight:600;font-size:15px}.hnw .d{font-size:11px;font-family:var(--fm);font-weight:500}
+.lgn{font-family:var(--fh);letter-spacing:.1em;font-size:10px;color:var(--a700);border:1px solid var(--a300);padding:3px 8px;margin-left:8px;text-transform:uppercase;white-space:nowrap}
+.banner{display:none;background:rgba(240,84,76,.12);border-bottom:1px solid var(--down);color:var(--down);padding:11px 16px;font-family:var(--fh);letter-spacing:.05em;font-size:12px;text-transform:uppercase;font-weight:600}
 /* ticker */
 .tick{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--n300);background:var(--n100);padding:6px 0}
 .tickrow{display:inline-block;padding-left:100%;animation:mar 40s linear infinite}
@@ -90,9 +92,9 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .mv .s{font-weight:500}.mv .c{font-family:var(--fm)}
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);
-  display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom)}
+  display:grid;grid-template-columns:repeat(6,1fr);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);
-  letter-spacing:.1em;font-size:11px;font-weight:600;text-transform:uppercase;padding:15px 0 14px;cursor:pointer;min-height:52px}
+  letter-spacing:.04em;font-size:10px;font-weight:600;text-transform:uppercase;padding:14px 0 13px;cursor:pointer;min-height:50px}
 .tabs button.on{color:var(--a700);border-top-color:var(--acc)}
 section{display:none}section.on{display:block}
 .load{padding:26px;text-align:center;color:var(--n500);font-family:var(--fh);letter-spacing:.1em;font-size:11px;text-transform:uppercase}
@@ -108,8 +110,16 @@ a{color:var(--a700);text-decoration:none}
     <div class="hnw"><div class="v" id="hnw">₹—</div><div class="d muted" id="hday">—</div></div>
   </div>
   <div class="tick"><div class="tickrow" id="tickrow"><span class="ti muted">loading feed…</span></div></div>
+  <a class="banner" id="banner" href="#"></a>
 
-  <section id="s-markets" class="on"><div class="wrap" id="markets-wrap">
+  <section id="s-settings"><div class="wrap">
+    <div class="panel span2"><div class="ph"><span class="t">Accounts &amp; login</span><span class="lbl" id="set-acc-n"></span></div><div id="set-accs"><div class="load">loading</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Data feeds</span></div><div class="pb" id="set-feeds"><div class="load">checking</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Trading</span></div><div class="pb" id="set-trade"><div class="sec" style="font-size:12px">Order execution is guarded (caps, allow-list, kill-switch). Master switch is set in the server env.</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Views</span></div><div class="pb"><a id="set-classic" href="#" class="lbl" style="color:var(--a700)">Open classic dashboard →</a></div></div>
+  </div></section>
+
+  <section id="s-portfolio" class="on"><div class="wrap" id="markets-wrap">
     <div class="panel span2"><div class="pb">
       <div class="lbl">Consolidated net worth</div>
       <div class="nwbig" id="nw">₹—</div><div class="mono" id="nwday" style="font-size:12px;margin-top:3px">—</div>
@@ -134,14 +144,18 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
   </div></section>
 
-  <section id="s-income"><div class="soon"><div class="b">Income engine</div><div style="margin-top:8px;font-size:12px">Next slice — capital ladder + premium streams.</div></div></section>
+  <section id="s-news"><div class="wrap">
+    <div class="panel span2"><div class="ph"><span class="t">News on your holdings</span><span class="lbl">Google News</span></div><div id="news-list"><div class="load">loading news</div></div></div>
+  </div></section>
 </div>
 
 <div class="tabs" id="tabs">
-  <button data-t="markets" class="on">Markets</button>
-  <button data-t="chart">Chart</button>
+  <button data-t="settings">Settings</button>
+  <button data-t="portfolio" class="on">Portfolio</button>
   <button data-t="positions">Positions</button>
-  <button data-t="income">Income</button>
+  <button data-t="chart">Chart</button>
+  <button data-t="news">News</button>
+  <button data-t="login">Login</button>
 </div>
 
 <script>
@@ -181,6 +195,10 @@ async function loadHome(){
   const dc=p.day_change>=0;
   document.getElementById('nwday').innerHTML='<span class="'+cl(p.day_change)+'">'+(dc?'▲':'▼')+' '+inr(Math.abs(p.day_change))+'  '+sp((p.day_change_pct||0)*100)+'</span>';
   const hd=document.getElementById('hday');hd.className='d '+cl(p.day_change);hd.textContent=sp((p.day_change_pct||0)*100);
+  const bh=p.book_health||{},bn=document.getElementById('banner');
+  if((bh.degraded||0)>0){const names=(bh.degraded_accounts||[]).map(x=>x.creds_key).join(', ');
+    bn.style.display='block';bn.href='/login?'+Q;bn.textContent='⚠ '+names+' logged out — net worth partial · tap to log in';}
+  else bn.style.display='none';
   document.getElementById('nwu').innerHTML='<span class="'+cl(p.unrealised_pnl)+'">'+inr(p.unrealised_pnl)+'</span>';
   document.getElementById('nwc').textContent=inr(p.cash);
   document.getElementById('nwi').textContent=inr(p.invested_value);
@@ -238,11 +256,35 @@ async function loadPositions(){
       +'</div><div class="rr"><div class="p '+cl(mtm)+'">'+inr(mtm)+'</div><div class="c muted">'+p.holder+'</div></div></div>';
   }).join('');
 }
+let newsLoaded=0,setLoaded=0;
+async function loadSettings(){
+  const r=await j('/accounts?'+Q),box=document.getElementById('set-accs');
+  if(r.ok&&r.d.accounts){document.getElementById('set-acc-n').textContent=r.d.accounts.length+' configured';
+    box.innerHTML=r.d.accounts.map(a=>{const on=a.logged_in;return '<div class="row"><div style="flex:1"><div class="rn">'+(a.label||a.key)+' <span class="rsub">'+a.key+'</span></div><div class="rsub" style="margin-top:2px;color:'+(on?'var(--up)':'var(--down)')+'">'+(on?'● logged in':'● logged out')+'</div></div>'+(a.broker==='hdfc'&&!on?'<a class="lgn" href="/hdfc/login?key='+a.key+'&'+Q+'">Log in</a>':'')+'</div>';}).join('');}
+  else box.innerHTML='<div class="load">open Login tab</div>';
+  const f=await j('/market/indices?'+Q),fb=document.getElementById('set-feeds');
+  const n=(f.ok&&f.d.indices||[]).length;
+  fb.innerHTML='<div class="rsub">EODHD indices: <span class="'+(n?'up':'down')+'">'+(n?n+' live':'down')+'</span></div>'
+    +'<div class="rsub" style="margin-top:6px">Angel candles / quotes / OI: wired</div>'
+    +'<div class="rsub" style="margin-top:6px">News: Google RSS</div>';
+  document.getElementById('set-classic').href='/classic?'+Q;
+}
+async function loadNews(){
+  const box=document.getElementById('news-list');if(!PORT){box.innerHTML='<div class="load">load portfolio first</div>';return;}
+  const top=allHoldings(PORT).sort((a,b)=>b.mv-a.mv).slice(0,6);let items=[];
+  for(const x of top){const r=await j('/news/'+encodeURIComponent(x.s)+'?'+Q);if(r.ok&&r.d.news&&r.d.news.length)items.push({sym:x.s,...r.d.news[0]});}
+  if(!items.length){box.innerHTML='<div class="load">no recent news</div>';return;}
+  box.innerHTML=items.map(a=>'<a class="row" href="'+a.link+'" target="_blank" style="display:block"><div class="rn" style="font-size:13px;line-height:1.35">'+a.title+'</div><div class="rsub" style="margin-top:4px">'+a.sym+' · '+(a.source||'')+(a.when?' · '+a.when:'')+'</div></a>').join('');
+}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  const t=b.dataset.t;document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
+  const t=b.dataset.t;
+  if(t==='login'){location.href='/login?'+Q;return;}
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
-  if(t==='positions'){loadPositions();if(!posLoaded){posLoaded=1;setInterval(()=>{if(document.getElementById('s-positions').classList.contains('on'))loadPositions();},20000);}}});
+  if(t==='positions'){loadPositions();if(!posLoaded){posLoaded=1;setInterval(()=>{if(document.getElementById('s-positions').classList.contains('on'))loadPositions();},20000);}}
+  if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
+  if(t==='news'&&!newsLoaded){newsLoaded=1;loadNews();}});
 
 mktStatus();setInterval(mktStatus,30000);
 loadTicker();setInterval(loadTicker,30000);
