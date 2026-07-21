@@ -29,7 +29,8 @@ from fastapi.responses import RedirectResponse
 from . import token_store
 from .brokers import make_adapter
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
-from .config import get_accounts, get_api_token, load_account
+from .config import (ACCOUNT_LABELS, DEFAULT_CLIENT_CODES, get_accounts,
+                     get_api_token, load_account)
 from .exceptions import SharesCFOError, TokenExpiredError
 from .models import AccountBook, FundInfo, Holding, Position
 from .normalise import normalise
@@ -215,16 +216,8 @@ DASHBOARD_HTML = r"""<!doctype html>
         <div class="stat"><div class="lbl">F&amp;O realised</div><div class="v mono" id="fopnl">&mdash;</div></div>
       </div>
     </div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">Book strength</span><span class="faint" id="strengthsub" style="font-size:11px">scoring&hellip;</span></div>
-      <div class="meterrow"><span class="name">Fundamental</span><span class="meter"><i id="mfund" style="background:linear-gradient(90deg,var(--warn),#e8b95e)"></i></span><span class="score mono" id="sfund">&mdash;</span></div>
-      <div class="meterrow"><span class="name">Technical</span><span class="meter"><i id="mtech" style="background:linear-gradient(90deg,var(--up),#5fd8a6)"></i></span><span class="score mono" id="stech">&mdash;</span></div>
-      <div class="counts" id="counts"></div>
-    </div>
     <div class="card"><div class="lbl">Accounts</div><div id="acct-list" style="margin-top:8px"><div class="load" style="padding:8px">…</div></div></div>
     <div class="card"><div class="lbl">Today's movers</div><div id="movers" style="margin-top:6px"><div class="load" style="padding:8px">…</div></div></div>
-    <div class="card"><div class="lbl">Volume spikes <span class="faint" style="font-size:10px">vs 20-day avg</span></div><div id="volspikes" style="margin-top:8px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div></div>
-    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">News on your holdings</span><span class="faint" style="font-size:10px">Google News</span></div><div id="homenews" style="margin-top:4px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div></div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="htop" style="padding:15px 16px;cursor:pointer" onclick="toggleHoldings()">
         <div style="min-width:0"><div class="h2">All holdings <span class="faint" id="hold-count"></span></div><div class="sub" id="hold-sub">tap to view the full list</div></div>
@@ -236,15 +229,37 @@ DASHBOARD_HTML = r"""<!doctype html>
         <div class="holds" id="holds"><div class="load">Loading&hellip;</div></div>
       </div>
     </div>
-    <div class="card" id="screener" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Screener Premium</span><span class="dim" id="scr-state">&hellip;</span></div>
-      <div class="dim" id="scr-detail" style="margin-top:6px;font-size:13px">Upload your Screener export to power fundamentals &amp; ideas.</div>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input type="file" id="scr-file" accept=".xlsx,.xls,.csv" style="color:var(--dim);font-size:13px;max-width:60%">
-        <button class="btn hedge" id="scr-btn" style="flex:0 0 auto;padding:9px 16px">Upload</button>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="htop" style="padding:15px 16px;cursor:pointer" onclick="toggleMore()">
+        <div style="min-width:0"><div class="h2">More insights</div><div class="sub">book strength &middot; volume &middot; news &middot; Screener</div></div>
+        <svg class="chev" id="more-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" style="margin-left:auto"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
       </div>
-      <div class="dim" id="scr-msg" style="margin-top:6px;font-size:12px"></div>
-      <div class="dim" style="margin-top:8px;font-size:11.5px">screener.in → Watchlist/Screen → Export to Excel → pick it here.</div>
+      <div id="more-body" style="display:none;padding:2px 15px 15px">
+        <div style="border-top:1px solid var(--hair);padding-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">Book strength</span><span class="faint" id="strengthsub" style="font-size:11px">scoring&hellip;</span></div>
+          <div class="meterrow"><span class="name">Fundamental</span><span class="meter"><i id="mfund" style="background:linear-gradient(90deg,var(--warn),#e8b95e)"></i></span><span class="score mono" id="sfund">&mdash;</span></div>
+          <div class="meterrow"><span class="name">Technical</span><span class="meter"><i id="mtech" style="background:linear-gradient(90deg,var(--up),#5fd8a6)"></i></span><span class="score mono" id="stech">&mdash;</span></div>
+          <div class="counts" id="counts"></div>
+        </div>
+        <div style="border-top:1px solid var(--hair);padding-top:12px;margin-top:12px">
+          <div class="lbl">Volume spikes <span class="faint" style="font-size:10px">vs 20-day avg</span></div>
+          <div id="volspikes" style="margin-top:8px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div>
+        </div>
+        <div style="border-top:1px solid var(--hair);padding-top:12px;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">News on your holdings</span><span class="faint" style="font-size:10px">Google News</span></div>
+          <div id="homenews" style="margin-top:4px"><div class="dim" style="font-size:12px;padding:6px 0">loading…</div></div>
+        </div>
+        <div style="border-top:1px solid var(--hair);padding-top:12px;margin-top:12px" id="screener">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Screener Premium</span><span class="dim" id="scr-state">&hellip;</span></div>
+          <div class="dim" id="scr-detail" style="margin-top:6px;font-size:13px">Upload your Screener export to power fundamentals &amp; ideas.</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input type="file" id="scr-file" accept=".xlsx,.xls,.csv" style="color:var(--dim);font-size:13px;max-width:60%">
+            <button class="btn hedge" id="scr-btn" style="flex:0 0 auto;padding:9px 16px">Upload</button>
+          </div>
+          <div class="dim" id="scr-msg" style="margin-top:6px;font-size:12px"></div>
+          <div class="dim" style="margin-top:8px;font-size:11.5px">screener.in → Watchlist/Screen → Export to Excel → pick it here.</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -757,6 +772,7 @@ function renderMovers(){
   document.getElementById('movers').innerHTML=h||'<div class="dim" style="font-size:13px;padding:6px 0">Flat today.</div>';
 }
 function toggleHoldings(){const b=document.getElementById('allhold-body'),c=document.getElementById('hold-chev'),open=b.style.display!=='none';b.style.display=open?'none':'block';c.style.transform=open?'':'rotate(180deg)';if(!open)renderHolds();}
+function toggleMore(){const b=document.getElementById('more-body'),c=document.getElementById('more-chev'),open=b.style.display!=='none';b.style.display=open?'none':'block';c.style.transform=open?'':'rotate(180deg)';}
 async function loadVolumeSpikes(){
   const r=await j('/holdings/volume?'+Q);const box=document.getElementById('volspikes');if(!box)return;
   if(!r.ok||!r.d.volume_spikes||!r.d.volume_spikes.length){box.innerHTML='<div class="dim" style="font-size:12px;padding:4px 0">No unusual volume, or feed loading.</div>';return;}
@@ -1301,8 +1317,26 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
             f"<div><div>{label}</div><div style='color:#8b949e;font-size:12px'>{key} · {code}</div></div>"
             f"<div style='text-align:right'><div style='color:{badge};font-size:12px'>● {status}</div>{link}</div></div>"
         )
+    # Family accounts known (client code + name) but not yet connected — one-tap prefill.
+    configured = {k.upper() for k in get_accounts()}
+    missing = ""
+    for key, label in ACCOUNT_LABELS.items():
+        if key.upper() in configured:
+            continue
+        code = DEFAULT_CLIENT_CODES.get(key, "")
+        missing += (
+            f"<div style='display:flex;justify-content:space-between;align-items:center;"
+            f"padding:12px;border-bottom:1px solid #2a3038'>"
+            f"<div><div>{label}</div><div style='color:#8b949e;font-size:12px'>{key} · {code}</div></div>"
+            f"<button onclick=\"prefill('{key}','{code}')\" style='background:#1f6feb;color:#fff;border:0;"
+            f"border-radius:8px;padding:8px 14px;font-weight:700'>Connect</button></div>"
+        )
+    missing_block = (
+        "<div style='font-weight:700;margin:18px 2px 6px'>Family accounts not yet connected</div>"
+        f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px'>{missing}</div>"
+    ) if missing else ""
     add_form = (
-        "<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:16px;padding:14px'>"
+        "<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:16px;padding:14px' id='addcard'>"
         "<div style='font-weight:700;margin-bottom:4px'>Connect another account</div>"
         "<div style='color:#8b949e;font-size:12px;margin-bottom:10px'>Adds a new account — stored securely on your server, no VPS editing.</div>"
         "<input id='ac_key' placeholder='Account name (e.g. HDFC3 or ANGEL1)' style='width:100%;margin:4px 0;padding:9px;border-radius:8px;border:1px solid #2a3038;background:#0d1117;color:#e6edf3'>"
@@ -1317,7 +1351,10 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
         "var b={creds_key:ac_key.value,api_key:ac_apikey.value,api_secret:ac_apisecret.value,client_code:ac_client.value,totp_secret:ac_totp.value,mpin:ac_mpin.value};"
         f"var r=await fetch('/accounts/add?token={t}',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(b)}});"
         "var j=await r.json();if(r.ok){m.style.color='#3fb950';m.textContent='✅ '+j.account+' connected. '+j.next;setTimeout(function(){location.reload();},1200);}"
-        "else{m.style.color='#f85149';m.textContent=j.detail||'Failed';}}</script>"
+        "else{m.style.color='#f85149';m.textContent=j.detail||'Failed';}}"
+        "function prefill(k,c){document.getElementById('ac_key').value=k;document.getElementById('ac_client').value=c;"
+        "document.getElementById('addcard').scrollIntoView({behavior:'smooth'});document.getElementById('ac_apikey').focus();"
+        "document.getElementById('ac_msg').textContent='Enter '+k+'\\'s HDFC API key + secret, then Connect.';}</script>"
     )
     return (
         "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -1325,6 +1362,7 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
         "<h2>Shares CFO — accounts &amp; login</h2>"
         "<p style='color:#8b949e'>Tap Log in for each account (2FA on that holder's phone). Same-day tokens.</p>"
         f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:12px'>{rows}</div>"
+        f"{missing_block}"
         f"{add_form}"
         f"<p style='margin-top:16px'><a href='/?token={t}' style='color:#58a6ff'>→ Open dashboard</a></p></div>"
     )
