@@ -127,8 +127,8 @@ a{color:var(--a700);text-decoration:none}
 
   <section id="s-positions"><div class="wrap">
     <div class="panel span2"><div class="pb" style="display:flex;gap:20px">
-      <div><div class="lbl">Day MTM</div><div class="mono" id="pos-day" style="font-size:20px;font-weight:600">—</div></div>
-      <div><div class="lbl">Realized</div><div class="mono" id="pos-real" style="font-size:20px;font-weight:600">—</div></div>
+      <div><div class="lbl">Today</div><div class="mono" id="pos-day" style="font-size:20px;font-weight:600">—</div></div>
+      <div><div class="lbl">Open MTM</div><div class="mono" id="pos-real" style="font-size:20px;font-weight:600">—</div></div>
       <div style="margin-left:auto;text-align:right"><div class="lbl">F&amp;O legs</div><div class="mono" id="pos-n" style="font-size:20px;font-weight:600">—</div></div>
     </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>

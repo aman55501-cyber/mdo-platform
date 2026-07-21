@@ -252,7 +252,7 @@ _FUT_CACHE = Path(__file__).resolve().parent.parent / "data" / "state" / "angel_
 
 
 def _load_futures() -> dict:
-    """{underlying: {'token':..,'expiry':..,'lot':..}} for the NEAREST FUTSTK, cached daily."""
+    """{underlying: {expiry: {'token':..,'lot':..}}} for ALL future FUTSTK/FUTIDX, cached daily."""
     today = datetime.now().strftime("%Y-%m-%d")
     if _FUT_CACHE.exists():
         try:
@@ -266,23 +266,19 @@ def _load_futures() -> dict:
     except Exception:
         return {}
     tdate = datetime.now().date()
-    best: dict = {}
+    fut: dict = {}
     for it in rows:
-        if it.get("exch_seg") != "NFO" or it.get("instrumenttype") != "FUTSTK":
+        if it.get("exch_seg") != "NFO" or it.get("instrumenttype") not in ("FUTSTK", "FUTIDX"):
             continue
         exp = str(it.get("expiry", ""))
         try:
-            d = datetime.strptime(exp, "%d%b%Y").date()
+            if datetime.strptime(exp, "%d%b%Y").date() < tdate:
+                continue
         except ValueError:
             continue
-        if d < tdate:
-            continue
         name = str(it.get("name", "")).upper()
-        cur = best.get(name)
-        if not cur or d < cur["_d"]:
-            best[name] = {"token": str(it.get("token")), "expiry": exp,
-                          "lot": int(float(it.get("lotsize", 0) or 0)), "_d": d}
-    fut = {k: {"token": v["token"], "expiry": v["expiry"], "lot": v["lot"]} for k, v in best.items()}
+        fut.setdefault(name, {})[exp] = {"token": str(it.get("token")),
+                                         "lot": int(float(it.get("lotsize", 0) or 0))}
     if fut:
         try:
             _FUT_CACHE.parent.mkdir(parents=True, exist_ok=True)
@@ -292,9 +288,31 @@ def _load_futures() -> dict:
     return fut
 
 
-def fut_token(symbol: str) -> str | None:
-    f = _load_futures().get(symbol.strip().upper())
-    return f["token"] if f else None
+def _norm_expiry(raw: str) -> str:
+    """Broker expiry -> Angel scrip format (DDMONYYYY, e.g. '28-JUL-26' -> '28JUL2026')."""
+    raw = (raw or "").strip().upper().replace(" ", "")
+    for sep in ("-", "/"):
+        if sep in raw:
+            parts = raw.split(sep)
+            if len(parts) == 3:
+                d, mon, y = parts
+                if len(y) == 2:
+                    y = "20" + y
+                return f"{int(d):02d}{mon[:3]}{y}"
+    return raw
+
+
+def fut_token(symbol: str, expiry: str = "") -> str | None:
+    """Angel FUTSTK/FUTIDX token — for the given expiry if supplied, else nearest."""
+    chain = _load_futures().get(symbol.strip().upper())
+    if not chain:
+        return None
+    if expiry:
+        ne = _norm_expiry(expiry)
+        if ne in chain:
+            return chain[ne]["token"]
+    exp = _nearest_future_expiry(chain)
+    return chain[exp]["token"] if exp else None
 
 
 def option_full(tokens: list[str]) -> dict:
@@ -328,7 +346,8 @@ def option_full(tokens: list[str]) -> dict:
             ltp = f.get("ltp")
             oi = f.get("opnInterest") or f.get("openInterest") or f.get("oi")
             vol = f.get("tradeVolume") or f.get("volume") or f.get("totBuyQuan")
-            netchg = f.get("netChange") or f.get("changePercentage") or f.get("percentChange")
+            netchg = f.get("percentChange") if f.get("percentChange") not in (None, "NA", "") \
+                else f.get("changePercentage")
             out[t] = {"ltp": float(ltp) if ltp not in (None, "NA", "") else None,
                       "oi": int(float(oi)) if oi not in (None, "NA", "") else None,
                       "volume": int(float(vol)) if vol not in (None, "NA", "") else None,
@@ -366,9 +385,8 @@ def resolve_nfo_token(name: str, opt: str = "", strike: str = "", expiry: str = 
             if node.get(opt):
                 return str(node[opt])
         return None
-    # futures
-    f = _load_futures().get(name)
-    return f["token"] if f else None
+    # futures — match the exact expiry when we can, else nearest
+    return fut_token(name, expiry)
 
 
 LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"

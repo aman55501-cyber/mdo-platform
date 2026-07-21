@@ -1210,25 +1210,35 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
     _check_token(request, token)
     from .brokers import angel_scrip
     book = await _consolidated()
-    rows, tokmap = [], {}  # angel_token -> row index
+    # 1) collapse duplicate legs (HDFC returns net + day rows for the same contract)
+    byk: dict = {}
     for a in book.get("accounts", []):
         if a.get("ok") is False:
             continue
         holder = a.get("label") or a.get("creds_key")
         for p in a.get("positions", []):
             c = _parse_contract(p.get("ticker", ""))
-            row = {"account": a.get("creds_key"), "holder": holder,
-                   "label": p.get("ticker"), "kind": c["kind"], "opt": c["opt"],
-                   "strike": c["strike"], "underlying": c["underlying"],
-                   "product": p.get("product_type"), "quantity": p.get("quantity"),
-                   "average_price": p.get("average_price"), "last_price": p.get("last_price"),
-                   "pnl": p.get("pnl"), "day_pnl": p.get("day_pnl"),
-                   "oi": None, "volume": None, "change_pct": None}
-            if c["kind"] in ("option", "future"):
-                atok = angel_scrip.resolve_nfo_token(c["underlying"], c["opt"], c["strike"], c["expiry"])
-                if atok:
-                    tokmap.setdefault(atok, []).append(len(rows))
-            rows.append(row)
+            k = (a.get("creds_key"), p.get("ticker"))
+            r = byk.get(k)
+            if not r:
+                r = {"account": a.get("creds_key"), "holder": holder, "label": p.get("ticker"),
+                     "kind": c["kind"], "opt": c["opt"], "strike": c["strike"],
+                     "underlying": c["underlying"], "expiry": c["expiry"],
+                     "product": p.get("product_type"), "quantity": 0,
+                     "average_price": p.get("average_price"), "last_price": p.get("last_price"),
+                     "pnl": 0.0, "day_pnl": 0.0, "oi": None, "volume": None, "change_pct": None}
+                byk[k] = r
+            r["quantity"] += p.get("quantity") or 0
+            r["pnl"] += p.get("pnl") or 0
+            r["day_pnl"] += p.get("day_pnl") or 0
+    rows = [r for r in byk.values() if r["quantity"]]
+    # 2) resolve each F&O leg to an Angel token and enrich (OI, volume, live price)
+    tokmap: dict = {}
+    for i, r in enumerate(rows):
+        if r["kind"] in ("option", "future"):
+            atok = angel_scrip.resolve_nfo_token(r["underlying"], r["opt"], r["strike"], r["expiry"])
+            if atok:
+                tokmap.setdefault(str(atok), []).append(i)
     if tokmap:
         try:
             quotes = angel_scrip.option_full(list(tokmap.keys()))
@@ -1237,18 +1247,24 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
         for atok, idxs in tokmap.items():
             q = quotes.get(str(atok)) or {}
             for i in idxs:
-                rows[i]["oi"] = q.get("oi")
-                rows[i]["volume"] = q.get("volume")
-                rows[i]["change_pct"] = q.get("change_pct")
-                if q.get("ltp") and not rows[i]["last_price"]:
-                    rows[i]["last_price"] = q["ltp"]
+                r = rows[i]
+                r["oi"], r["volume"], r["change_pct"] = q.get("oi"), q.get("volume"), q.get("change_pct")
+                ltp = q.get("ltp")
+                if ltp:
+                    r["last_price"] = ltp
+                    avg = r["average_price"] or 0
+                    if avg:  # MTM from the live price (broker gives none for positions)
+                        r["pnl"] = round(r["quantity"] * (ltp - avg), 2)
+                    if q.get("change_pct") is not None:  # today's move on the leg
+                        prev = ltp / (1 + q["change_pct"] / 100.0) if q["change_pct"] != -100 else ltp
+                        r["day_pnl"] = round(r["quantity"] * (ltp - prev), 2)
+    rows.sort(key=lambda r: abs(r["pnl"] or 0), reverse=True)
     fno = [r for r in rows if r["kind"] in ("option", "future")]
-    day = sum((r["day_pnl"] or 0) for r in rows)
-    realized = sum((r["pnl"] or 0) for r in rows)
     return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
-            "day_pnl": round(day, 2), "realized_pnl": round(realized, 2),
-            "note": "LTP/P&L from the holding broker; OI + volume + live change from Angel "
-                    "where the contract resolves on the NFO chain."}
+            "day_pnl": round(sum((r["day_pnl"] or 0) for r in rows), 2),
+            "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
+            "note": "MTM P&L + today's move computed from Angel's live price; OI + volume from "
+                    "Angel FULL quote on the matched-expiry NFO contract."}
 
 
 @app.get("/debug/hdfc-positions")
