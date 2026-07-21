@@ -1071,6 +1071,12 @@ async def _consolidated_uncached() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def root() -> str:
+    from .terminal import TERMINAL_HTML
+    return TERMINAL_HTML
+
+
+@app.get("/classic", response_class=HTMLResponse)
+async def classic() -> str:
     return DASHBOARD_HTML
 
 
@@ -2175,6 +2181,36 @@ async def market_global(request: Request, token: str | None = Query(default=None
     _check_token(request, token)
     from .analysis import market
     return market.global_backdrop()
+
+
+_IDX_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+@app.get("/market/indices")
+async def market_indices(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Domestic index strip (NIFTY, BANKNIFTY, SENSEX, VIX, Midcap, Smallcap).
+
+    EODHD-backed; only indices that resolve on the plan are returned, so the ticker
+    degrades gracefully rather than showing blanks. Cached ~30s.
+    """
+    _check_token(request, token)
+    import time
+    if _IDX_CACHE["data"] and (time.time() - _IDX_CACHE["ts"]) < 30:
+        return _IDX_CACHE["data"]
+    from .analysis import eodhd
+    wanted = [("NIFTY 50", "^NSEI"), ("BANK NIFTY", "^NSEBANK"), ("SENSEX", "^BSESN"),
+              ("INDIA VIX", "^INDIAVIX"), ("MIDCAP", "^CNXMIDCAP"), ("SMALLCAP", "^CNXSC")]
+    out = []
+    if eodhd.enabled():
+        for name, sym in wanted:
+            q = eodhd.quote(sym)
+            if q and q.get("last") is not None:
+                out.append({"name": name, "symbol": sym,
+                            "last": q["last"], "change_pct": q.get("change_pct")})
+    data = {"indices": out, "note": "EODHD; unlisted indices omitted." if out
+            else "No index feed — set CFO_EODHD_API_KEY."}
+    _IDX_CACHE.update(ts=time.time(), data=data)
+    return data
 
 
 @app.get("/debug/angel-candles")

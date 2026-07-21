@@ -1,0 +1,205 @@
+"""Market Console — terminal-styled unified UI, wired to the real engines.
+
+A ground-up reskin to the trading-terminal aesthetic (IBM Plex, square corners,
+hairline borders, steel-blue accent) that surfaces everything ShareCFO already
+computes: consolidated net worth + accounts, live indices + global cues, a sector
+heatmap and movers from your own book, per-instrument charts, the income engine,
+OI signals, and the guarded order flow. Built as deployable slices — this file
+grows screen by screen. Served at '/', with the classic dashboard kept at '/classic'.
+"""
+
+TERMINAL_HTML = r"""<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Market Console</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#07090d;--bg:#0b0e13;--panel:#11151c;--text:#dde3ea;
+  --n100:#151a22;--n200:#1d232d;--n300:#28303d;--n400:#3b475a;--n500:#75818f;--n600:#94a0af;--n700:#b6c0cc;--n900:#e9edf2;
+  --acc:#3f8cde;--a100:#122238;--a300:#27476e;--a700:#82b4ec;--a900:#d3e4f8;
+  --up:#2ebd85;--down:#f0544c;
+  --fh:'IBM Plex Sans Condensed',sans-serif;--fb:'IBM Plex Sans',sans-serif;--fm:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:13px;line-height:1.4;-webkit-font-smoothing:antialiased}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.up{color:var(--up)}.down{color:var(--down)}.muted{color:var(--n500)}.sec{color:var(--n600)}
+.lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;color:var(--n500);font-weight:600;font-size:10.5px}
+.app{max-width:520px;margin:0 auto;background:var(--bg);min-height:100vh;padding-bottom:118px}
+/* header */
+.hdr{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--n300);
+  display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px}
+.hti{font-family:var(--fh);font-weight:600;letter-spacing:.14em;font-size:13px}
+.hti b{color:var(--acc)}
+.mkt{display:flex;align-items:center;gap:6px;font-family:var(--fh);letter-spacing:.1em;font-size:10px;color:var(--n500)}
+.sd{width:7px;height:7px;background:var(--n500)}
+.sd.open{background:var(--up);box-shadow:0 0 8px var(--up);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.hnw{text-align:right}.hnw .v{font-family:var(--fm);font-weight:600;font-size:14px}.hnw .d{font-size:10px;font-family:var(--fm)}
+/* ticker */
+.tick{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--n300);background:var(--n100);padding:6px 0}
+.tickrow{display:inline-block;padding-left:100%;animation:mar 40s linear infinite}
+.ti{display:inline-block;margin:0 18px;font-size:11px}
+.ti .n{font-family:var(--fh);letter-spacing:.08em;color:var(--n600);margin-right:6px}
+.ti .v{font-family:var(--fm)}
+@keyframes mar{0%{transform:translateX(0)}100%{transform:translateX(-100%)}}
+/* panels */
+.wrap{padding:14px 16px}
+.panel{border:1px solid var(--n300);background:var(--panel);margin-bottom:12px}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--n200)}
+.ph .t{font-family:var(--fh);text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:var(--n700);font-weight:600}
+.pb{padding:10px 12px}
+/* net worth hero */
+.nwbig{font-family:var(--fm);font-size:30px;font-weight:600;letter-spacing:-.5px}
+.nwrow{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid var(--n200);margin-top:12px}
+.nwrow>div{padding:10px 4px 2px;border-right:1px solid var(--n200)}.nwrow>div:last-child{border-right:0}
+.nwrow .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.08em;font-size:9px;color:var(--n500)}
+.nwrow .v{font-family:var(--fm);font-size:13px;font-weight:600;margin-top:3px}
+/* rows */
+.row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--n200)}
+.row:first-child{border-top:0}
+.rn{font-weight:500}.rsub{font-size:10px;color:var(--n500);font-family:var(--fh);letter-spacing:.05em}
+.rr{margin-left:auto;text-align:right}
+.rr .p{font-family:var(--fm);font-weight:600}.rr .c{font-family:var(--fm);font-size:11px}
+.bar{height:4px;background:var(--n200);margin-top:5px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--acc)}
+/* heatmap */
+.heat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200)}
+.hc{background:var(--panel);padding:9px 8px;min-height:52px;display:flex;flex-direction:column;justify-content:space-between}
+.hc .hn{font-family:var(--fh);text-transform:uppercase;letter-spacing:.06em;font-size:9.5px;color:var(--n700)}
+.hc .hp{font-family:var(--fm);font-size:12px;font-weight:600}
+/* two-col movers */
+.two{display:grid;grid-template-columns:1fr 1fr}
+.two>div{padding:10px 12px}.two>div:first-child{border-right:1px solid var(--n200)}
+.mvh{font-family:var(--fh);text-transform:uppercase;letter-spacing:.1em;font-size:9.5px;color:var(--n500);margin-bottom:6px}
+.mv{display:flex;justify-content:space-between;padding:4px 0;font-size:12px}
+.mv .s{font-weight:500}.mv .c{font-family:var(--fm)}
+/* tabs */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);
+  display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);
+  letter-spacing:.1em;font-size:10px;font-weight:600;text-transform:uppercase;padding:12px 0 11px;cursor:pointer}
+.tabs button.on{color:var(--a700);border-top-color:var(--acc)}
+section{display:none}section.on{display:block}
+.load{padding:26px;text-align:center;color:var(--n500);font-family:var(--fh);letter-spacing:.1em;font-size:11px;text-transform:uppercase}
+.soon{padding:40px 20px;text-align:center;color:var(--n500)}
+.soon .b{font-family:var(--fh);letter-spacing:.14em;text-transform:uppercase;font-size:13px;color:var(--n700)}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--n400)}
+a{color:var(--a700);text-decoration:none}
+</style></head><body>
+<div class="app">
+  <div class="hdr">
+    <div><div class="hti">MARKET<b>·</b>CONSOLE</div>
+      <div class="mkt"><span class="sd" id="sd"></span><span id="mstat">—</span></div></div>
+    <div class="hnw"><div class="v" id="hnw">₹—</div><div class="d muted" id="hday">—</div></div>
+  </div>
+  <div class="tick"><div class="tickrow" id="tickrow"><span class="ti muted">loading feed…</span></div></div>
+
+  <section id="s-markets" class="on"><div class="wrap" id="markets-wrap">
+    <div class="panel"><div class="pb">
+      <div class="lbl">Consolidated net worth</div>
+      <div class="nwbig" id="nw">₹—</div><div class="mono" id="nwday" style="font-size:12px;margin-top:3px">—</div>
+      <div class="nwrow">
+        <div><div class="k">Unrealised</div><div class="v" id="nwu">—</div></div>
+        <div><div class="k">Cash</div><div class="v" id="nwc">—</div></div>
+        <div><div class="k">Invested</div><div class="v" id="nwi">—</div></div>
+      </div></div></div>
+    <div class="panel"><div class="ph"><span class="t">Accounts</span><span class="lbl" id="acc-n"></span></div><div id="accs"><div class="load">loading</div></div></div>
+    <div class="panel"><div class="ph"><span class="t">Sector heatmap</span><span class="lbl">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div></div></div>
+    <div class="panel"><div class="ph"><span class="t">Movers</span><span class="lbl">today</span></div><div class="two"><div><div class="mvh">Gainers</div><div id="gain"></div></div><div><div class="mvh">Losers</div><div id="lose"></div></div></div></div>
+  </div></section>
+
+  <section id="s-chart"><div class="soon"><div class="b">Chart · F&amp;O edge</div><div style="margin-top:8px;font-size:12px">Next slice — line/candle, PCR, Max&nbsp;Pain, OI.</div></div></section>
+  <section id="s-trade"><div class="soon"><div class="b">Order ticket · positions</div><div style="margin-top:8px;font-size:12px">Next slice — CASH/FUT/OPT ticket + live positions.</div></div></section>
+  <section id="s-income"><div class="soon"><div class="b">Income engine</div><div style="margin-top:8px;font-size:12px">Next slice — capital ladder + premium streams.</div></div></section>
+</div>
+
+<div class="tabs" id="tabs">
+  <button data-t="markets" class="on">Markets</button>
+  <button data-t="chart">Chart</button>
+  <button data-t="trade">Trade</button>
+  <button data-t="income">Income</button>
+</div>
+
+<script>
+const token=new URLSearchParams(location.search).get('token')||'';
+const Q='token='+encodeURIComponent(token);
+async function j(u){try{const r=await fetch(u);return {ok:r.ok,d:await r.json()};}catch(e){return {ok:false,d:{}};}}
+const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
+const sp=p=>(p>=0?'+':'')+(p==null||isNaN(p)?'—':p.toFixed(2)+'%');
+const cl=v=>v>=0?'up':'down';
+const clean=t=>(t||'').toUpperCase().replace(/-(EQ|BE|BZ|BL|SM|ST|IQ)$/,'').split('-')[0];
+
+/* market status from IST (Asia/Kolkata), never device tz */
+function mktStatus(){
+  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+  const g=t=>p.find(x=>x.type===t).value;const wd=g('weekday'),hm=+g('hour')*60+ +g('minute');
+  const open=['Mon','Tue','Wed','Thu','Fri'].includes(wd)&&hm>=555&&hm<=930;
+  document.getElementById('sd').className='sd'+(open?' open':'');
+  document.getElementById('mstat').textContent=open?'MARKET OPEN':'MARKET CLOSED';
+}
+
+async function loadTicker(){
+  const [ix,gl]=await Promise.all([j('/market/indices?'+Q),j('/market/global?'+Q)]);
+  let items=[];
+  (ix.ok&&ix.d.indices||[]).forEach(x=>items.push([x.name,x.last,x.change_pct]));
+  (gl.ok&&gl.d.markets||[]).forEach(x=>items.push([x.name,x.last,x.change_pct]));
+  if(!items.length){document.getElementById('tickrow').innerHTML='<span class="ti muted">index feed unavailable</span>';return;}
+  const one=items.map(([n,v,c])=>'<span class="ti"><span class="n">'+n+'</span><span class="v '+(c==null?'':cl(c))+'">'+(v!=null?v.toLocaleString('en-IN'):'—')+' '+(c==null?'':sp(c))+'</span></span>').join('');
+  document.getElementById('tickrow').innerHTML=one+one;
+}
+
+let PORT=null;
+async function loadHome(){
+  const r=await j('/portfolio?'+Q);if(!r.ok){document.getElementById('accs').innerHTML='<div class="load">token?</div>';return;}
+  PORT=r.d;const p=r.d;
+  document.getElementById('nw').textContent=inr(p.net_worth);
+  document.getElementById('hnw').textContent=inr(p.net_worth);
+  const dc=p.day_change>=0;
+  document.getElementById('nwday').innerHTML='<span class="'+cl(p.day_change)+'">'+(dc?'▲':'▼')+' '+inr(Math.abs(p.day_change))+'  '+sp((p.day_change_pct||0)*100)+'</span>';
+  const hd=document.getElementById('hday');hd.className='d '+cl(p.day_change);hd.textContent=sp((p.day_change_pct||0)*100);
+  document.getElementById('nwu').innerHTML='<span class="'+cl(p.unrealised_pnl)+'">'+inr(p.unrealised_pnl)+'</span>';
+  document.getElementById('nwc').textContent=inr(p.cash);
+  document.getElementById('nwi').textContent=inr(p.invested_value);
+  renderAccounts(p);renderHeat(p);renderMovers(p);
+}
+function acctVal(a){return (a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0);}
+function renderAccounts(p){
+  const accs=(p.accounts||[]).map(a=>({a,v:acctVal(a),ok:a.ok!==false&&a.status!=='degraded'}));
+  const mx=Math.max(1,...accs.map(x=>x.v)),nw=p.net_worth||1;
+  document.getElementById('acc-n').textContent=accs.length+' linked';
+  document.getElementById('accs').innerHTML=accs.map(x=>{const a=x.a,lbl=a.label||a.creds_key;
+    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+lbl+' <span class="rsub">'+a.creds_key+(x.ok?'':' · off')+'</span></div>'
+      +'<div class="bar"><i style="width:'+(x.v/mx*100).toFixed(0)+'%;background:'+(x.ok?'var(--acc)':'var(--down)')+'"></i></div></div>'
+      +'<div class="rr"><div class="p">'+inr(x.v)+'</div><div class="c muted">'+(x.v/nw*100).toFixed(0)+'%</div></div></div>';}).join('');
+}
+function sectorMap(p){const m={};(p.accounts||[]).forEach(a=>(a.holdings||[]).forEach(h=>{
+  const s=(h.sector||'UNKNOWN').toUpperCase();const o=m[s]||(m[s]={v:0,d:0});o.v+=h.market_value||0;o.d+=h.day_change||0;}));return m;}
+function heatColor(pct){const cap=1.8,f=Math.max(-1,Math.min(1,pct/cap)),a=Math.abs(f)*0.38;
+  const c=f>=0?'46,189,133':'240,84,76';return 'linear-gradient(0deg,rgba('+c+','+a.toFixed(2)+'),rgba('+c+','+a.toFixed(2)+')),var(--panel)';}
+function renderHeat(p){const m=sectorMap(p);
+  const arr=Object.entries(m).map(([s,o])=>{const prev=o.v-o.d;return {s,pct:prev?o.d/prev*100:0,v:o.v};})
+    .filter(x=>x.v>=5000).sort((a,b)=>b.v-a.v).slice(0,12);
+  document.getElementById('heat').innerHTML=arr.map(x=>'<div class="hc" style="background:'+heatColor(x.pct)+'"><div class="hn">'+x.s+'</div><div class="hp '+cl(x.pct)+'">'+sp(x.pct)+'</div></div>').join('')
+    ||'<div class="hc"><div class="hn muted">no sectors</div></div>';
+}
+function allHoldings(p){const m={};(p.accounts||[]).forEach(a=>{const l=a.label||a.creds_key;(a.holdings||[]).forEach(h=>{
+  const s=clean(h.ticker);const o=m[s]||(m[s]={s,mv:0,d:0,acc:{}});o.mv+=h.market_value||0;o.d+=h.day_change||0;o.acc[l]=1;});});
+  return Object.values(m).map(o=>{o.hold=Object.keys(o.acc)[0]||'';const prev=o.mv-o.d;o.pct=prev?o.d/prev*100:0;return o;});}
+function renderMovers(p){
+  let all=allHoldings(p).filter(x=>Math.abs(x.mv)>=5000).sort((a,b)=>b.d-a.d);
+  const g=all.filter(x=>x.d>0).slice(0,5),l=all.filter(x=>x.d<0).slice(-5).reverse();
+  const row=x=>'<div class="mv"><span class="s">'+x.s+'</span><span class="c '+cl(x.d)+'">'+sp(x.pct)+'</span></div>';
+  document.getElementById('gain').innerHTML=g.map(row).join('')||'<div class="mv muted">—</div>';
+  document.getElementById('lose').innerHTML=l.map(row).join('')||'<div class="mv muted">—</div>';
+}
+
+document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  const t=b.dataset.t;document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
+  document.getElementById('s-'+t).classList.add('on');
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);});
+
+mktStatus();setInterval(mktStatus,30000);
+loadTicker();setInterval(loadTicker,30000);
+loadHome();setInterval(loadHome,20000);
+</script></body></html>"""
