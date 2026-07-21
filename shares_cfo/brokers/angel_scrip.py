@@ -189,6 +189,7 @@ def _load_stock_options() -> dict:
             continue
         node = stk.setdefault(name, {}).setdefault(exp, {}).setdefault(strike, {})
         node[typ] = str(it["token"])
+        node[typ + "sym"] = sym  # the NFO tradingsymbol, needed to place the order
         node["lot"] = int(float(it.get("lotsize", 0) or 0))
     if stk:
         try:
@@ -229,21 +230,71 @@ def fno_meta(symbol: str) -> dict | None:
     except ValueError:
         dte = 30
     lot = 0
-    strikes, tokens = [], {}
+    strikes, tokens, symbols = [], {}, {}
     for sk, v in node.items():
         try:
             ski = int(sk)
         except ValueError:
             continue
         strikes.append(ski)
-        if v.get("CE"):
-            tokens[f"{ski}_CE"] = v["CE"]
-        if v.get("PE"):
-            tokens[f"{ski}_PE"] = v["PE"]
+        for typ in ("CE", "PE"):
+            if v.get(typ):
+                tokens[f"{ski}_{typ}"] = v[typ]
+                symbols[f"{ski}_{typ}"] = v.get(typ + "sym", "")
         lot = lot or int(v.get("lot") or 0)
     if not strikes:
         return None
-    return {"lot": lot, "expiry": exp, "dte": dte, "strikes": sorted(strikes), "tokens": tokens}
+    return {"lot": lot, "expiry": exp, "dte": dte, "strikes": sorted(strikes),
+            "tokens": tokens, "symbols": symbols}
+
+
+_FUT_CACHE = Path(__file__).resolve().parent.parent / "data" / "state" / "angel_nfo_fut.json"
+
+
+def _load_futures() -> dict:
+    """{underlying: {'token':..,'expiry':..,'lot':..}} for the NEAREST FUTSTK, cached daily."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if _FUT_CACHE.exists():
+        try:
+            c = json.loads(_FUT_CACHE.read_text(encoding="utf-8"))
+            if c.get("date") == today:
+                return c.get("fut", {})
+        except (OSError, ValueError):
+            pass
+    try:
+        rows = httpx.get(SCRIP_URL, timeout=60.0).json()
+    except Exception:
+        return {}
+    tdate = datetime.now().date()
+    best: dict = {}
+    for it in rows:
+        if it.get("exch_seg") != "NFO" or it.get("instrumenttype") != "FUTSTK":
+            continue
+        exp = str(it.get("expiry", ""))
+        try:
+            d = datetime.strptime(exp, "%d%b%Y").date()
+        except ValueError:
+            continue
+        if d < tdate:
+            continue
+        name = str(it.get("name", "")).upper()
+        cur = best.get(name)
+        if not cur or d < cur["_d"]:
+            best[name] = {"token": str(it.get("token")), "expiry": exp,
+                          "lot": int(float(it.get("lotsize", 0) or 0)), "_d": d}
+    fut = {k: {"token": v["token"], "expiry": v["expiry"], "lot": v["lot"]} for k, v in best.items()}
+    if fut:
+        try:
+            _FUT_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            _FUT_CACHE.write_text(json.dumps({"date": today, "fut": fut}), encoding="utf-8")
+        except OSError:
+            pass
+    return fut
+
+
+def fut_token(symbol: str) -> str | None:
+    f = _load_futures().get(symbol.strip().upper())
+    return f["token"] if f else None
 
 
 def option_full(tokens: list[str]) -> dict:
@@ -390,12 +441,19 @@ def place_order(order) -> dict:
     if not jwt:
         raise RuntimeError(f"Angel login failed: {note}")
 
-    sym = order.symbol.upper().split("-")[0]
     exch = (order.exchange or "NSE").upper()
-    tradingsymbol = f"{sym}-EQ" if exch == "NSE" else order.symbol
-    symboltoken = token_for(sym) or order.token
-    if not symboltoken:
-        raise RuntimeError(f"No Angel instrument token for {sym}")
+    if exch == "NFO":
+        # Option/future: the caller supplies the exact NFO tradingsymbol + token.
+        tradingsymbol = order.symbol
+        symboltoken = order.token
+        if not symboltoken or not tradingsymbol:
+            raise RuntimeError(f"NFO order needs tradingsymbol + token ({order.symbol})")
+    else:
+        sym = order.symbol.upper().split("-")[0]
+        tradingsymbol = f"{sym}-EQ" if exch == "NSE" else order.symbol
+        symboltoken = token_for(sym) or order.token
+        if not symboltoken:
+            raise RuntimeError(f"No Angel instrument token for {sym}")
 
     entry = {
         "variety": "NORMAL", "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),

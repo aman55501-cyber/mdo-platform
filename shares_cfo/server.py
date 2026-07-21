@@ -148,8 +148,22 @@ DASHBOARD_HTML = r"""<!doctype html>
   .stt{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:auto;flex:none}
   .stt.SENT{background:rgba(47,189,133,.15);color:var(--up)}.stt.PROPOSE{background:rgba(132,147,171,.15);color:var(--dim)}.stt.KILL_SWITCH{background:rgba(255,88,103,.15);color:var(--down)}
   .note{font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.5}
-  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(6,1fr);padding:8px 2px calc(8px + env(safe-area-inset-bottom))}
-  .nav button{background:0;border:0;color:var(--faint);font-family:var(--sans);font-size:10px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:15;max-width:460px;margin:0 auto;background:rgba(13,18,28,.92);backdrop-filter:blur(12px);border-top:1px solid var(--bd);display:grid;grid-template-columns:repeat(7,1fr);padding:8px 2px calc(8px + env(safe-area-inset-bottom))}
+  .nav button{background:0;border:0;color:var(--faint);font-family:var(--sans);font-size:9.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;padding:4px 0}
+  .nav svg{width:21px;height:21px}
+  /* income proposals */
+  .prop{border:1px solid var(--bd);border-radius:14px;padding:13px 14px;margin-top:10px;background:var(--panel)}
+  .ptop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .psym{font-weight:800;font-size:15.5px}
+  .tag{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;text-transform:uppercase;letter-spacing:.02em}
+  .tag.cc{background:rgba(51,214,159,.14);color:var(--up)}.tag.csp{background:rgba(201,139,255,.15);color:var(--purp)}
+  .tag.live{background:rgba(76,141,255,.14);color:var(--acc)}.tag.theo{background:rgba(240,178,74,.14);color:var(--warn)}
+  .pinc{font-size:19px;font-weight:800;margin-top:8px}
+  .pgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin-top:10px}
+  .pg{background:var(--panel);padding:7px 9px}.pg .k{font-size:8.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);font-weight:700}.pg .v{font-size:13px;font-weight:750;margin-top:2px;font-family:var(--mono)}
+  .iseg{display:flex;gap:6px;margin:12px 0 2px}
+  .iseg button{flex:1;background:var(--elev);border:1px solid var(--bd);color:var(--dim);border-radius:9px;padding:8px 0;font-weight:700;font-size:12.5px}
+  .iseg button.on{background:rgba(51,214,159,.13);border-color:#2f5c4b;color:var(--up)}
   .nav button svg{width:21px;height:21px}.nav button[aria-current="true"]{color:var(--acc)}
   .scrim{position:fixed;inset:0;background:rgba(4,7,13,.66);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}.scrim.on{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:460px;margin:0 auto;background:var(--panel);border:1px solid var(--bd);border-bottom:0;border-radius:20px 20px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));transform:translateY(103%);transition:transform .26s cubic-bezier(.2,.7,.2,1)}
@@ -225,6 +239,10 @@ DASHBOARD_HTML = r"""<!doctype html>
       <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">Market regime</span><span class="frag">drives sizing</span></div>
       <div id="regime-body"><div class="load">Reading regime&hellip;</div></div>
     </div>
+    <div class="card" id="oi-card">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="h2">OI build-up</span><span class="frag">futures positioning</span></div>
+      <div id="oi-body" style="margin-top:8px"><div class="load">Reading open interest&hellip;</div></div>
+    </div>
     <div style="display:flex;justify-content:space-between;margin:2px 2px 10px"><span class="lbl">Ideas</span><span class="faint" id="ideas-sub" style="font-size:11px"></span></div>
     <div id="ideas"><div class="load">Scanning&hellip;</div></div>
   </section>
@@ -251,6 +269,22 @@ DASHBOARD_HTML = r"""<!doctype html>
     </div>
   </section>
 
+  <section id="s-income">
+    <h1 class="screen">Income &mdash; premium engine</h1>
+    <div class="card" id="inc-hero" style="background:linear-gradient(160deg,#0d1a16,#0f1521);border-color:#1f3a30">
+      <div class="lbl">Premium available this cycle</div>
+      <div class="nw mono up" id="inc-total" style="font-size:32px">&#8377;&mdash;</div>
+      <div class="dim" id="inc-sub" style="font-size:12.5px;margin-top:2px">loading proposals&hellip;</div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="stat"><div class="lbl">Covered calls</div><div class="v mono up" id="inc-cc">&mdash;</div></div>
+        <div class="stat"><div class="lbl">Cash puts</div><div class="v mono" id="inc-csp" style="color:var(--purp)">&mdash;</div></div>
+      </div>
+    </div>
+    <div class="iseg"><button id="inc-tab-cc" class="on" onclick="incTab('cc')">Covered calls</button><button id="inc-tab-csp" onclick="incTab('csp')">Cash puts</button></div>
+    <div id="inc-list"><div class="load">Scanning your book for premium&hellip;</div></div>
+    <div class="note" style="margin-top:12px">Live premium from the NFO chain where liquid, else Black-Scholes (India VIX). Every <b>Place</b> runs the guardrails (caps, allow-list, kill-switch) before it reaches the broker.</div>
+  </section>
+
   <section id="s-mtf">
     <h1 class="screen">MTF — margin funding</h1>
     <div class="card" id="mtf-card"><div class="load">Loading MTF view…</div></div>
@@ -268,6 +302,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   <button data-t="home" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</button>
   <button data-t="mtf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M6 3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6a3 3 0 013-3z"/><path d="M7 15h4"/></svg>MTF</button>
   <button data-t="ideas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0012 3z"/></svg>Ideas</button>
+  <button data-t="income"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Income</button>
   <button data-t="hedge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>Hedge</button>
   <button data-t="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 15l5-5 4 3 7-8"/></svg>Trades</button>
   <button data-t="login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg>Login</button>
@@ -299,7 +334,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <script>
 const token=new URLSearchParams(location.search).get('token')||'';
 const Q='token='+encodeURIComponent(token);
-const loaded={ideas:0,hedge:0,trades:0,mtf:0};
+const loaded={ideas:0,hedge:0,trades:0,mtf:0,income:0};
 let PORT=null,CURR=null,HEDGE=null,acctSelBuilt=false;
 const SCORE={},ACCT_LABELS={},HOLD={};
 function inr(n){if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+' Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+' L';return s+'₹'+Math.round(a).toLocaleString('en-IN');}
@@ -649,18 +684,35 @@ document.getElementById('tk-confirm').addEventListener('click',async function(){
 scrim.addEventListener('click',()=>{scrim.classList.remove('on');sheet.classList.remove('on');});
 
 /* ---- accounts + movers (homepage summary) ---- */
-function allHoldings(){const map={};(PORT.accounts||[]).forEach(a=>(a.holdings||[]).forEach(h=>{const s=clean(h.ticker);const m=map[s]||(map[s]={sym:s,quantity:0,market_value:0,invested:0,day_change:0});m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;}));return Object.values(map);}
+function allHoldings(){const map={};(PORT.accounts||[]).forEach(a=>{const lbl=a.label||a.creds_key;(a.holdings||[]).forEach(h=>{const s=clean(h.ticker);const m=map[s]||(map[s]={sym:s,quantity:0,market_value:0,invested:0,day_change:0,byAcct:{}});m.quantity+=h.quantity||0;m.market_value+=h.market_value||0;m.invested+=(h.average_price||0)*(h.quantity||0);m.day_change+=h.day_change||0;m.byAcct[lbl]=(m.byAcct[lbl]||0)+(h.market_value||0);});});
+  return Object.values(map).map(m=>{const ks=Object.keys(m.byAcct);m.holder=ks.sort((a,b)=>m.byAcct[b]-m.byAcct[a])[0]||'';m.holders=ks.length;return m;});}
 const ACCT_COLORS=['#6aa6ff','#33d69f','#e8c069','#c98bff','#ff9a62','#5fd8c4'];
+function acctStats(a){
+  const val=(a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0);
+  const cash=(a.funds||{}).ledger_balance||0;
+  const dayC=(a.holdings||[]).reduce((s,x)=>s+(x.day_change||0),0);
+  let loan=0,mtf=false;(a.holdings||[]).forEach(h=>{const m=h.raw_mtf||{};
+    const ind=((m.mtf_indicator||m.mtfIndicator||m.product||'')+'').toString().toUpperCase();
+    if(ind==='Y'||ind.indexOf('MTF')>=0){mtf=true;loan+=(h.market_value||0)*0.75;}});
+  return {val,cash,dayC,loan,mtf,n:(a.holdings||[]).length,trueNet:val+cash-loan};
+}
 function renderAccounts(){
-  const accs=(PORT.accounts||[]).map(a=>({a,val:(a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0),
-    n:(a.holdings||[]).length,ok:a.ok!==false&&a.status!=='degraded'}));
-  const nw=PORT.net_worth||accs.reduce((s,x)=>s+x.val,0)||1;
-  const mx=Math.max(1,...accs.map(x=>x.val));
-  let h='';accs.forEach((x,i)=>{const a=x.a,col=ACCT_COLORS[i%ACCT_COLORS.length],lbl=a.label||a.creds_key;
-    h+='<div class="acct"><div class="av" style="background:'+(x.ok?col:'var(--down)')+'">'+lbl.trim()[0].toUpperCase()+'</div>'
-      +'<div style="flex:1;min-width:0"><div class="an">'+lbl+' <span class="faint" style="font-size:11px;font-weight:600">'+a.creds_key+(x.ok?'':' · not logged in')+'</span></div>'
-      +'<div class="abar"><i style="width:'+(x.val/mx*100).toFixed(0)+'%;background:linear-gradient(90deg,'+col+','+col+'99)"></i></div></div>'
-      +'<div style="text-align:right"><div class="mono" style="font-weight:700">'+inr(x.val)+'</div><div class="faint" style="font-size:11px">'+(x.val/nw*100).toFixed(0)+'% · '+x.n+'</div></div></div>';});
+  const accs=(PORT.accounts||[]).map(a=>({a,s:acctStats(a),ok:a.ok!==false&&a.status!=='degraded'}));
+  const nw=PORT.net_worth||accs.reduce((s,x)=>s+x.s.val,0)||1;
+  const mx=Math.max(1,...accs.map(x=>x.s.val));
+  let h='';accs.forEach((x,i)=>{const a=x.a,s=x.s,col=ACCT_COLORS[i%ACCT_COLORS.length],lbl=a.label||a.creds_key;
+    const prev=s.val-s.dayC,dpct=prev?s.dayC/prev*100:0,dg=s.dayC>=0;
+    const strip='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px" class="faint">'
+      +'<span>Cash <span class="mono" style="color:var(--dim)">'+inr(s.cash)+'</span></span>'
+      +'<span>Day <span class="mono '+(dg?'up':'down')+'">'+(dg?'▲':'▼')+inr(Math.abs(s.dayC))+' '+(dg?'+':'−')+Math.abs(dpct).toFixed(1)+'%</span></span>'
+      +(s.mtf?'<span>MTF loan <span class="mono warn">'+inr(s.loan)+'</span></span><span>True net <span class="mono" style="color:var(--dim)">'+inr(s.trueNet)+'</span></span>':'')
+      +'</div>';
+    h+='<div class="acct" style="align-items:flex-start"><div class="av" style="background:'+(x.ok?col:'var(--down)')+';margin-top:2px">'+lbl.trim()[0].toUpperCase()+'</div>'
+      +'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:baseline">'
+      +'<div class="an">'+lbl+' <span class="faint" style="font-size:11px;font-weight:600">'+a.creds_key+(x.ok?'':' · not logged in')+'</span></div>'
+      +'<div style="text-align:right"><span class="mono" style="font-weight:700">'+inr(s.val)+'</span> <span class="faint" style="font-size:11px">'+(s.val/nw*100).toFixed(0)+'% · '+s.n+'</span></div></div>'
+      +'<div class="abar"><i style="width:'+(s.val/mx*100).toFixed(0)+'%;background:linear-gradient(90deg,'+col+','+col+'99)"></i></div>'
+      +strip+'</div></div>';});
   document.getElementById('acct-list').innerHTML=h||'<div class="dim" style="font-size:13px">No accounts loaded.</div>';
 }
 function renderMovers(){
@@ -675,7 +727,8 @@ function renderMovers(){
   const s=[...all].sort((a,b)=>b[key]-a[key]);
   const gain=s.filter(x=>x[key]>0).slice(0,3),lose=s.filter(x=>x[key]<0).slice(-3).reverse();
   const row=(x,up)=>'<div class="mv" onclick="openChart(\''+x.sym+'\')" style="cursor:pointer">'
-    +'<div class="mvtag '+(up?'g':'l')+'">'+(up?'▲':'▼')+'</div><div class="mvn">'+x.sym+'</div>'
+    +'<div class="mvtag '+(up?'g':'l')+'">'+(up?'▲':'▼')+'</div>'
+    +'<div style="min-width:0"><div class="mvn">'+x.sym+'</div><div class="faint" style="font-size:10.5px">'+(x.holder||'')+(x.holders>1?' +'+(x.holders-1):'')+'</div></div>'
     +'<div class="mvr"><div class="'+(up?'up':'down')+'" style="font-weight:700">'+(x[val]>=0?'+':'')+inr(x[val])+'</div>'
     +'<div class="faint" style="font-size:11px">'+(x[pctk]>=0?'+':'')+x[pctk].toFixed(1)+'%</div></div></div>';
   let h='';
@@ -720,12 +773,85 @@ document.getElementById('scr-btn').onclick=async function(){
   }catch(e){msg.className='down';msg.textContent='Upload failed — try again.';}
 };
 
+/* ---- OI build-up (ideas) ---- */
+async function loadOI(){
+  const box=document.getElementById('oi-body');if(!box)return;
+  const r=await j('/ideas/oi?'+Q);
+  if(!r.ok||!r.d.signals||!r.d.signals.length){box.innerHTML='<div class="dim" style="font-size:12px;padding:4px 0">No F&amp;O futures for your holdings, or the chain is loading.</div>';return;}
+  const col=b=>b==='bullish'?'var(--up)':b==='bearish'?'var(--down)':'var(--dim)';
+  const arrow=b=>b==='bullish'?'▲':b==='bearish'?'▼':'•';
+  box.innerHTML=r.d.signals.slice(0,8).map(x=>{const c=col(x.bias);
+    const chg=x.oi_change_pct==null?'<span class="faint">baseline</span>':'<span style="color:'+c+'">'+(x.oi_change_pct>=0?'+':'')+x.oi_change_pct+'% OI</span>';
+    return '<div class="rowline" style="margin-top:9px"><span><span style="color:'+c+'">'+arrow(x.bias)+'</span> '+x.sym+' <span class="faint" style="font-size:11px">'+x.signal+'</span></span>'
+      +'<span class="mono" style="font-size:12px">'+chg+' <span class="faint">'+(x.price_change_pct>=0?'+':'')+x.price_change_pct+'%</span></span></div>';}).join('')
+    +'<div class="note" style="margin-top:10px;font-size:11px">'+(r.d.note||'')+'</div>';
+}
+
+/* ---- income (premium engine) ---- */
+let INCOME=null,incSeg='cc';
+async function loadIncome(){
+  const box=document.getElementById('inc-list');
+  const r=await j('/income/ideas?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load down">Could not load income ideas ('+r.status+').</div>';return;}
+  INCOME=r.d;const s=r.d.summary||{};
+  document.getElementById('inc-total').textContent='+'+inr(s.total_premium||0);
+  const exp=(r.d.covered_calls&&r.d.covered_calls[0]&&r.d.covered_calls[0].expiry)||(r.d.cash_secured_puts&&r.d.cash_secured_puts[0]&&r.d.cash_secured_puts[0].expiry)||'';
+  document.getElementById('inc-sub').textContent='from '+(s.covered_call_count||0)+' covered calls + '+(s.csp_count||0)+' cash puts'+(exp?' · expiry '+exp:'');
+  document.getElementById('inc-cc').textContent='+'+inr(s.covered_call_income||0);
+  document.getElementById('inc-csp').textContent='+'+inr(s.csp_income||0);
+  renderIncome();
+}
+function incTab(s){incSeg=s;document.getElementById('inc-tab-cc').classList.toggle('on',s==='cc');document.getElementById('inc-tab-csp').classList.toggle('on',s==='csp');renderIncome();}
+function renderIncome(){
+  if(!INCOME)return;const box=document.getElementById('inc-list');
+  const list=incSeg==='cc'?(INCOME.covered_calls||[]):(INCOME.cash_secured_puts||[]);
+  if(!list.length){box.innerHTML='<div class="dim" style="font-size:13px;padding:12px 2px">No '+(incSeg==='cc'?'covered-call':'cash-secured-put')+' proposals right now — either no F&O-eligible '+(incSeg==='cc'?'holding of a full lot':'name within your cash')+', or the chain is still loading. Pull to refresh.</div>';return;}
+  box.innerHTML=list.map((x,i)=>incRow(x,i)).join('');
+}
+function incRow(x,i){
+  const cc=x.strategy==='covered_call';
+  const src=x.premium_source==='live'?'<span class="tag live">live</span>':'<span class="tag theo">theoretical</span>';
+  const holder=x.holder?'<span style="margin-left:auto;font-size:11px;color:var(--faint);font-weight:600">'+x.holder+'</span>':'';
+  const gold='style="font-family:var(--mono);font-size:13px;font-weight:750;margin-top:2px;color:#e8c069"';
+  const g=(k,v,st)=>'<div class="pg"><div class="k">'+k+'</div><div class="v" '+(st||'')+'>'+v+'</div></div>';
+  const oi=x.oi!=null?(x.oi/1000).toFixed(1)+'k':'—';
+  const grid=cc?
+    g('Yield',x.yield_pct+'%')+g('Annualised',x.annualised_pct+'%',gold)+g('Cushion','+'+x.cushion_pct+'%')+g('Assign','~'+x.assignment_prob_pct+'%')+g('OI',oi)+g('DTE',x.dte+'d')
+    :g('Yield/cash',x.yield_on_cash_pct+'%')+g('Annualised',x.annualised_pct+'%',gold)+g('Discount','<span class="up">'+x.discount_pct+'%</span>')+g('Capital',inr(x.capital_reserved))+g('OI',oi)+g('DTE',x.dte+'d');
+  return '<div class="prop"><div class="ptop"><span class="psym">'+x.symbol+'</span><span class="tag '+(cc?'cc':'csp')+'">'+(cc?'Covered call':'Cash put')+'</span>'+src+holder+'</div>'
+    +'<div class="pinc '+(cc?'up':'')+' mono"'+(cc?'':' style="color:var(--purp)"')+'>+'+inr(x.income)+' <span class="dim" style="font-size:13px;font-weight:600">premium</span></div>'
+    +'<div class="dim" style="font-size:12px;margin-top:2px">Sell '+x.contracts+' lot'+(x.contracts>1?'s':'')+' of the '+x.strike+' '+(cc?'CE':'PE')+' &middot; '+x.expiry+'</div>'
+    +'<div class="pgrid">'+grid+'</div>'
+    +'<div class="note" style="font-size:11.5px">'+x.note+'</div>'
+    +'<div style="margin-top:11px"><button style="width:100%;background:var(--up);color:#04160e;border:0;border-radius:10px;padding:11px 0;font-weight:700;font-size:13.5px" onclick="incomeTicket(\''+x.strategy+'\','+i+')">Place &middot; one tap</button></div></div>';
+}
+function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
+function incomeTicket(strat,i){
+  const x=strat==='covered_call'?INCOME.covered_calls[i]:INCOME.cash_secured_puts[i];
+  if(!x)return;
+  const qty=x.contracts*x.lot,prem=x.premium,cc=strat==='covered_call';
+  const stop=+(prem*2).toFixed(2),tgt=+(prem*0.2).toFixed(2);
+  const s=document.getElementById('tk-side');s.textContent='SELL';s.style.background='rgba(255,88,103,.16)';s.style.color='var(--down)';
+  document.getElementById('tk-sym').textContent=x.symbol+' '+x.strike+' '+(cc?'CE':'PE');
+  document.getElementById('tk-ltp').textContent=px(prem);
+  document.getElementById('tk-qty').textContent=qty.toLocaleString('en-IN')+' ('+x.contracts+'×'+x.lot+')';
+  document.getElementById('tk-entry').innerHTML=px(prem)+' &nbsp;<span class="faint">LIMIT · SELL</span>';
+  document.getElementById('tk-stop').innerHTML=px(stop)+' <span class="faint">buy-back</span>';
+  document.getElementById('tk-tgt').innerHTML=px(tgt)+' <span class="faint">80% profit</span>';
+  document.getElementById('tk-risk').textContent=inr(qty*(stop-prem));
+  document.getElementById('tk-rew').textContent=inr(qty*prem);
+  document.getElementById('tk-rr').textContent='—';
+  CURR={creds_key:angelKey(),exchange:'NFO',symbol:x.tradingsymbol,token:x.token,side:'SELL',quantity:qty,product:'NRML',order_type:'LIMIT',price:prem,trigger_price:0,underlying:x.symbol,stop_loss:stop,target:tgt};
+  openSheet();
+}
+
 /* ---- nav + filters ---- */
 function go(t){document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.t===t?'true':'false'));window.scrollTo(0,0);
   if(t==='mtf'&&!loaded.mtf){loaded.mtf=1;loadMtf();}
-  if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadDailyStrategy();loadIdeas();}
+  if(t==='ideas'&&!loaded.ideas){loaded.ideas=1;loadDailyStrategy();loadIdeas();loadOI();}
   if(t==='hedge'&&!loaded.hedge){loaded.hedge=1;loadHedge();loadOptions();}
+  if(t==='income'&&!loaded.income){loaded.income=1;loadIncome();}
   if(t==='trades'&&!loaded.trades){loaded.trades=1;loadTrades();}}
 document.getElementById('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.t==='login'){location.href='/login?'+Q;return;}go(b.dataset.t);});
 document.getElementById('filters').addEventListener('click',e=>{const b=e.target.closest('.fchip');if(!b)return;[...document.querySelectorAll('.fchip')].forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');applyFilter();});
@@ -980,6 +1106,33 @@ async def income_ideas(request: Request, token: str | None = Query(default=None)
             "summary": income.summarise(ccs, csps),
             "note": "Premiums are live from the NFO chain where available, else Black-Scholes "
                     "(India VIX as IV). Proposals only — nothing is placed."}
+
+
+@app.get("/ideas/oi")
+async def ideas_oi(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Near-month futures OI build-up/unwinding across your F&O holdings."""
+    _check_token(request, token)
+    from .analysis import oi
+    from .brokers import angel_scrip
+    book = await _consolidated()
+    rows, seen = [], set()
+    for a in book.get("accounts", []):
+        if a.get("ok") is False:
+            continue
+        for h in a.get("holdings", []):
+            sym = _clean_sym(h.get("ticker", ""))
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            mv = h.get("market_value") or 0
+            dc = h.get("day_change") or 0
+            prev = mv - dc
+            rows.append({"sym": sym, "price_change_pct": (dc / prev * 100) if prev else 0})
+    signals = oi.buildup(rows, angel_scrip)
+    return {"as_of": book.get("as_of"), "signals": signals,
+            "note": "Futures OI vs the prior trading day. Long buildup / short covering read "
+                    "bullish; short buildup / long unwinding read bearish. Deltas populate from "
+                    "the second day the app runs."}
 
 
 _VOL_CACHE: dict = {"ts": 0.0, "data": None}

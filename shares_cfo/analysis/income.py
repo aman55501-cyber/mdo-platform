@@ -98,6 +98,8 @@ def covered_calls(holdings: list[dict], scrip) -> list[dict]:
         out.append({
             "strategy": "covered_call", "symbol": sym, "holder": h.get("holder", ""),
             "account": h.get("account", ""), "spot": round(spot, 2), "strike": strike,
+            "token": meta["tokens"].get(f"{strike}_CE", ""),
+            "tradingsymbol": meta["symbols"].get(f"{strike}_CE", ""),
             "expiry": meta["expiry"], "dte": meta["dte"], "lot": meta["lot"],
             "contracts": contracts, "shares_covered": shares,
             "premium": prem, "premium_source": src, "oi": oi,
@@ -145,7 +147,9 @@ def cash_secured_puts(candidates: list[dict], cash: float, scrip,
         income = round(prem * meta["lot"] * contracts, 0)
         out.append({
             "strategy": "cash_secured_put", "symbol": sym, "spot": round(spot, 2),
-            "strike": strike, "expiry": meta["expiry"], "dte": meta["dte"],
+            "strike": strike, "token": meta["tokens"].get(f"{strike}_PE", ""),
+            "tradingsymbol": meta["symbols"].get(f"{strike}_PE", ""),
+            "expiry": meta["expiry"], "dte": meta["dte"],
             "lot": meta["lot"], "contracts": contracts, "premium": prem,
             "premium_source": src, "oi": oi, "income": income,
             "capital_reserved": capital, "discount_pct": round((spot - strike) / spot * 100, 1),
