@@ -11,6 +11,7 @@ This adapter has NO order methods. It cannot place, modify, or cancel a trade.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -54,8 +55,12 @@ class HdfcAdapter:
     def __init__(self, account: AccountConfig) -> None:
         self._acct = account
         self.last_holdings_excluded = 0  # F&O contracts filtered out of holdings
+        # HDFC whitelists one API user per IP. Family accounts beyond the primary IP's
+        # quota route their HDFC calls through a per-account outbound proxy (a second
+        # host with its own whitelisted IP): set HDFC_<KEY>_PROXY=http://VPS2_IP:PORT.
+        proxy = os.environ.get(f"HDFC_{account.creds_key.upper()}_PROXY", "").strip()
         # User-Agent is MANDATORY and Content-Type json is expected by the token API.
-        self._http = httpx.AsyncClient(
+        kwargs: dict = dict(
             base_url=account.base_url,
             timeout=30.0,
             headers={
@@ -63,6 +68,9 @@ class HdfcAdapter:
                 "Content-Type": "application/json",
             },
         )
+        if proxy:
+            kwargs["proxy"] = proxy
+        self._http = httpx.AsyncClient(**kwargs)
 
     # ---------- auth ----------
 
