@@ -102,6 +102,20 @@ section{display:none}section.on{display:block}
 .soon .b{font-family:var(--fh);letter-spacing:.14em;text-transform:uppercase;font-size:13px;color:var(--n700)}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--n400)}
 a{color:var(--a700);text-decoration:none}
+/* share-detail sheet (Screener + price/volume on tap) */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:30;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:31;max-width:560px;margin:0 auto;background:var(--panel);border-top:1px solid var(--acc);
+  transform:translateY(100%);transition:transform .25s;max-height:84vh;overflow-y:auto;padding:0 16px 26px}
+.sheet.on{transform:translateY(0)}
+.sgrab{width:40px;height:4px;background:var(--n400);margin:10px auto 12px}
+.sh{display:flex;align-items:baseline;gap:10px;padding:2px 0 12px;border-bottom:1px solid var(--n200);position:sticky;top:0;background:var(--panel)}
+.ssym{font-family:var(--fh);font-weight:600;font-size:21px;letter-spacing:.03em}
+.fgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200);margin-top:10px}
+.fg{background:var(--panel);padding:10px 11px}
+.fg .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--n500)}
+.fg .v{font-family:var(--fm);font-size:15px;font-weight:600;margin-top:4px}
+.ssub{font-family:var(--fh);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--n600);margin:16px 0 2px;font-weight:600}
 </style></head><body>
 <div class="app">
   <div class="hdr">
@@ -131,6 +145,7 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel"><div class="ph"><span class="t">Accounts</span><span class="lbl" id="acc-n"></span></div><div id="accs"><div class="load">loading</div></div></div>
     <div class="panel"><div class="ph"><span class="t">Sector heatmap</span><span class="lbl">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div></div></div>
     <div class="panel"><div class="ph"><span class="t">Movers</span><span class="lbl">today</span></div><div class="two"><div><div class="mvh">Gainers</div><div id="gain"></div></div><div><div class="mvh">Losers</div><div id="lose"></div></div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Holdings</span><span class="lbl" id="hold-n">tap for Screener</span></div><div id="hold-list"><div class="load">loading</div></div></div>
   </div></section>
 
   <section id="s-chart"><div class="soon"><div class="b">Chart · F&amp;O edge</div><div style="margin-top:8px;font-size:12px">Next slice — line/candle, PCR, Max&nbsp;Pain, OI.</div></div></section>
@@ -151,6 +166,12 @@ a{color:var(--a700);text-decoration:none}
   <section id="s-news"><div class="wrap">
     <div class="panel span2"><div class="ph"><span class="t">News on your holdings</span><span class="lbl">Google News</span></div><div id="news-list"><div class="load">loading news</div></div></div>
   </div></section>
+</div>
+
+<div class="scrim" id="scrim" onclick="closeShare()"></div>
+<div class="sheet" id="sheet"><div class="sgrab"></div>
+  <div class="sh"><span class="ssym" id="sh-sym">—</span><span class="mono" id="sh-px" style="margin-left:auto;font-size:16px"></span></div>
+  <div id="sh-body"><div class="load">loading</div></div>
 </div>
 
 <div class="tabs" id="tabs">
@@ -207,7 +228,7 @@ async function loadHome(){
   document.getElementById('nwu').innerHTML='<span class="'+cl(p.unrealised_pnl)+'">'+inr(p.unrealised_pnl)+'</span>';
   document.getElementById('nwc').textContent=inr(p.cash);
   document.getElementById('nwi').textContent=inr(p.invested_value);
-  renderAccounts(p);renderHeat(p);renderMovers(p);
+  renderAccounts(p);renderHeat(p);renderMovers(p);renderHoldings(p);
 }
 function acctVal(a){return (a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0);}
 function renderAccounts(p){
@@ -235,7 +256,7 @@ function allHoldings(p){const m={};(p.accounts||[]).forEach(a=>{const l=a.label|
 function renderMovers(p){
   let all=allHoldings(p).filter(x=>Math.abs(x.mv)>=5000).sort((a,b)=>b.d-a.d);
   const g=all.filter(x=>x.d>0).slice(0,5),l=all.filter(x=>x.d<0).slice(-5).reverse();
-  const row=x=>'<div class="mv"><span class="s">'+x.s+'</span><span class="c '+cl(x.d)+'">'+sp(x.pct)+'</span></div>';
+  const row=x=>'<div class="mv" onclick="openShare(\''+x.s+'\')" style="cursor:pointer"><span class="s">'+x.s+'</span><span class="c '+cl(x.d)+'">'+sp(x.pct)+'</span></div>';
   document.getElementById('gain').innerHTML=g.map(row).join('')||'<div class="mv muted">—</div>';
   document.getElementById('lose').innerHTML=l.map(row).join('')||'<div class="mv muted">—</div>';
 }
@@ -254,12 +275,44 @@ async function loadPositions(){
     const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;
     const meta=[]; if(p.oi!=null)meta.push('OI '+kfmt(p.oi)); if(p.volume!=null)meta.push('Vol '+kfmt(p.volume));
     if(ch!=null)meta.push('<span class="'+cl(ch)+'">'+sp(ch)+'</span>');
-    return '<div class="row"><div style="flex:1;min-width:0">'
+    return '<div class="row" onclick="openShare(\''+(p.underlying||'')+'\')" style="cursor:pointer"><div style="flex:1;min-width:0">'
       +'<div class="rn">'+p.label+'  <span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span></div>'
       +'<div class="rsub" style="margin-top:3px">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+'</div>'
       +(meta.length?'<div class="rsub mono" style="margin-top:3px;color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
       +'</div><div class="rr"><div class="p '+cl(mtm)+'">'+inr(mtm)+'</div><div class="c muted">'+p.holder+'</div></div></div>';
   }).join('');
+}
+/* ---- share detail: Screener Premium + price/volume on tap ---- */
+async function openShare(sym){
+  if(!sym)return;sym=(sym+'').toUpperCase();
+  document.getElementById('sh-sym').textContent=sym;
+  document.getElementById('sh-px').textContent='';
+  document.getElementById('sh-body').innerHTML='<div class="load">loading '+sym+'</div>';
+  document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on');
+  const [f,c]=await Promise.all([j('/fundamentals/'+encodeURIComponent(sym)+'?'+Q),j('/chart/'+encodeURIComponent(sym)+'?'+Q)]);
+  const ff=(f.ok&&f.d.fields)||{},conf=(f.ok&&f.d.confidence)||'',d=c.ok?c.d:{};
+  if(d.last!=null)document.getElementById('sh-px').innerHTML='<span class="'+cl(d.day_change_pct)+'">'+d.last+'  '+sp(d.day_change_pct)+'</span>';
+  const g=(k,v,suf)=>'<div class="fg"><div class="k">'+k+'</div><div class="v">'+(v!=null&&v!==''?v+(suf||''):'—')+'</div></div>';
+  const hasScr=Object.keys(ff).length>0;
+  let h='<div class="ssub">Screener fundamentals'+(hasScr?' · '+conf+' confidence':'')+'</div>';
+  if(hasScr){h+='<div class="fgrid">'+g('P/E',ff.pe)+g('P/B',ff.pb)+g('ROE',ff.roe,'%')+g('D/E',ff.de)+g('Promoter',ff.promoter_holding,'%')+g('Pledge',ff.pledge,'%')+'</div>';
+    if(ff.dividend_yield!=null)h+='<div class="fgrid" style="grid-template-columns:1fr">'+g('Dividend yield',ff.dividend_yield,'%')+'</div>';}
+  else h+='<div class="fg" style="border:1px solid var(--n300)"><div class="k" style="color:var(--down)">not in Screener export</div><div class="rsub" style="margin-top:4px">Upload your Screener Premium sheet (classic dashboard) to see P/E, ROE, D/E, pledge…</div></div>';
+  h+='<div class="ssub">Price / volume action</div><div class="fgrid">'
+    +g('Day range',(d.day_low!=null?d.day_low+'–'+d.day_high:null))+g('52-wk',(d.wk52_low!=null?d.wk52_low+'–'+d.wk52_high:null))+g('From 52wH',d.from_52w_high_pct,'%')
+    +g('Volume',d.vol_x,'×')+g('RSI 14',d.rsi14)+g('Trend',(d.above_200dma==null?null:(d.above_200dma?'above 200D':'below 200D')))+'</div>';
+  const lv=d.levels||{};
+  if(lv.support||lv.resistance)h+='<div class="ssub">Levels</div><div class="fgrid">'+g('Support',lv.support)+g('Pivot',lv.pivot)+g('Resistance',lv.resistance)+'</div>';
+  document.getElementById('sh-body').innerHTML=h;
+}
+function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
+function renderHoldings(p){
+  const box=document.getElementById('hold-list');if(!box)return;
+  const rows=allHoldings(p).filter(x=>Math.abs(x.mv)>=1000).sort((a,b)=>b.mv-a.mv);
+  document.getElementById('hold-n').textContent=rows.length+' · tap for Screener';
+  box.innerHTML=rows.map(x=>'<div class="row" onclick="openShare(\''+x.s+'\')" style="cursor:pointer">'
+    +'<div style="flex:1;min-width:0"><div class="rn">'+x.s+' <span class="rsub">'+(x.hold||'')+'</span></div></div>'
+    +'<div class="rr"><div class="p">'+inr(x.mv)+'</div><div class="c '+cl(x.pct)+'">'+sp(x.pct)+'</div></div></div>').join('')||'<div class="load">no holdings</div>';
 }
 let newsLoaded=0,setLoaded=0,ideasLoaded=0;
 async function loadIdeas(){
@@ -270,7 +323,7 @@ async function loadIdeas(){
   if(!ii.length){box.innerHTML='<div class="load">No high-conviction setups right now — the bar is intentionally high.</div>';return;}
   box.innerHTML=ii.map(i=>{
     const flag=(i.flags&&i.flags.length)?(i.flags[0].text||i.flags[0]):'';
-    return '<div class="row" style="flex-direction:column;align-items:stretch;gap:8px">'
+    return '<div class="row" onclick="openShare(\''+i.symbol+'\')" style="flex-direction:column;align-items:stretch;gap:8px;cursor:pointer">'
       +'<div style="display:flex;align-items:baseline"><span class="rn" style="font-size:16px;font-weight:600">'+i.symbol+'</span>'
       +'<span class="rsub" style="margin-left:9px;border:1px solid var(--n400);padding:1px 6px">'+i.horizon+'</span>'
       +'<span class="mono" style="margin-left:auto;font-weight:600;color:var(--a700)">CONV '+i.conviction+'</span></div>'
