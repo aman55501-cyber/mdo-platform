@@ -1659,6 +1659,104 @@ async def holdings_volume(request: Request, top: int = 12,
     return result
 
 
+def _cap_bucket(mcap: float | None) -> str:
+    """Absolute ₹-crore market-cap buckets (SEBI-ish; tweak thresholds here)."""
+    if mcap is None:
+        return "Unclassified"
+    if mcap >= 50000:
+        return "Large"
+    if mcap >= 10000:
+        return "Mid"
+    if mcap >= 1000:
+        return "Small"
+    return "Micro"
+
+
+_CAP_ORDER = {"Large": 0, "Mid": 1, "Small": 2, "Micro": 3, "Unclassified": 4}
+
+
+@app.get("/holdings/grouped")
+async def holdings_grouped(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Holdings bucketed by market-cap AND by themed sector, each group with value /
+    day% / unrealised P&L and the stocks inside (name, qty, avg, LTP, P&L, weight)."""
+    _check_token(request, token)
+    from .analysis import fundamentals
+    from . import themes
+    book = await _consolidated()
+    caps = await asyncio.to_thread(fundamentals.market_caps)  # file read, off the loop
+
+    agg: dict = {}
+    for a in book.get("accounts", []):
+        if a.get("ok") is False:
+            continue
+        holder = a.get("label") or a.get("creds_key")
+        for h in a.get("holdings", []):
+            sym = _clean_symbol(h.get("ticker", ""))
+            if not sym:
+                continue
+            o = agg.setdefault(sym, {"symbol": sym, "qty": 0.0, "value": 0.0, "invested": 0.0,
+                                     "day_change": 0.0, "sector": h.get("sector"),
+                                     "last_price": h.get("last_price"), "holders": set()})
+            qty = h.get("quantity") or 0
+            o["qty"] += qty
+            o["value"] += h.get("market_value") or 0
+            o["invested"] += (h.get("average_price") or 0) * qty
+            o["day_change"] += h.get("day_change") or 0
+            if h.get("last_price"):
+                o["last_price"] = h.get("last_price")
+            o["holders"].add(holder)
+
+    total = sum(o["value"] for o in agg.values()) or 1.0
+    stocks = []
+    for o in agg.values():
+        mcap = caps.get(o["symbol"])
+        prev = o["value"] - o["day_change"]
+        stocks.append({
+            "symbol": o["symbol"], "qty": round(o["qty"], 2),
+            "value": round(o["value"], 2), "invested": round(o["invested"], 2),
+            "unrealised": round(o["value"] - o["invested"], 2),
+            "unrealised_pct": round((o["value"] / o["invested"] - 1) * 100, 2) if o["invested"] else 0.0,
+            "day_change": round(o["day_change"], 2),
+            "day_pct": round(o["day_change"] / prev * 100, 2) if prev else 0.0,
+            "weight": round(o["value"] / total * 100, 2),
+            "last_price": o["last_price"],
+            "avg_price": round(o["invested"] / o["qty"], 2) if o["qty"] else None,
+            "market_cap": mcap, "cap": _cap_bucket(mcap),
+            "sector": themes.theme_of(o["symbol"], o["sector"]),
+            "holders": sorted(o["holders"]),
+        })
+
+    def _group(key: str) -> list:
+        groups: dict = {}
+        for s in stocks:
+            g = groups.setdefault(s[key], {"name": s[key], "value": 0.0, "invested": 0.0,
+                                           "day_change": 0.0, "count": 0, "stocks": []})
+            g["value"] += s["value"]
+            g["invested"] += s["invested"]
+            g["day_change"] += s["day_change"]
+            g["count"] += 1
+            g["stocks"].append(s)
+        out = []
+        for g in groups.values():
+            prev = g["value"] - g["day_change"]
+            g["stocks"].sort(key=lambda x: -x["value"])
+            out.append({"name": g["name"], "value": round(g["value"], 2),
+                        "day_change": round(g["day_change"], 2),
+                        "day_pct": round(g["day_change"] / prev * 100, 2) if prev else 0.0,
+                        "unrealised": round(g["value"] - g["invested"], 2),
+                        "unrealised_pct": round((g["value"] / g["invested"] - 1) * 100, 2) if g["invested"] else 0.0,
+                        "weight": round(g["value"] / total * 100, 2),
+                        "count": g["count"], "stocks": g["stocks"]})
+        return out
+
+    by_cap = _group("cap")
+    by_cap.sort(key=lambda g: _CAP_ORDER.get(g["name"], 9))
+    by_sector = _group("sector")
+    by_sector.sort(key=lambda g: -g["value"])
+    return {"as_of": book.get("as_of"), "total": round(total, 2),
+            "by_cap": by_cap, "by_sector": by_sector, "screener_loaded": bool(caps)}
+
+
 @app.get("/analysis/{ticker}")
 async def analysis(request: Request, ticker: str, token: str | None = Query(default=None)) -> dict:
     """Technical read for one NSE symbol (e.g. /analysis/COALINDIA). Free (yfinance)."""

@@ -21,9 +21,14 @@ COLMAP = {
     "pb": ["Price to book value", "P/B"],
     "de": ["Debt to equity", "D/E"],
     "roe": ["Return on equity", "ROE %", "ROE"],
+    "roce": ["Return on capital employed", "ROCE %", "ROCE"],
+    "industry_pe": ["Industry PE", "Industry Pe", "Industry P/E", "Industry P/E ratio"],
     "promoter_holding": ["Promoter holding %", "Promoter holding", "Promoter"],
     "pledge": ["Pledged percentage", "Promoter pledge", "Pledged"],
     "dividend_yield": ["Dividend yield", "Div Yld %"],
+    # Screener exports market cap in ₹ Crore — used to bucket holdings large/mid/small/micro.
+    "market_cap": ["Market Capitalization", "Market Cap", "Market capitalization",
+                   "Mar Cap Rs.Cr", "Mar Cap", "Market Cap Rs.Cr"],
 }
 
 
@@ -151,6 +156,29 @@ def load_universe() -> list[dict]:
         fields = _map_row(row)
         if fields:
             out.append({"symbol": name.split()[0], "name": name, "fields": fields})
+    return out
+
+
+def market_caps() -> dict:
+    """{NSE_SYMBOL: market_cap_in_cr} from the latest export, to bucket holdings by size.
+
+    Keyed by the NSE code (the actual ticker) so it matches broker holdings symbols,
+    falling back to the name-derived symbol when a sheet lacks an NSE-code column.
+    """
+    latest = _latest_file()
+    if not latest:
+        return {}
+    out: dict = {}
+    for row in _rows_from_file(latest):
+        mc = _map_row(row).get("market_cap")
+        if mc is None:
+            continue
+        code = str(row.get("NSE Code") or row.get("Symbol") or "").strip().upper()
+        if not code:
+            nm = _row_name(row)
+            code = nm.split()[0] if nm else ""
+        if code:
+            out[code] = mc
     return out
 
 

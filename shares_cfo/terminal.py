@@ -88,6 +88,11 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .rr{margin-left:auto;text-align:right}
 .rr .p{font-family:var(--fm);font-weight:600}.rr .c{font-family:var(--fm);font-size:11px}
 .bar{height:4px;background:var(--n200);margin-top:5px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--acc)}
+.gtog{display:flex;gap:0;border:1px solid var(--n300);margin:0 13px 4px}
+.gtog button{flex:1;background:0;border:0;color:var(--n500);font-family:var(--fh);text-transform:uppercase;letter-spacing:.08em;font-size:11px;font-weight:600;padding:9px 0;cursor:pointer}
+.gtog button.on{background:var(--acc);color:#fff}
+.grow{display:flex;align-items:center;gap:10px;padding:12px 13px;border-top:1px solid var(--n200);min-height:56px;cursor:pointer}
+.grow:hover{background:var(--n100)}
 /* heatmap */
 .heat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200)}
 .hc{background:var(--panel);padding:10px 9px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between}
@@ -341,11 +346,30 @@ async function openShare(sym){
   const ff=(f.ok&&f.d.fields)||{},conf=(f.ok&&f.d.confidence)||'',d=c.ok?c.d:{};
   if(d.last!=null)document.getElementById('sh-px').innerHTML='<span class="'+cl(d.day_change_pct)+'">'+d.last+'  '+sp(d.day_change_pct)+'</span>';
   const g=(k,v,suf)=>'<div class="fg"><div class="k">'+k+'</div><div class="v">'+(v!=null&&v!==''?v+(suf||''):'—')+'</div></div>';
+  const mcf=c=>c==null?'—':(c>=100000?'₹'+(c/100000).toFixed(2)+'L Cr':'₹'+Math.round(c).toLocaleString('en-IN')+' Cr');
+  const pos=POSMAP[sym];
+  let h='';
+  if(pos){const pnl=pos.unrealised>=0,dp=pos.day_change>=0;
+    h+='<div class="ssub">Your position</div>'
+      +'<div class="fgrid">'+g('Qty',pos.qty)+g('Avg',pos.avg_price)+g('LTP',pos.last_price)+'</div>'
+      +'<div class="fgrid">'+g('Invested',inr(pos.invested))+g('Value',inr(pos.value))+g('Weight',pos.weight,'%')+'</div>'
+      +'<div class="fgrid" style="grid-template-columns:1fr 1fr">'
+      +'<div class="fg"><div class="k">Unrealised P&L</div><div class="v '+(pnl?'up':'down')+'">'+(pnl?'+':'')+inr(pos.unrealised)+' ('+(pnl?'+':'')+pos.unrealised_pct+'%)</div></div>'
+      +'<div class="fg"><div class="k">Day P&L</div><div class="v '+cl(pos.day_pct)+'">'+(dp?'+':'')+inr(pos.day_change)+' ('+sp(pos.day_pct)+')</div></div></div>'
+      +'<div class="fgrid" style="grid-template-columns:1fr 1fr">'+g('Cap',pos.cap)+g('Sector',pos.sector)+'</div>'
+      +(pos.holders&&pos.holders.length?'<div class="rsub" style="margin-top:6px">Held in: '+pos.holders.join(', ')+'</div>':'');}
   const hasScr=Object.keys(ff).length>0;
-  let h='<div class="ssub">Screener fundamentals'+(hasScr?' · '+conf+' confidence':'')+'</div>';
-  if(hasScr){h+='<div class="fgrid">'+g('P/E',ff.pe)+g('P/B',ff.pb)+g('ROE',ff.roe,'%')+g('D/E',ff.de)+g('Promoter',ff.promoter_holding,'%')+g('Pledge',ff.pledge,'%')+'</div>';
-    if(ff.dividend_yield!=null)h+='<div class="fgrid" style="grid-template-columns:1fr">'+g('Dividend yield',ff.dividend_yield,'%')+'</div>';}
-  else h+='<div class="fg" style="border:1px solid var(--n300)"><div class="k" style="color:var(--down)">not in Screener export</div><div class="rsub" style="margin-top:4px">Upload your Screener Premium sheet (classic dashboard) to see P/E, ROE, D/E, pledge…</div></div>';
+  const peCmp=(ff.pe!=null&&ff.industry_pe!=null)?(ff.pe<ff.industry_pe?'up':'down'):'';
+  h+='<div class="ssub">Screener fundamentals'+(hasScr?' · '+conf+' confidence':'')+'</div>';
+  if(hasScr){
+    h+='<div class="fgrid">'
+      +'<div class="fg"><div class="k">P/E · Ind</div><div class="v '+peCmp+'">'+(ff.pe!=null?ff.pe:'—')+' · '+(ff.industry_pe!=null?ff.industry_pe:'—')+'</div></div>'
+      +g('P/B',ff.pb)+g('ROE',ff.roe,'%')+g('ROCE',ff.roce,'%')+g('D/E',ff.de)
+      +'<div class="fg"><div class="k">Mkt Cap</div><div class="v">'+mcf(pos&&pos.market_cap!=null?pos.market_cap:ff.market_cap)+'</div></div>'+'</div>'
+      +'<div class="fgrid">'+g('Promoter',ff.promoter_holding,'%')+g('Pledge',ff.pledge,'%')+g('Div yld',ff.dividend_yield,'%')+'</div>'
+      +(peCmp?'<div class="rsub" style="margin-top:6px">P/E '+(peCmp==='up'?'below':'above')+' industry median — '+(peCmp==='up'?'cheaper vs peers':'richer vs peers')+'.</div>':'');
+  }
+  else h+='<div class="fg" style="border:1px solid var(--n300)"><div class="k" style="color:var(--down)">not in Screener export</div><div class="rsub" style="margin-top:4px">Upload your Screener Premium sheet to see P/E vs industry, ROE, ROCE, D/E, pledge…</div></div>';
   h+='<div class="ssub">Price / volume action</div><div class="fgrid">'
     +g('Day range',(d.day_low!=null?d.day_low+'–'+d.day_high:null))+g('52-wk',(d.wk52_low!=null?d.wk52_low+'–'+d.wk52_high:null))+g('From 52wH',d.from_52w_high_pct,'%')
     +g('Volume',d.vol_x,'×')+g('RSI 14',d.rsi14)+g('Trend',(d.above_200dma==null?null:(d.above_200dma?'above 200D':'below 200D')))+'</div>';
@@ -420,13 +444,45 @@ async function loadOrderBook(){const box=document.getElementById('ob-list');if(!
   const ev=(r.ok&&r.d.events)||[];if(!ev.length){box.innerHTML='<div class="load">No orders yet.</div>';return;}
   box.innerHTML=ev.slice(0,20).map(e=>{const o=e.order||{},side=o.side||'';
     return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,' '))+(o.risk_reward?' · R:R '+o.risk_reward:'')+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');}
-function renderHoldings(p){
-  const box=document.getElementById('hold-list');if(!box)return;
-  const rows=allHoldings(p).filter(x=>Math.abs(x.mv)>=1000).sort((a,b)=>b.mv-a.mv);
-  document.getElementById('hold-n').textContent=rows.length+' · tap for Screener';
-  box.innerHTML=rows.map(x=>'<div class="row" onclick="openShare(\''+x.s+'\')" style="cursor:pointer">'
-    +'<div style="flex:1;min-width:0"><div class="rn">'+x.s+' <span class="rsub">'+(x.hold||'')+'</span></div></div>'
-    +'<div class="rr"><div class="p">'+inr(x.mv)+'</div><div class="c '+cl(x.pct)+'">'+sp(x.pct)+'</div></div></div>').join('')||'<div class="load">no holdings</div>';
+/* Holdings are shown grouped (market-cap or sector), each group drilling into its
+   stocks, then into the enriched share page. Data from /holdings/grouped. */
+let GROUPED=null,GVIEW='cap',POSMAP={};
+function renderHoldings(p){loadGrouped();}   // kicks off the grouped fetch on each home refresh
+async function loadGrouped(){
+  const r=await j('/holdings/grouped?'+Q);const box=document.getElementById('hold-list');if(!box)return;
+  if(!r.ok){if(!GROUPED)box.innerHTML='<div class="load">could not load</div>';return;}
+  GROUPED=r.d;POSMAP={};
+  ((GROUPED.by_cap&&GROUPED.by_cap.length?GROUPED.by_cap:GROUPED.by_sector)||[]).forEach(g=>(g.stocks||[]).forEach(s=>{POSMAP[s.symbol]=s;}));
+  renderGrouped();
+}
+function setGView(v){GVIEW=v;renderGrouped();}
+function renderGrouped(){
+  if(!GROUPED)return;const box=document.getElementById('hold-list');
+  const groups=(GVIEW==='cap'?GROUPED.by_cap:GROUPED.by_sector)||[];
+  document.getElementById('hold-n').textContent=(GROUPED.total?inr(GROUPED.total):'')+' · tap a group';
+  const tog='<div class="gtog"><button class="'+(GVIEW==='cap'?'on':'')+'" onclick="setGView(\'cap\')">Market Cap</button><button class="'+(GVIEW==='sector'?'on':'')+'" onclick="setGView(\'sector\')">Sector</button></div>';
+  const rows=groups.map((g,i)=>{const pnl=g.unrealised>=0;
+    return '<div class="grow" onclick="drillGroup('+i+')"><div style="flex:1;min-width:0">'
+      +'<div class="rn">'+g.name+' <span class="rsub">'+g.count+' · '+g.weight+'%</span></div>'
+      +'<div class="bar"><i style="width:'+Math.min(100,g.weight)+'%"></i></div></div>'
+      +'<div class="rr"><div class="p">'+inr(g.value)+'</div><div class="c '+cl(g.day_pct)+'">'+sp(g.day_pct)+'</div>'
+      +'<div class="rsub '+(pnl?'up':'down')+'">'+(pnl?'+':'')+inr(g.unrealised)+'</div></div></div>';}).join('')||'<div class="load">no holdings</div>';
+  let extra='';
+  if(GROUPED.screener_loaded===false&&GVIEW==='cap')extra='<div class="rsub" style="padding:10px 13px;color:var(--warn)">Cap buckets need a Screener export — upload one to classify large/mid/small/micro. Sector view works without it.</div>';
+  box.innerHTML=tog+rows+extra;
+}
+function drillGroup(i){
+  const groups=(GVIEW==='cap'?GROUPED.by_cap:GROUPED.by_sector)||[];const g=groups[i];if(!g)return;
+  document.getElementById('sh-sym').textContent=g.name;
+  document.getElementById('sh-px').innerHTML=inr(g.value)+' · <span class="'+cl(g.day_pct)+'">'+sp(g.day_pct)+'</span> · '+g.count+' stocks';
+  document.getElementById('sh-body').innerHTML=(g.stocks||[]).map(s=>{const pnl=s.unrealised>=0;
+    return '<div class="row" onclick="openShare(\''+s.symbol+'\')" style="cursor:pointer"><div style="flex:1;min-width:0">'
+      +'<div class="rn">'+s.symbol+' <span class="rsub">'+s.qty+' × '+inr(s.last_price)+'</span></div>'
+      +'<div class="rsub">'+(s.holders||[]).join(', ')+(GVIEW==='sector'&&s.cap?' · '+s.cap:'')+' · '+s.weight+'%</div></div>'
+      +'<div class="rr"><div class="p">'+inr(s.value)+'</div><div class="c '+cl(s.day_pct)+'">'+sp(s.day_pct)+'</div>'
+      +'<div class="rsub '+(pnl?'up':'down')+'">'+(pnl?'+':'')+inr(s.unrealised)+' ('+(pnl?'+':'')+s.unrealised_pct+'%)</div></div></div>';}).join('')
+      ||'<div class="load">no stocks</div>';
+  document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on');
 }
 function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
 /* ---- income engine (covered calls + cash puts, guarded one-tap) ---- */
