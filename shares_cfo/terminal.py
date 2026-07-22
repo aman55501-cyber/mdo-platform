@@ -97,6 +97,8 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .rchip.dgr{color:var(--down);border-color:var(--down)}
 .rchip.wch{color:var(--warn);border-color:var(--warn)}
 .row.dngr{border-left:2px solid var(--down)}.row.wtch{border-left:2px solid var(--warn)}
+.livedot{width:7px;height:7px;border-radius:50%;background:var(--up);display:inline-block;animation:lp 1.6s ease-in-out infinite}
+@keyframes lp{0%,100%{opacity:1}50%{opacity:.25}}
 /* heatmap */
 .heat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200)}
 .hc{background:var(--panel);padding:10px 9px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between}
@@ -194,10 +196,14 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-positions"><div class="wrap">
-    <div class="panel span2"><div class="pb" style="display:flex;gap:20px">
-      <div><div class="lbl">Today</div><div class="mono" id="pos-day" style="font-size:20px;font-weight:600">—</div></div>
-      <div><div class="lbl">Open MTM</div><div class="mono" id="pos-real" style="font-size:20px;font-weight:600">—</div></div>
-      <div style="margin-left:auto;text-align:right"><div class="lbl">F&amp;O legs</div><div class="mono" id="pos-n" style="font-size:20px;font-weight:600">—</div></div>
+    <div class="panel span2"><div class="pb">
+      <div style="display:flex;align-items:baseline;gap:8px"><span class="lbl">Live P&amp;L</span><span class="livedot" id="pos-live"></span><span class="lbl" id="pos-updated" style="margin-left:auto;text-transform:none;color:var(--n500)"></span></div>
+      <div class="mono" id="pos-net" style="font-size:32px;font-weight:600;letter-spacing:-.5px;margin-top:2px">—</div>
+      <div style="display:flex;gap:20px;margin-top:12px">
+        <div><div class="lbl">Today</div><div class="mono" id="pos-day" style="font-size:17px;font-weight:600">—</div></div>
+        <div><div class="lbl">Open MTM</div><div class="mono" id="pos-real" style="font-size:17px;font-weight:600">—</div></div>
+        <div style="margin-left:auto;text-align:right"><div class="lbl">F&amp;O legs</div><div class="mono" id="pos-n" style="font-size:17px;font-weight:600">—</div></div>
+      </div>
     </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl">audit log</span></div><div id="ob-list"><div class="load">—</div></div></div>
@@ -341,9 +347,12 @@ async function loadPositions(){
   const box=document.getElementById('pos-list');const r=await j('/positions/live?'+Q);
   if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}
   const d=r.d,ps=(d.positions||[]);
+  const net=d.realized_pnl||0;
+  document.getElementById('pos-net').innerHTML='<span class="'+cl(net)+'">'+(net>=0?'+':'')+inr(net)+'</span>';
   document.getElementById('pos-day').innerHTML='<span class="'+cl(d.day_pnl)+'">'+inr(d.day_pnl)+'</span>';
   document.getElementById('pos-real').innerHTML='<span class="'+cl(d.realized_pnl)+'">'+inr(d.realized_pnl)+'</span>';
   document.getElementById('pos-n').innerHTML=(d.fno_count||0)+(d.at_risk?' · <span class="down">'+d.at_risk+' at risk</span>':'');
+  try{const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());document.getElementById('pos-updated').textContent='updated '+t;}catch(e){}
   if(!ps.length){box.innerHTML='<div class="load">No open positions in HDFC1 / HDFC2. F&amp;O legs appear here live.</div>';return;}
   box.innerHTML=ps.map(p=>{
     const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;
@@ -360,7 +369,7 @@ async function loadPositions(){
       +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span class="rn">'+p.label+'</span>'
       +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span>'
       +(bu?'<span class="rsub '+buCls+'" style="border:1px solid var(--n400);padding:0 4px">'+bu+'</span>':'')
-      +riskChip+'<span class="p '+cl(mtm)+'" style="margin-left:auto;font-family:var(--fm);font-weight:600">'+inr(mtm)+'</span></div>'
+      +riskChip+'<span class="p '+cl(mtm)+'" style="margin-left:auto;font-family:var(--fm);font-weight:600">'+(mtm>=0?'+':'')+inr(mtm)+(p.pnl_pct!=null?' <span style="font-size:11px">('+(p.pnl_pct>=0?'+':'')+p.pnl_pct+'%)</span>':'')+'</span></div>'
       +'<div class="rsub">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+' · '+p.holder+'</div>'
       +(meta.length?'<div class="rsub mono" style="color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
       +(p.risk_why?'<div class="rsub" style="color:'+(danger?'var(--down)':'var(--warn)')+'">'+p.risk_why+'</div>':'')
@@ -681,4 +690,7 @@ async function heartbeat(){
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
 heartbeat();setInterval(heartbeat,30000);
+/* Positions tab refreshes faster (~12s) while open in market hours — real-time P&L. */
+setInterval(()=>{try{const on=document.querySelector('section.on');
+  if(on&&on.id==='s-positions'&&document.getElementById('mstat').textContent==='MARKET OPEN')loadPositions();}catch(e){}},12000);
 </script></body></html>"""

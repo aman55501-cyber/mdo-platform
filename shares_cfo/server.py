@@ -1709,6 +1709,10 @@ async def _live_positions() -> dict:
                         r["day_pnl"] = round(r["quantity"] * (ltp - prev), 2)
     # Real-time decision signals: OI trend vs session base, price+OI buildup, risk flag.
     for r in rows:
+        # Live P&L % on cost (direction-correct: pnl already carries the qty sign).
+        avg, qty = r.get("average_price") or 0, abs(r.get("quantity") or 0)
+        cost = avg * qty
+        r["pnl_pct"] = round((r.get("pnl") or 0) / cost * 100, 2) if cost else None
         if r["kind"] in ("option", "future"):
             r["oi_change"], r["oi_change_pct"] = _oi_trend(r.get("_atok"), r.get("oi"))
             r["buildup"] = _buildup(r.get("change_pct"), r.get("oi_change"))
