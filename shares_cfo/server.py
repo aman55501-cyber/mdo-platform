@@ -1350,14 +1350,9 @@ def _parse_contract(label: str) -> dict:
             "expiry": "", "kind": "equity"}
 
 
-@app.get("/positions/live")
-async def positions_live(request: Request, token: str | None = Query(default=None)) -> dict:
-    """Live F&O positions across accounts, enriched with Angel LTP / OI / volume.
-
-    Base position (qty, avg, LTP, P&L) comes from each broker; OI + volume + live
-    price-change are added from Angel's FULL quote where the contract resolves.
-    """
-    _check_token(request, token)
+async def _live_positions() -> dict:
+    """Live F&O positions across accounts, enriched with Angel LTP/OI/volume + MTM.
+    Reusable core (endpoint + proactive agent both call this)."""
     from .brokers import angel_scrip
     book = await _consolidated()
     # 1) collapse duplicate legs (HDFC returns net + day rows for the same contract)
@@ -1415,6 +1410,13 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
             "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
             "note": "MTM P&L + today's move computed from Angel's live price; OI + volume from "
                     "Angel FULL quote on the matched-expiry NFO contract."}
+
+
+@app.get("/positions/live")
+async def positions_live(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live F&O positions across accounts, enriched with Angel LTP / OI / volume."""
+    _check_token(request, token)
+    return await _live_positions()
 
 
 @app.get("/debug/hdfc-positions")
@@ -2140,15 +2142,8 @@ def _horizon(sessions) -> str:
     return "Positional · 1 mo+"
 
 
-@app.get("/ideas/high-conviction")
-def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
-                          token: str | None = Query(default=None)) -> dict:
-    """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R.
-
-    Fundamentals (Screener) rank the universe; technicals + a backtested pattern set
-    conviction; strategy.signal defines the risk. Heavy (fetches candles) so cached.
-    """
-    _check_token(request, token)
+def _high_conviction(min_conviction: float = 62.0) -> dict:
+    """Core high-conviction scan (endpoint + proactive agent share this). Cached 15m."""
     import time
     if _HC_CACHE["data"] and (time.time() - _HC_CACHE["ts"]) < 900:
         return _HC_CACHE["data"]
@@ -2204,6 +2199,14 @@ def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
                     "defined-risk entry. Advisory — verify before acting."}
     _HC_CACHE.update(ts=time.time(), data=data)
     return data
+
+
+@app.get("/ideas/high-conviction")
+def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
+                          token: str | None = Query(default=None)) -> dict:
+    """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R."""
+    _check_token(request, token)
+    return _high_conviction(min_conviction)
 
 
 @app.get("/strategy/daily")

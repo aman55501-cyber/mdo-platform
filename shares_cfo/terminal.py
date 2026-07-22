@@ -179,6 +179,7 @@ a{color:var(--a700);text-decoration:none}
       <div style="margin-left:auto;text-align:right"><div class="lbl">F&amp;O legs</div><div class="mono" id="pos-n" style="font-size:20px;font-weight:600">—</div></div>
     </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl">audit log</span></div><div id="ob-list"><div class="load">—</div></div></div>
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
@@ -194,6 +195,20 @@ a{color:var(--a700);text-decoration:none}
 <div class="sheet" id="sheet"><div class="sgrab"></div>
   <div class="sh"><span class="ssym" id="sh-sym">—</span><span class="mono" id="sh-px" style="margin-left:auto;font-size:16px"></span></div>
   <div id="sh-body"><div class="load">loading</div></div>
+</div>
+
+<div class="scrim" id="tscrim" onclick="closeTicket()"></div>
+<div class="sheet" id="tsheet"><div class="sgrab"></div>
+  <div class="sh"><span class="ssym" id="tk-sym">—</span><span class="mono muted" id="tk-ltp" style="margin-left:auto;font-size:15px"></span></div>
+  <div style="display:flex;gap:6px;margin-top:12px"><button class="segb tk-side on" data-s="BUY" onclick="tkSide('BUY')" style="flex:1;padding:12px 0;font-size:13px">BUY</button><button class="segb tk-side" data-s="SELL" onclick="tkSide('SELL')" style="flex:1;padding:12px 0;font-size:13px">SELL</button></div>
+  <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkSet('product','CNC',this)">CNC</button><button class="segb tk-prod" onclick="tkSet('product','MIS',this)">MIS</button></div>
+  <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button></div>
+  <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
+  <div class="ssub">Quantity (shares)</div>
+  <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><span class="mono" id="tk-qty" style="font-size:22px;min-width:64px;text-align:center">1</span><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
+  <div id="tk-guard" class="fg" style="margin-top:14px;border:1px solid var(--n300);display:none"></div>
+  <button class="segb" id="tk-go" onclick="tkReview()" style="width:100%;padding:14px 0;margin-top:14px;font-size:13px">Review order</button>
+  <div class="rsub" style="margin-top:8px;color:var(--n500)">Guarded: propose → confirm. Nothing places unless the master switch is on.</div>
 </div>
 
 <div class="tabs" id="tabs">
@@ -327,10 +342,50 @@ async function openShare(sym){
     +g('Volume',d.vol_x,'×')+g('RSI 14',d.rsi14)+g('Trend',(d.above_200dma==null?null:(d.above_200dma?'above 200D':'below 200D')))+'</div>';
   const lv=d.levels||{};
   if(lv.support||lv.resistance)h+='<div class="ssub">Levels</div><div class="fgrid">'+g('Support',lv.support)+g('Pivot',lv.pivot)+g('Resistance',lv.resistance)+'</div>';
-  h+='<div style="margin-top:14px"><button class="segb" style="width:100%;padding:11px 0;font-size:12px" onclick="goChart(\''+sym+'\')">View chart →</button></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px">'
+    +'<button class="segb" style="flex:1;padding:12px 0;font-size:13px;color:var(--up);border-color:#1f5c46" onclick="openTicket(\''+sym+'\','+(d.last||0)+',\'BUY\')">Buy</button>'
+    +'<button class="segb" style="flex:1;padding:12px 0;font-size:13px;color:var(--down);border-color:#5c2b2b" onclick="openTicket(\''+sym+'\','+(d.last||0)+',\'SELL\')">Sell</button>'
+    +'<button class="segb" style="flex:1;padding:12px 0;font-size:13px" onclick="goChart(\''+sym+'\')">Chart</button></div>';
   document.getElementById('sh-body').innerHTML=h;
 }
 function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
+/* ---- order ticket (guarded: propose -> confirm) ---- */
+let TK={sym:'',ltp:0,side:'BUY',product:'CNC',ot:'MARKET',qty:1,pid:null,code:null};
+function openTicket(sym,ltp,side){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',product:'CNC',ot:'MARKET',qty:1,pid:null,code:null};
+  document.getElementById('tk-sym').textContent=TK.sym;document.getElementById('tk-ltp').textContent=TK.ltp?('LTP '+TK.ltp):'';
+  document.getElementById('tk-price').value=TK.ltp||'';document.getElementById('tk-qty').textContent='1';
+  document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===TK.side));
+  document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));
+  document.querySelectorAll('.tk-ot').forEach((b,i)=>b.classList.toggle('on',i===0));
+  document.getElementById('tk-price-wrap').style.display='none';document.getElementById('tk-guard').style.display='none';
+  document.getElementById('tk-go').textContent='Review order';tkVal();
+  document.getElementById('tscrim').classList.add('on');document.getElementById('tsheet').classList.add('on');}
+function closeTicket(){document.getElementById('tscrim').classList.remove('on');document.getElementById('tsheet').classList.remove('on');}
+function tkReset(){TK.pid=null;document.getElementById('tk-go').textContent='Review order';}
+function tkSide(s){TK.side=s;tkReset();document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===s));}
+function tkSet(k,v,el){TK[k]=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));}
+function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));document.getElementById('tk-price-wrap').style.display=v==='LIMIT'?'block':'none';tkVal();}
+function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').textContent=TK.qty;tkReset();tkVal();}
+function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;document.getElementById('tk-val').textContent=px?inr(TK.qty*px):'';}
+async function tkReview(){
+  if(TK.pid){return tkConfirm();}
+  const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const order={creds_key:angelKey(),exchange:'NSE',symbol:TK.sym,token:'',side:TK.side,quantity:TK.qty,product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym};
+  const g=document.getElementById('tk-guard');g.style.display='block';g.innerHTML='<div class="rsub">checking guardrails…</div>';
+  const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
+  if(r.ok){TK.pid=r.d.proposal_id;TK.code=r.d.confirm_code;g.innerHTML='<div class="rsub" style="color:var(--up)">Passes all guardrails.</div><div class="rsub" style="margin-top:4px">'+(r.d.review||'')+'</div>';document.getElementById('tk-go').textContent='Confirm '+TK.side+' →';}
+  else{g.innerHTML='<div class="rsub" style="color:var(--down)">Blocked: '+(r.d.detail||('error '+r.status))+'</div><div class="rsub" style="margin-top:4px;color:var(--n500)">Nothing sent — the guardrail did its job.</div>';tkReset();}
+}
+async function tkConfirm(){
+  const g=document.getElementById('tk-guard');document.getElementById('tk-go').textContent='Placing…';
+  const r=await j('/execution/confirm?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:TK.pid,confirm_code:TK.code})});
+  if(r.ok){g.innerHTML='<div class="rsub" style="color:var(--up)">✅ Order placed.</div>';document.getElementById('tk-go').textContent='Done';setTimeout(closeTicket,1200);loadOrderBook();}
+  else{g.innerHTML='<div class="rsub" style="color:var(--down)">'+(r.status===501?'Order-send pending broker enablement.':(r.d.detail||'Rejected.'))+'</div>';tkReset();}
+}
+async function loadOrderBook(){const box=document.getElementById('ob-list');if(!box)return;const r=await j('/execution/log?'+Q);
+  const ev=(r.ok&&r.d.events)||[];if(!ev.length){box.innerHTML='<div class="load">No orders yet.</div>';return;}
+  box.innerHTML=ev.slice(0,20).map(e=>{const o=e.order||{},side=o.side||'';
+    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,\' \'))+(o.risk_reward?' · R:R '+o.risk_reward:'')+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');}
 function renderHoldings(p){
   const box=document.getElementById('hold-list');if(!box)return;
   const rows=allHoldings(p).filter(x=>Math.abs(x.mv)>=1000).sort((a,b)=>b.mv-a.mv);
@@ -419,7 +474,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
-  if(t==='positions')loadPositions();
+  if(t==='positions'){loadPositions();loadOrderBook();}
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='chart'){if(!chartLoaded){chartLoaded=1;chartChips();}loadChart();}
@@ -434,5 +489,6 @@ async function heartbeat(){
   try{await loadHome();}catch(e){}
   try{const on=document.querySelector('section.on');if(on&&on.id==='s-positions')loadPositions();}catch(e){}
 }
+document.getElementById('tk-price').addEventListener('input',tkVal);
 heartbeat();setInterval(heartbeat,30000);
 </script></body></html>"""

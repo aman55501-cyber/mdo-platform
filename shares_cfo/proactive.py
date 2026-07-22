@@ -48,6 +48,13 @@ def _fresh(key: str, cooldown: float) -> bool:
     return True
 
 
+def _deeplink(tab: str = "") -> str:
+    base = os.environ.get("CFO_APP_URL", "").strip().rstrip("/")
+    if not base:
+        return ""
+    return f"\nOpen: {base}/#{tab}" if tab else f"\nOpen: {base}/"
+
+
 async def _push(title: str, body: str) -> None:
     from . import notify
     try:
@@ -55,6 +62,13 @@ async def _push(title: str, body: str) -> None:
         log.info("proactive push: %s", title)
     except Exception as exc:  # never let a push crash the loop
         log.warning("proactive push failed: %s", exc)
+
+
+async def _alert(level: str, entity: str, what: str, why: str, action: str, tab: str = "") -> None:
+    """Standard briefing format: 🔴/🟡/🟢 [ENTITY] What / WHY / ACTION (+ deep link)."""
+    title = f"{level} {entity} — {what}"
+    body = f"WHY: {why}\nACTION: {action}{_deeplink(tab)}"
+    await _push(title, body)
 
 
 def _inr(n: float) -> str:
@@ -94,13 +108,65 @@ async def _alert_movers(book: dict) -> None:
     for h in _holdings(book):
         if abs(h["mv"]) < 50000 or abs(h["pct"]) < thr:
             continue
-        # bucket the threshold so a stock only re-alerts on a bigger move, not every tick
-        bucket = int(abs(h["pct"]) // 2)
+        bucket = int(abs(h["pct"]) // 2)  # re-alert only on a bigger move, not every tick
         key = f"move:{h['sym']}:{'up' if h['pct']>=0 else 'dn'}:{bucket}"
         if _fresh(key, cooldown=3 * 3600):
-            arrow = "▲" if h["pct"] >= 0 else "▼"
-            await _push(f"{arrow} {h['sym']} {h['pct']:+.1f}%",
-                        f"{h['holder']} · {_inr(h['mv'])} · day {_inr(h['dc'])}")
+            up = h["pct"] >= 0
+            await _alert("🟡", h["sym"], f"{'▲' if up else '▼'} {h['pct']:+.1f}% today",
+                         f"{h['holder']} holds {_inr(h['mv'])}; day move {_inr(h['dc'])}.",
+                         "Review the position; check levels/OI before adding or trimming.",
+                         tab="portfolio")
+
+
+async def _alert_sessions(book: dict) -> None:
+    """A broker session dropped — the book is partial until re-login."""
+    deg = (book.get("book_health") or {}).get("degraded_accounts") or []
+    for a in deg:
+        key = f"session:{a.get('creds_key')}"
+        if _fresh(key, cooldown=2 * 3600):
+            await _alert("🔴", a.get("creds_key", "account"), "session logged out",
+                         "Net worth + positions are partial until this account re-authenticates.",
+                         "Open Login and re-auth (2FA on that holder's phone).", tab="login")
+
+
+async def _alert_drawdown() -> None:
+    """Any live F&O leg losing more than the cap — a risk event to act on."""
+    cap = float(os.environ.get("CFO_ALERT_DRAWDOWN", "50000") or 50000)
+    try:
+        from .server import _live_positions
+        data = await _live_positions()
+    except Exception:
+        return
+    for p in data.get("positions", []):
+        pnl = p.get("pnl") or 0
+        if pnl >= -cap:
+            continue
+        bucket = int(abs(pnl) // cap)  # re-alert as the loss deepens by another cap
+        key = f"dd:{p.get('label')}:{bucket}"
+        if _fresh(key, cooldown=2 * 3600):
+            await _alert("🔴", p.get("label", "position"), f"drawdown {_inr(pnl)}",
+                         f"{p.get('holder')} · qty {p.get('quantity')} @ {p.get('average_price')}, "
+                         f"LTP {p.get('last_price')}. Loss past ₹{int(cap):,}.",
+                         "Decide: cut, hedge, or hold with a hard stop. Agent never auto-exits.",
+                         tab="positions")
+
+
+async def _alert_ideas() -> None:
+    """A fresh high-conviction setup appeared."""
+    try:
+        from .server import _high_conviction
+        data = await asyncio.to_thread(_high_conviction)
+    except Exception:
+        return
+    day = _now().strftime("%Y-%m-%d")
+    for i in (data.get("ideas") or [])[:5]:
+        key = f"idea:{day}:{i.get('symbol')}"
+        if _fresh(key, cooldown=8 * 3600):
+            await _alert("🟢", i.get("symbol", "idea"),
+                         f"high-conviction {int(i.get('conviction',0))} · {i.get('horizon','')}",
+                         f"{i.get('pattern','setup')} · {i.get('hit_rate','?')}% hit · F{i.get('fundamental_score')}/T{i.get('technical_score')}.",
+                         f"Entry {i.get('entry')} · SL {i.get('stop_loss')} · TGT {i.get('target')} · R:R {i.get('reward_risk')}. Verify, then size.",
+                         tab="ideas")
 
 
 async def _alert_regime() -> None:
@@ -114,8 +180,11 @@ async def _alert_regime() -> None:
         prev = _STATE["regime"]
         _STATE["regime"] = label
         if prev is not None and _fresh(f"regime:{label}", cooldown=6 * 3600):
-            await _push(f"Regime → {label.upper()}",
-                        f"{r.get('emoji','')} risk budget {r.get('risk_budget_pct')}% · {r.get('tilt','')}")
+            lvl = "🔴" if label == "stressed" else "🟢" if label == "calm" else "🟡"
+            await _alert(lvl, "MARKET", f"regime {prev} → {label}",
+                         f"India VIX + trend shifted. {r.get('tilt','')}",
+                         f"Size new risk to {r.get('risk_budget_pct')}% budget; keep hedges ready.",
+                         tab="chart")
 
 
 async def _daily(book: dict, now: datetime) -> None:
@@ -152,20 +221,26 @@ def start(get_book) -> None:
             log.info("proactive agent idle — no notification channel configured")
             return
         await _push("Shares CFO", "Proactive agent armed — alerts on during market hours.")
+        cycle = 0
         while True:
             delay = 300
             try:
                 now = _now()
                 book = await get_book()
                 await _daily(book, now)
+                await _alert_sessions(book)          # a dropped session matters anytime
                 if _market_open(now):
                     await _alert_movers(book)
                     await _alert_regime()
-                    delay = 300      # 5 min while the market is open
+                    await _alert_drawdown()          # live F&O leg losses
+                    if cycle % 6 == 0:               # heavy scan ~every 30 min
+                        await _alert_ideas()
+                    delay = 300                      # 5 min while the market is open
                 else:
-                    delay = 1200     # 20 min when closed
+                    delay = 1200                     # 20 min when closed
             except Exception as exc:
                 log.warning("proactive cycle error: %s", exc)
+            cycle += 1
             await asyncio.sleep(delay)
 
     try:
