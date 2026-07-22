@@ -151,6 +151,32 @@ async def _alert_drawdown() -> None:
                          tab="positions")
 
 
+async def _alert_fno_moves() -> None:
+    """Live F&O watch during market hours: a sharp price move or an OI build-up/unwind on
+    any open leg is worth a nudge even before it hits the drawdown cap."""
+    move_thr = float(os.environ.get("CFO_FNO_MOVE_PCT", "8") or 8)
+    try:
+        from .server import _live_positions
+        data = await _live_positions()
+    except Exception:
+        return
+    for p in data.get("positions", []):
+        if p.get("kind") not in ("option", "future"):
+            continue
+        chg = p.get("change_pct")
+        if chg is None or abs(chg) < move_thr:
+            continue
+        bucket = int(abs(chg) // move_thr)  # re-alert only on a bigger move
+        key = f"fno:{p.get('label')}:{'up' if chg >= 0 else 'dn'}:{bucket}"
+        if _fresh(key, cooldown=2 * 3600):
+            oi = p.get("oi")
+            oi_txt = f" · OI {oi:,}" if isinstance(oi, (int, float)) else ""
+            await _alert("🟡", p.get("label", "F&O"), f"{'▲' if chg >= 0 else '▼'} {chg:+.1f}% intraday",
+                         f"{p.get('holder')} · qty {p.get('quantity')} @ {p.get('average_price')}, "
+                         f"LTP {p.get('last_price')}{oi_txt}. MTM {_inr(p.get('pnl'))}.",
+                         "Live leg moving — check the chain/OI and your stop.", tab="positions")
+
+
 async def _alert_ideas() -> None:
     """A fresh high-conviction setup appeared."""
     try:
@@ -232,10 +258,11 @@ def start(get_book) -> None:
                 if _market_open(now):
                     await _alert_movers(book)
                     await _alert_regime()
-                    await _alert_drawdown()          # live F&O leg losses
-                    if cycle % 6 == 0:               # heavy scan ~every 30 min
+                    await _alert_drawdown()          # live F&O leg losses (tightened cadence)
+                    await _alert_fno_moves()         # live F&O OI/price shifts on open legs
+                    if cycle % 10 == 0:              # heavy scan ~every 30 min
                         await _alert_ideas()
-                    delay = 300                      # 5 min while the market is open
+                    delay = 180                      # 3 min while the market is open (was 5)
                 else:
                     delay = 1200                     # 20 min when closed
             except Exception as exc:

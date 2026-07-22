@@ -322,6 +322,26 @@ def fut_contract(symbol: str, expiry: str = "") -> dict | None:
             "tradingsymbol": n.get("sym", ""), "expiry": exp}
 
 
+# Current (SEBI-revised) lot sizes — a fallback only for when the scrip master isn't
+# loaded yet. The scrip master is always the source of truth; these change periodically
+# (BANKNIFTY was 15→25→35, MIDCPNIFTY etc.), so never hardcode them at call sites.
+_LOT_FALLBACK = {"NIFTY": 75, "BANKNIFTY": 35, "FINNIFTY": 65, "MIDCPNIFTY": 140,
+                 "NIFTYNXT50": 25, "SENSEX": 20, "BANKEX": 30}
+
+
+def lot_size(underlying: str, expiry: str = "") -> int:
+    """The REAL current lot size for an underlying, from the futures scrip master.
+
+    Lots are revised by the exchange periodically, so read them live rather than
+    hardcoding. Falls back to a small known-lots table only if the master is offline.
+    """
+    name = (underlying or "").strip().upper()
+    c = fut_contract(name, expiry)
+    if c and c.get("lot"):
+        return int(c["lot"])
+    return int(_LOT_FALLBACK.get(name, 0)) or 0
+
+
 def option_full(tokens: list[str]) -> dict:
     """{token: {'ltp':float,'oi':int}} via Angel FULL quote (LTP + open interest)."""
     from ..config import get_accounts, load_account

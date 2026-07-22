@@ -2035,7 +2035,10 @@ async def options_strategy(request: Request, name: str = "bull_call_spread",
 
     sym = "^NSEBANK" if underlying.upper() in ("BANKNIFTY", "NIFTYBANK") else "^NSEI"
     step = 100.0 if sym == "^NSEBANK" else 50.0
-    lot = 15 if sym == "^NSEBANK" else 75
+    # Real current lot from the scrip master (BANKNIFTY 35, NIFTY 75, …) — never hardcode;
+    # the exchange revises these. Falls back to a known table only if the master is offline.
+    from .brokers import angel_scrip
+    lot = angel_scrip.lot_size("BANKNIFTY" if sym == "^NSEBANK" else "NIFTY") or (35 if sym == "^NSEBANK" else 75)
     try:
         spot = get_spot(sym)
     except PriceDataUnavailable as exc:

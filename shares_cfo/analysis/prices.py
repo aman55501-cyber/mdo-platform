@@ -19,12 +19,15 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     """
     # Provider chain: EODHD (great for indices), then Angel (NSE stocks — EODHD
     # doesn't license NSE equity data), then yfinance as a last resort.
+    tried: list[str] = []  # why each source was skipped/failed, for an actionable error
     from . import eodhd
     if eodhd.enabled():
         try:
             return eodhd.get_ohlcv(symbol, exchange, period)
-        except Exception:
-            pass
+        except Exception as exc:
+            tried.append(f"EODHD failed ({str(exc)[:60]})")
+    else:
+        tried.append("EODHD off (no CFO_EODHD_API_KEY)")
     if not symbol.startswith("^"):  # stocks: try Angel candles
         try:
             from ..brokers import angel_scrip
@@ -32,8 +35,9 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
             res = angel_scrip.get_candles(symbol, days=days)
             if res and res.get("closes"):
                 return res
-        except Exception:
-            pass
+            tried.append("Angel returned no candles (logged in?)")
+        except Exception as exc:
+            tried.append(f"Angel candles failed ({str(exc)[:60]})")
 
     try:
         import yfinance as yf  # lazy: keeps the core server runnable without it
@@ -54,12 +58,18 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
         df = yf.download(yf_symbol, period=period, progress=False, auto_adjust=True,
                          timeout=8, threads=False)
     except Exception as exc:  # network / symbol errors
-        raise PriceDataUnavailable(f"yfinance fetch failed for {yf_symbol}: {exc}") from exc
+        tried.append(f"yfinance failed ({str(exc)[:50]})")
+        raise PriceDataUnavailable(
+            f"No chart source for {symbol.upper()}. Tried: {'; '.join(tried)}. "
+            "On a VPS, Yahoo is often blocked — log in to Angel (NSE stocks) or set "
+            "CFO_EODHD_API_KEY (indices) for a reliable feed.") from exc
 
     if df is None or df.empty:
+        tried.append(f"yfinance empty for {yf_symbol}")
         raise PriceDataUnavailable(
-            f"No price data for {yf_symbol} (symbol may differ on Yahoo, or it's a small cap)."
-        )
+            f"No chart source for {symbol.upper()}. Tried: {'; '.join(tried)}. "
+            "On a VPS, Yahoo is often blocked/empty — log in to Angel (NSE stocks) or set "
+            "CFO_EODHD_API_KEY (indices) for a reliable feed.")
 
     closes = [float(x) for x in df["Close"].dropna().tolist()]
     volumes = [float(x) for x in df["Volume"].fillna(0).tolist()]
