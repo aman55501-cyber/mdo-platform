@@ -31,6 +31,7 @@ RMS = "/rest/secure/angelbroking/user/v1/getRMS"
 
 
 _PUBLIC_IP_CACHE: str | None = None
+_PUBLIC_IP_NEXT_TRY: float = 0.0  # epoch before which we won't re-attempt a failed IP lookup
 
 
 def _public_ip() -> str:
@@ -41,20 +42,29 @@ def _public_ip() -> str:
     the 127.0.0.1 default. Prefer an explicit ANGEL_PUBLIC_IP; otherwise detect
     it once (cached for the process) so no manual .env edit is needed.
     """
-    global _PUBLIC_IP_CACHE
+    global _PUBLIC_IP_CACHE, _PUBLIC_IP_NEXT_TRY
     env = os.environ.get("ANGEL_PUBLIC_IP", "").strip()
     if env:
         return env
     if _PUBLIC_IP_CACHE:
         return _PUBLIC_IP_CACHE
+    # This is a SYNCHRONOUS fetch on a hot path (_headers runs on every Angel request).
+    # If detection fails we used to fall back WITHOUT caching, so every subsequent call
+    # re-blocked the loop for up to 2×timeout — a real source of app-wide lag when the
+    # outbound proxy can't reach ipify. Now: short timeout, and on failure gate retries
+    # to once every few minutes instead of hammering on each request.
+    import time
+    if time.time() < _PUBLIC_IP_NEXT_TRY:
+        return "127.0.0.1"
     for url in ("https://api.ipify.org", "https://checkip.amazonaws.com"):
         try:
-            ip = httpx.get(url, timeout=5.0).text.strip()
+            ip = httpx.get(url, timeout=2.0).text.strip()
             if ip and ip.count(".") == 3:
                 _PUBLIC_IP_CACHE = ip
                 return ip
         except Exception:
             continue
+    _PUBLIC_IP_NEXT_TRY = time.time() + 300  # back off 5 min; set ANGEL_PUBLIC_IP to skip entirely
     return "127.0.0.1"
 
 

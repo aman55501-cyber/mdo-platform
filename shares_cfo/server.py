@@ -1031,6 +1031,7 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
 
 
 _BOOK_CACHE: dict = {"ts": 0.0, "data": None}
+_BOOK_REFRESHING: dict = {"flag": False}
 
 
 async def _consolidated(force: bool = False) -> dict:
@@ -1038,8 +1039,29 @@ async def _consolidated(force: bool = False) -> dict:
     fetch (with 5 accounts a full fetch is slow; every tab re-fetching made the app
     crawl)."""
     import time
-    if not force and _BOOK_CACHE["data"] and (time.time() - _BOOK_CACHE["ts"]) < 15:
-        return _BOOK_CACHE["data"]
+    data = _BOOK_CACHE["data"]
+    age = time.time() - _BOOK_CACHE["ts"]
+    if not force and data and age < 15:
+        return data
+    # Stale-while-revalidate: if we have a recent-ish book, hand it back INSTANTLY and
+    # refresh in the background. A slow/hung broker then never freezes the tabs that
+    # await this — they just see a book a few seconds old. Only a cold start (no data)
+    # or an explicit force blocks on the live fetch.
+    if not force and data:
+        if not _BOOK_REFRESHING["flag"]:
+            _BOOK_REFRESHING["flag"] = True
+
+            async def _bg_refresh() -> None:
+                try:
+                    result = await _consolidated_uncached()
+                    _BOOK_CACHE.update(ts=time.time(), data=result)
+                except Exception as exc:  # keep serving the last good book
+                    log.warning("book refresh failed: %s", exc)
+                finally:
+                    _BOOK_REFRESHING["flag"] = False
+
+            asyncio.create_task(_bg_refresh())
+        return data
     result = await _consolidated_uncached()
     _BOOK_CACHE.update(ts=time.time(), data=result)
     return result
@@ -1047,7 +1069,9 @@ async def _consolidated(force: bool = False) -> dict:
 
 async def _consolidated_uncached() -> dict:
     sectors = SectorMap()
-    books = [await _fetch_account(k, sectors) for k in get_accounts()]
+    # Fetch every account concurrently — a multi-account book was fetched serially
+    # before, so one slow broker made the whole book (and every tab awaiting it) crawl.
+    books = list(await asyncio.gather(*[_fetch_account(k, sectors) for k in get_accounts()]))
 
     ok_books = [b for b in books if b.ok]
     degraded = [
@@ -1327,7 +1351,7 @@ async def proactive_test(request: Request, token: str | None = Query(default=Non
 async def health(request: Request, token: str | None = Query(default=None)) -> dict:
     _check_token(request, token)
     sectors = SectorMap()
-    books = [await _fetch_account(k, sectors) for k in get_accounts()]
+    books = list(await asyncio.gather(*[_fetch_account(k, sectors) for k in get_accounts()]))
     degraded = [{"creds_key": b.creds_key, "reason": b.reason} for b in books if not b.ok]
     overall = "ok" if not degraded else "degraded"
     return {
