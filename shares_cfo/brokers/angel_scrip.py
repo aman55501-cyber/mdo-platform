@@ -278,7 +278,8 @@ def _load_futures() -> dict:
             continue
         name = str(it.get("name", "")).upper()
         fut.setdefault(name, {})[exp] = {"token": str(it.get("token")),
-                                         "lot": int(float(it.get("lotsize", 0) or 0))}
+                                         "lot": int(float(it.get("lotsize", 0) or 0)),
+                                         "sym": str(it.get("symbol", ""))}
     if fut:
         try:
             _FUT_CACHE.parent.mkdir(parents=True, exist_ok=True)
@@ -304,15 +305,21 @@ def _norm_expiry(raw: str) -> str:
 
 def fut_token(symbol: str, expiry: str = "") -> str | None:
     """Angel FUTSTK/FUTIDX token — for the given expiry if supplied, else nearest."""
+    c = fut_contract(symbol, expiry)
+    return c["token"] if c else None
+
+
+def fut_contract(symbol: str, expiry: str = "") -> dict | None:
+    """Nearest (or given-expiry) futures contract: {token, lot, tradingsymbol, expiry}."""
     chain = _load_futures().get(symbol.strip().upper())
     if not chain:
         return None
-    if expiry:
-        ne = _norm_expiry(expiry)
-        if ne in chain:
-            return chain[ne]["token"]
-    exp = _nearest_future_expiry(chain)
-    return chain[exp]["token"] if exp else None
+    exp = _norm_expiry(expiry) if (expiry and _norm_expiry(expiry) in chain) else _nearest_future_expiry(chain)
+    if not exp:
+        return None
+    n = chain[exp]
+    return {"token": n["token"], "lot": n.get("lot", 0),
+            "tradingsymbol": n.get("sym", ""), "expiry": exp}
 
 
 def option_full(tokens: list[str]) -> dict:

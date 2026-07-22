@@ -131,11 +131,15 @@ def confirm(proposal_id: str, confirm_code: str, day_pnl: float = 0.0) -> dict:
 
 
 def _send_to_broker(order: OrderRequest) -> dict:
-    """Place the order with the broker. Angel is wired (documented SmartAPI); HDFC
-    still needs its Place Order docs. Reached only after guardrails pass + switch ON.
+    """Place the order with the broker that OWNS the account, by creds_key.
 
-    All trades route through the Angel account (the one with order placement wired),
-    regardless of where the stock is held — Angel is the executing broker.
+    HDFC accounts route to HDFC, Angel to Angel — so an order lands in the correct
+    account (a covered call on HDFC shares no longer goes to Angel). Reached only
+    after guardrails pass + the master switch is on.
     """
+    key = (order.creds_key or "").upper()
+    if key.startswith("HDFC"):
+        from ..brokers import hdfc_order
+        return hdfc_order.place_order(order)
     from ..brokers import angel_scrip
     return angel_scrip.place_order(order)  # raises RuntimeError on any broker failure

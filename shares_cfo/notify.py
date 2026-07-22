@@ -33,13 +33,13 @@ def send(title: str, body: str) -> list[str]:
     topic = os.environ.get("CFO_NTFY_TOPIC", "").strip()
     if topic:
         try:
-            # HTTP headers must be latin-1-safe; emoji in the title crashed every send
-            # ("ascii codec can't encode U+1F534"). Header gets an ASCII title; the full
-            # title (emoji included) goes into the body's first line instead.
-            ascii_title = title.encode("ascii", "ignore").decode().strip() or "Shares CFO"
-            payload = body if ascii_title == title else f"{title}\n{body}"
-            r = httpx.post(f"https://ntfy.sh/{topic}", data=payload.encode("utf-8"),
-                           headers={"Title": ascii_title[:120], "Priority": "high", "Tags": "chart"},
+            # ntfy's Title header must be ASCII (HTTP headers are latin-1). Emoji live
+            # in the body (UTF-8); the header gets an ASCII-stripped title, and if that
+            # dropped anything we prepend the full title to the body so nothing is lost.
+            ascii_title = title.encode("ascii", "ignore").decode("ascii").strip() or "Shares CFO"
+            msg = body if ascii_title == title.strip() else f"{title}\n{body}"
+            r = httpx.post(f"https://ntfy.sh/{topic}", data=msg.encode("utf-8"),
+                           headers={"Title": ascii_title[:120], "Priority": "high"},
                            timeout=10.0)
             if r.status_code < 400:
                 sent.append("ntfy")

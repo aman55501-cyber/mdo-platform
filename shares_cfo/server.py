@@ -17,7 +17,9 @@ Run (bind 0.0.0.0 so your phone can reach it):
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 
 from pathlib import Path
 
@@ -30,7 +32,7 @@ from . import token_store
 from .brokers import make_adapter
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
 from .config import (ACCOUNT_LABELS, DEFAULT_CLIENT_CODES, get_accounts,
-                     get_api_token, load_account)
+                     get_api_token, get_share_token, load_account)
 from .exceptions import SharesCFOError, TokenExpiredError
 from .models import AccountBook, FundInfo, Holding, Position
 from .normalise import normalise
@@ -40,6 +42,13 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("shares_cfo.server")
 
 app = FastAPI(title="Shares CFO", version="0.1.0")
+
+# CORS: every endpoint is token-gated (token in query, not cookies), so allowing any
+# origin lets external design previews / a PWA read the live API without exposing more
+# than the token already gates. No credentials (cookies) are used.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
+                   allow_methods=["*"], allow_headers=["*"])
 
 # Inject any app-connected accounts (added via the Login tab) into the environment
 # so config.load_account picks them up alongside .env-defined accounts.
@@ -914,6 +923,25 @@ def _check_token(request: Request, token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Missing or invalid CFO token.")
 
 
+def _life_scope(request: Request, token: str | None) -> str:
+    """Return the caller's Life OS scope: 'full' (owner) or 'share' (partner).
+
+    The owner token unlocks everything; the partner token unlocks only shared life
+    items and light edits. The partner token is NEVER accepted anywhere except the
+    /life endpoints, so it can't reach the trading or business book.
+    """
+    supplied = request.headers.get("X-CFO-Token") or token
+    owner = get_api_token()
+    share = get_share_token()
+    if not owner:  # unauthenticated local mode — full access
+        return "full"
+    if supplied == owner:
+        return "full"
+    if share and supplied == share:
+        return "share"
+    raise HTTPException(status_code=401, detail="Missing or invalid token.")
+
+
 async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
     """Fetch one account; degrade gracefully (never raise) so the book still completes."""
     try:
@@ -1080,6 +1108,179 @@ async def classic() -> str:
     return DASHBOARD_HTML
 
 
+@app.get("/biz", response_class=HTMLResponse)
+async def biz_console() -> str:
+    from .biz import BIZ_HTML
+    return BIZ_HTML
+
+
+@app.get("/life", response_class=HTMLResponse)
+async def life_console() -> str:
+    from .life_console import LIFE_HTML
+    return LIFE_HTML
+
+
+# --- Life OS: shared household cockpit (owner full, partner sees only `shared`) --
+@app.get("/life/items")
+async def life_items(request: Request, token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    return life.list_items(scope)
+
+
+@app.post("/life/items")
+async def life_add(request: Request, item: dict = Body(...),
+                   token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)  # partner adds land in the shared space
+    from . import life
+    try:
+        return life.add(item, scope=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/life/items/{item_id}")
+async def life_update(request: Request, item_id: str, patch: dict = Body(...),
+                      token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    try:
+        return life.update(item_id, patch, scope)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="You can only edit shared items.")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Item not found.")
+
+
+@app.get("/life/share-link")
+async def life_share_link(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Owner-only: the link to hand Jahnavi. Carries the share token (its whole purpose),
+    which unlocks ONLY shared life items — never the trading/business book."""
+    scope = _life_scope(request, token)
+    if scope != "full":
+        raise HTTPException(status_code=403, detail="Owner-only.")
+    share = get_share_token()
+    if not share:
+        return {"configured": False,
+                "hint": "Set CFO_SHARE_TOKEN in backend/.env, then restart, to enable Jahnavi's link."}
+    base = os.environ.get("CFO_APP_URL", "").rstrip("/")
+    path = f"/life?token={share}"
+    return {"configured": True, "url": (base + path) if base else path}
+
+
+@app.delete("/life/items/{item_id}")
+async def life_delete(request: Request, item_id: str,
+                      token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    try:
+        return {"deleted": life.delete(item_id, scope)}
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="You can only delete shared items.")
+
+
+# --- PWA: installable full-screen on Android/Z Fold, cached app shell -----------
+from fastapi.responses import JSONResponse, Response  # noqa: E402
+
+_PWA_ICON = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    '<rect width="512" height="512" fill="#0b0e13"/>'
+    '<rect x="96" y="96" width="320" height="320" fill="none" stroke="#3f8cde" stroke-width="18"/>'
+    '<path d="M150 330 L220 250 L280 300 L370 190" fill="none" stroke="#2ebd85" stroke-width="20" '
+    'stroke-linecap="square"/></svg>'
+)
+
+
+@app.get("/icon.svg")
+async def pwa_icon() -> Response:
+    return Response(_PWA_ICON, media_type="image/svg+xml")
+
+
+@app.get("/manifest.json")
+async def pwa_manifest() -> JSONResponse:
+    return JSONResponse({
+        "name": "Market Console", "short_name": "Console",
+        "description": "Shares CFO — live trading & portfolio cockpit",
+        "start_url": "/", "scope": "/", "display": "standalone",
+        "orientation": "any", "background_color": "#07090d", "theme_color": "#0b0e13",
+        "icons": [
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+        ],
+    })
+
+
+@app.get("/sw.js")
+async def service_worker() -> Response:
+    # Network-first for data (always fresh), cache-first fallback for the shell so the
+    # app opens instantly and survives a brief server/network blip.
+    sw = """
+const CACHE='mc-v1';
+self.addEventListener('install',e=>{self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(clients.claim());});
+self.addEventListener('fetch',e=>{
+  const u=new URL(e.request.url);
+  if(e.request.method!=='GET'){return;}
+  if(u.pathname==='/'||u.pathname==='/manifest.json'||u.pathname==='/icon.svg'){
+    e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return r;})
+      .catch(()=>caches.match(e.request)));
+  }
+});
+"""
+    return Response(sw, media_type="application/javascript")
+
+
+# --- Business OS: import Excel/CSV, query datasets + KPIs -----------------------
+@app.post("/business/import/{dataset}")
+async def business_import(request: Request, dataset: str, file: UploadFile = File(...),
+                          token: str | None = Query(default=None)) -> dict:
+    """Import a sheet (.xlsx/.xls/.csv) into a business dataset (replaces it)."""
+    _check_token(request, token)
+    from . import business
+    import os as _os
+    import tempfile
+    suffix = _os.path.splitext(file.filename or "")[1].lower() or ".xlsx"
+    tmp = Path(tempfile.gettempdir()) / f"biz_upload{suffix}"
+    tmp.write_bytes(await file.read())
+    try:
+        rows = business._rows_from_file(tmp)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    if not rows:
+        raise HTTPException(status_code=400, detail="No rows parsed — is it a valid .xlsx/.csv with a header row?")
+    return {"imported": True, **business.save(dataset, rows)}
+
+
+@app.get("/business/summary")
+async def business_summary(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import business
+    return business.summary()
+
+
+@app.get("/business/datasets")
+async def business_datasets(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import business
+    return {"datasets": business.datasets()}
+
+
+@app.get("/business/{dataset}")
+async def business_get(request: Request, dataset: str, limit: int = 200,
+                       token: str | None = Query(default=None)) -> dict:
+    """Rows of a dataset + its computed KPI block (aging / pipeline / hotel / generic)."""
+    _check_token(request, token)
+    from . import business
+    d = business.load(dataset)
+    kpi = {"receivables": business.receivables_aging, "tenders": business.tender_pipeline,
+           "hotel": business.hotel_kpis}.get(dataset.lower())
+    return {"dataset": dataset, "count": d["count"], "columns": d["columns"],
+            "imported_at": d.get("imported_at"), "rows": d["rows"][:max(1, min(limit, 1000))],
+            "kpi": kpi() if kpi else business.generic_summary(dataset)}
+
+
 @app.get("/preview", response_class=HTMLResponse)
 async def preview() -> str:
     """Interactive design prototype (mock data, no auth) — the reference for the redesign."""
@@ -1091,6 +1292,35 @@ async def preview() -> str:
 async def healthz() -> dict:
     """Unauthenticated liveness probe for the container healthcheck (no data touched)."""
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+async def _start_proactive() -> None:
+    """Launch the market-hours proactive agent (pushes alerts to the phone)."""
+    try:
+        from . import proactive
+        proactive.start(_consolidated)
+    except Exception as exc:  # never block startup on the agent
+        import logging
+        logging.getLogger("shares_cfo").warning("proactive agent not started: %s", exc)
+    try:
+        from . import agents
+        agents.start(_consolidated)
+    except Exception as exc:
+        import logging
+        logging.getLogger("shares_cfo").warning("business agents not started: %s", exc)
+
+
+@app.post("/proactive/test")
+async def proactive_test(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Send a test push so you can confirm alerts reach your phone."""
+    _check_token(request, token)
+    from . import notify
+    ch = notify.configured()
+    if not ch:
+        return {"sent": [], "note": "No channel set — add CFO_NTFY_TOPIC or Telegram env vars."}
+    sent = notify.send("Shares CFO test", "Proactive alerts are wired. ✅")
+    return {"channels": ch, "sent": sent}
 
 
 @app.get("/health")
@@ -1149,8 +1379,9 @@ async def income_ideas(request: Request, token: str | None = Query(default=None)
             # CSP candidate = a stock you already own (so you'd be glad to own more)
             if sym not in seen_syms and row["last_price"]:
                 seen_syms[sym] = {"sym": sym, "last_price": row["last_price"]}
-    ccs = income.covered_calls(holdings, angel_scrip)
-    csps = income.cash_secured_puts(list(seen_syms.values()), book.get("cash", 0), angel_scrip)
+    ccs = await asyncio.to_thread(income.covered_calls, holdings, angel_scrip)
+    csps = await asyncio.to_thread(income.cash_secured_puts, list(seen_syms.values()),
+                                   book.get("cash", 0), angel_scrip)
     return {"as_of": book.get("as_of"), "cash": book.get("cash", 0),
             "covered_calls": ccs, "cash_secured_puts": csps,
             "summary": income.summarise(ccs, csps),
@@ -1178,11 +1409,91 @@ async def ideas_oi(request: Request, token: str | None = Query(default=None)) ->
             dc = h.get("day_change") or 0
             prev = mv - dc
             rows.append({"sym": sym, "price_change_pct": (dc / prev * 100) if prev else 0})
-    signals = oi.buildup(rows, angel_scrip)
+    signals = await asyncio.to_thread(oi.buildup, rows, angel_scrip)
     return {"as_of": book.get("as_of"), "signals": signals,
             "note": "Futures OI vs the prior trading day. Long buildup / short covering read "
                     "bullish; short buildup / long unwinding read bearish. Deltas populate from "
                     "the second day the app runs."}
+
+
+_EDGE_CACHE: dict = {}
+
+
+@app.get("/options/edge/{underlying}")
+def options_edge(request: Request, underlying: str,
+                 token: str | None = Query(default=None)) -> dict:
+    """F&O edge for an index: PCR + Max Pain from live option-chain OI. NIFTY/BANKNIFTY."""
+    _check_token(request, token)
+    import time
+    u = underlying.upper()
+    hit = _EDGE_CACHE.get(u)
+    if hit and (time.time() - hit[0]) < 60:
+        return hit[1]
+    if u not in ("NIFTY", "BANKNIFTY"):
+        return {"underlying": u, "supported": False,
+                "note": "PCR/Max-Pain shown for NIFTY & BANKNIFTY."}
+    from .brokers import angel_scrip
+    from .analysis import eodhd
+    step = 50 if u == "NIFTY" else 100
+    spot = None
+    q = eodhd.quote("^NSEI" if u == "NIFTY" else "^NSEBANK")
+    if q:
+        spot = q.get("last")
+    chain = angel_scrip._load_options().get(u, {})
+    exp = angel_scrip.nearest_expiry(u)
+    node = chain.get(exp, {}) if exp else {}
+    if not node or not spot:
+        return {"underlying": u, "supported": True, "spot": spot, "expiry": exp,
+                "pcr": None, "max_pain": None, "note": "chain/spot unavailable right now"}
+    atm = round(spot / step) * step
+    want = [atm + step * i for i in range(-15, 16)]
+    toks: dict = {}
+    for s in want:
+        n = node.get(str(s), {})
+        if n.get("CE"):
+            toks[str(n["CE"])] = (s, "CE")
+        if n.get("PE"):
+            toks[str(n["PE"])] = (s, "PE")
+    quotes = angel_scrip.option_full(list(toks.keys())) if toks else {}
+    calloi: dict = {}
+    putoi: dict = {}
+    for tk, (s, typ) in toks.items():
+        oi = (quotes.get(tk) or {}).get("oi") or 0
+        (calloi if typ == "CE" else putoi)[s] = oi
+    tot_call, tot_put = sum(calloi.values()), sum(putoi.values())
+    pcr = round(tot_put / tot_call, 2) if tot_call else None
+
+    def pain(E: int) -> float:
+        return sum(calloi.get(K, 0) * max(0, E - K) + putoi.get(K, 0) * max(0, K - E) for K in want)
+
+    max_pain = min(want, key=pain) if (tot_call or tot_put) else None
+    # walls: strikes with the most OI (support = highest put OI, resistance = highest call OI)
+    put_wall = max(putoi, key=putoi.get) if putoi else None
+    call_wall = max(calloi, key=calloi.get) if calloi else None
+    data = {"underlying": u, "supported": True, "spot": round(spot, 2), "expiry": exp,
+            "atm": atm, "pcr": pcr, "max_pain": max_pain,
+            "total_call_oi": tot_call, "total_put_oi": tot_put,
+            "support_wall": put_wall, "resistance_wall": call_wall,
+            "bias": ("bullish" if (pcr and pcr > 1.2) else "bearish" if (pcr and pcr < 0.7) else "neutral"),
+            "note": "PCR>1.2 supportive, <0.7 heavy calls. Max Pain = expiry magnet."}
+    _EDGE_CACHE[u] = (time.time(), data)
+    return data
+
+
+@app.get("/options/contract/{underlying}")
+def options_contract(request: Request, underlying: str, kind: str = "fut",
+                     token: str | None = Query(default=None)) -> dict:
+    """Nearest tradeable F&O contract for an underlying (futures) — for the order ticket."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    u = underlying.upper().split()[0]
+    c = angel_scrip.fut_contract(u)
+    if not c or not c.get("tradingsymbol"):
+        return {"underlying": u, "found": False,
+                "note": f"{u} has no F&O futures on the NFO chain."}
+    return {"underlying": u, "found": True, "kind": "future",
+            "tradingsymbol": c["tradingsymbol"], "token": c["token"],
+            "lot": c["lot"], "expiry": c["expiry"]}
 
 
 import re as _re
@@ -1206,14 +1517,9 @@ def _parse_contract(label: str) -> dict:
             "expiry": "", "kind": "equity"}
 
 
-@app.get("/positions/live")
-async def positions_live(request: Request, token: str | None = Query(default=None)) -> dict:
-    """Live F&O positions across accounts, enriched with Angel LTP / OI / volume.
-
-    Base position (qty, avg, LTP, P&L) comes from each broker; OI + volume + live
-    price-change are added from Angel's FULL quote where the contract resolves.
-    """
-    _check_token(request, token)
+async def _live_positions() -> dict:
+    """Live F&O positions across accounts, enriched with Angel LTP/OI/volume + MTM.
+    Reusable core (endpoint + proactive agent both call this)."""
     from .brokers import angel_scrip
     book = await _consolidated()
     # 1) collapse duplicate legs (HDFC returns net + day rows for the same contract)
@@ -1246,8 +1552,8 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
             if atok:
                 tokmap.setdefault(str(atok), []).append(i)
     if tokmap:
-        try:
-            quotes = angel_scrip.option_full(list(tokmap.keys()))
+        try:  # sync Angel quote -> off the event loop so it can't freeze the app
+            quotes = await asyncio.to_thread(angel_scrip.option_full, list(tokmap.keys()))
         except Exception:
             quotes = {}
         for atok, idxs in tokmap.items():
@@ -1271,6 +1577,13 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
             "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
             "note": "MTM P&L + today's move computed from Angel's live price; OI + volume from "
                     "Angel FULL quote on the matched-expiry NFO contract."}
+
+
+@app.get("/positions/live")
+async def positions_live(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live F&O positions across accounts, enriched with Angel LTP / OI / volume."""
+    _check_token(request, token)
+    return await _live_positions()
 
 
 @app.get("/debug/hdfc-positions")
@@ -1349,8 +1662,8 @@ async def news(request: Request, ticker: str, token: str | None = Query(default=
     """Recent news headlines for a stock (Google News, free)."""
     _check_token(request, token)
     from .analysis import news as news_mod
-    return {"ticker": _clean_symbol(ticker).upper(),
-            "news": news_mod.get_news(_clean_symbol(ticker))}
+    items = await asyncio.to_thread(news_mod.get_news, _clean_symbol(ticker))
+    return {"ticker": _clean_symbol(ticker).upper(), "news": items}
 
 
 @app.get("/chart/{ticker}")
@@ -1362,7 +1675,7 @@ async def chart(request: Request, ticker: str, bars: int = 130,
     from .analysis.prices import PriceDataUnavailable, get_ohlcv
 
     try:
-        data = get_ohlcv(_clean_symbol(ticker), period="1y")
+        data = await asyncio.to_thread(get_ohlcv, _clean_symbol(ticker), "NSE", "1y")
     except PriceDataUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     closes = data["closes"]
@@ -2014,15 +2327,8 @@ def _horizon(sessions) -> str:
     return "Positional · 1 mo+"
 
 
-@app.get("/ideas/high-conviction")
-def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
-                          token: str | None = Query(default=None)) -> dict:
-    """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R.
-
-    Fundamentals (Screener) rank the universe; technicals + a backtested pattern set
-    conviction; strategy.signal defines the risk. Heavy (fetches candles) so cached.
-    """
-    _check_token(request, token)
+def _high_conviction(min_conviction: float = 62.0) -> dict:
+    """Core high-conviction scan (endpoint + proactive agent share this). Cached 15m."""
     import time
     if _HC_CACHE["data"] and (time.time() - _HC_CACHE["ts"]) < 900:
         return _HC_CACHE["data"]
@@ -2078,6 +2384,14 @@ def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
                     "defined-risk entry. Advisory — verify before acting."}
     _HC_CACHE.update(ts=time.time(), data=data)
     return data
+
+
+@app.get("/ideas/high-conviction")
+def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
+                          token: str | None = Query(default=None)) -> dict:
+    """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R."""
+    _check_token(request, token)
+    return _high_conviction(min_conviction)
 
 
 @app.get("/strategy/daily")
@@ -2247,7 +2561,8 @@ async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
 
 
 _ORDER_FIELDS = ("creds_key", "exchange", "symbol", "token", "side", "quantity",
-                 "product", "order_type", "price", "trigger_price", "underlying")
+                 "product", "order_type", "price", "trigger_price", "underlying",
+                 "stop_loss", "target")
 
 
 async def _day_pnl() -> float:
@@ -2389,7 +2704,7 @@ async def market_global(request: Request, token: str | None = Query(default=None
     """Live global-markets backdrop (S&P, Nasdaq, Brent, Gold, USD/INR, India VIX...)."""
     _check_token(request, token)
     from .analysis import market
-    return market.global_backdrop()
+    return await asyncio.to_thread(market.global_backdrop)
 
 
 _IDX_CACHE: dict = {"ts": 0.0, "data": None}
@@ -2409,13 +2724,18 @@ async def market_indices(request: Request, token: str | None = Query(default=Non
     from .analysis import eodhd
     wanted = [("NIFTY 50", "^NSEI"), ("BANK NIFTY", "^NSEBANK"), ("SENSEX", "^BSESN"),
               ("INDIA VIX", "^INDIAVIX"), ("MIDCAP", "^CNXMIDCAP"), ("SMALLCAP", "^CNXSC")]
-    out = []
-    if eodhd.enabled():
-        for name, sym in wanted:
-            q = eodhd.quote(sym)
-            if q and q.get("last") is not None:
-                out.append({"name": name, "symbol": sym,
-                            "last": q["last"], "change_pct": q.get("change_pct")})
+
+    def _fetch() -> list:  # sync EODHD calls, run off the event loop
+        o = []
+        if eodhd.enabled():
+            for name, sym in wanted:
+                q = eodhd.quote(sym)
+                if q and q.get("last") is not None:
+                    o.append({"name": name, "symbol": sym,
+                              "last": q["last"], "change_pct": q.get("change_pct")})
+        return o
+
+    out = await asyncio.to_thread(_fetch)
     data = {"indices": out, "note": "EODHD; unlisted indices omitted." if out
             else "No index feed — set CFO_EODHD_API_KEY."}
     _IDX_CACHE.update(ts=time.time(), data=data)
@@ -2524,6 +2844,21 @@ async def market_regime(request: Request, token: str | None = Query(default=None
     _check_token(request, token)
     from .analysis import market
     return market.regime()
+
+
+@app.post("/debug/hdfc-order-preview")
+async def hdfc_order_preview(request: Request, order: dict = Body(...),
+                            token: str | None = Query(default=None)) -> dict:
+    """Show the exact HDFC order request that WOULD be sent — nothing is placed.
+    Use to verify the endpoint/payload against HDFC docs before enabling trading."""
+    _check_token(request, token)
+    from .execution.models import OrderRequest
+    from .brokers import hdfc_order
+    try:
+        o = OrderRequest(**{k: order[k] for k in _ORDER_FIELDS if k in order})
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad order fields: {exc}")
+    return hdfc_order.preview(o)
 
 
 @app.post("/execution/propose")
