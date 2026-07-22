@@ -164,17 +164,29 @@ async def _alert_fno_moves() -> None:
         if p.get("kind") not in ("option", "future"):
             continue
         chg = p.get("change_pct")
-        if chg is None or abs(chg) < move_thr:
+        danger = p.get("risk") == "danger"
+        big_move = chg is not None and abs(chg) >= move_thr
+        if not (danger or big_move):
             continue
-        bucket = int(abs(chg) // move_thr)  # re-alert only on a bigger move
-        key = f"fno:{p.get('label')}:{'up' if chg >= 0 else 'dn'}:{bucket}"
-        if _fresh(key, cooldown=2 * 3600):
-            oi = p.get("oi")
-            oi_txt = f" · OI {oi:,}" if isinstance(oi, (int, float)) else ""
-            await _alert("🟡", p.get("label", "F&O"), f"{'▲' if chg >= 0 else '▼'} {chg:+.1f}% intraday",
-                         f"{p.get('holder')} · qty {p.get('quantity')} @ {p.get('average_price')}, "
-                         f"LTP {p.get('last_price')}{oi_txt}. MTM {_inr(p.get('pnl'))}.",
-                         "Live leg moving — check the chain/OI and your stop.", tab="positions")
+        oi = p.get("oi")
+        oi_txt = f" · OI {oi:,}" if isinstance(oi, (int, float)) else ""
+        bu = p.get("buildup")
+        bu_txt = f" · {bu}" if bu else ""
+        body = (f"{p.get('holder')} · qty {p.get('quantity')} @ {p.get('average_price')}, "
+                f"LTP {p.get('last_price')}{oi_txt}{bu_txt}. MTM {_inr(p.get('pnl'))}.")
+        if danger:  # loss likely to deepen — fire once per ~90 min while it persists
+            key = f"fnorisk:{p.get('label')}"
+            if _fresh(key, cooldown=90 * 60):
+                await _alert("🔴", p.get("label", "F&O"), "risk building against you",
+                             body + f" {p.get('risk_why', '')}",
+                             "Losing with OI/price against the leg — cut, hedge, or hard-stop it.",
+                             tab="positions")
+        elif big_move:
+            bucket = int(abs(chg) // move_thr)  # re-alert only on a bigger move
+            key = f"fno:{p.get('label')}:{'up' if chg >= 0 else 'dn'}:{bucket}"
+            if _fresh(key, cooldown=2 * 3600):
+                await _alert("🟡", p.get("label", "F&O"), f"{'▲' if chg >= 0 else '▼'} {chg:+.1f}% intraday",
+                             body, "Live leg moving — check the chain/OI and your stop.", tab="positions")
 
 
 async def _alert_ideas() -> None:

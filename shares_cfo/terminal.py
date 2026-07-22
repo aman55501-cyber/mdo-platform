@@ -93,6 +93,10 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .gtog button.on{background:var(--acc);color:#fff}
 .grow{display:flex;align-items:center;gap:10px;padding:12px 13px;border-top:1px solid var(--n200);min-height:56px;cursor:pointer}
 .grow:hover{background:var(--n100)}
+.rchip{font-family:var(--fh);font-size:10px;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border:1px solid;font-weight:600}
+.rchip.dgr{color:var(--down);border-color:var(--down)}
+.rchip.wch{color:var(--warn);border-color:var(--warn)}
+.row.dngr{border-left:2px solid var(--down)}.row.wtch{border-left:2px solid var(--warn)}
 /* heatmap */
 .heat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--n200);border:1px solid var(--n200)}
 .hc{background:var(--panel);padding:10px 9px;min-height:58px;display:flex;flex-direction:column;justify-content:space-between}
@@ -322,17 +326,28 @@ async function loadPositions(){
   const d=r.d,ps=(d.positions||[]);
   document.getElementById('pos-day').innerHTML='<span class="'+cl(d.day_pnl)+'">'+inr(d.day_pnl)+'</span>';
   document.getElementById('pos-real').innerHTML='<span class="'+cl(d.realized_pnl)+'">'+inr(d.realized_pnl)+'</span>';
-  document.getElementById('pos-n').textContent=d.fno_count||0;
+  document.getElementById('pos-n').innerHTML=(d.fno_count||0)+(d.at_risk?' · <span class="down">'+d.at_risk+' at risk</span>':'');
   if(!ps.length){box.innerHTML='<div class="load">No open positions in HDFC1 / HDFC2. F&amp;O legs appear here live.</div>';return;}
   box.innerHTML=ps.map(p=>{
     const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;
-    const meta=[]; if(p.oi!=null)meta.push('OI '+kfmt(p.oi)); if(p.volume!=null)meta.push('Vol '+kfmt(p.volume));
-    if(ch!=null)meta.push('<span class="'+cl(ch)+'">'+sp(ch)+'</span>');
-    return '<div class="row" onclick="openShare(\''+(p.underlying||'')+'\')" style="cursor:pointer"><div style="flex:1;min-width:0">'
-      +'<div class="rn">'+p.label+'  <span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span></div>'
-      +'<div class="rsub" style="margin-top:3px">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+'</div>'
-      +(meta.length?'<div class="rsub mono" style="margin-top:3px;color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
-      +'</div><div class="rr"><div class="p '+cl(mtm)+'">'+inr(mtm)+'</div><div class="c muted">'+p.holder+'</div></div></div>';
+    const danger=p.risk==='danger',watch=p.risk==='watch';
+    const bu=p.buildup||'';
+    const buCls=(bu==='Long buildup'||bu==='Short covering')?'up':(bu==='Short buildup'||bu==='Long unwinding')?'down':'muted';
+    const oiArrow=p.oi_change>0?'▲':(p.oi_change<0?'▼':'');
+    const meta=[];
+    if(p.oi!=null)meta.push('OI '+kfmt(p.oi)+(p.oi_change_pct?(' <span class="'+(p.oi_change>0?'up':'down')+'">'+oiArrow+Math.abs(p.oi_change_pct)+'%</span>'):''));
+    if(p.volume!=null)meta.push('Vol '+kfmt(p.volume));
+    if(ch!=null)meta.push('Px <span class="'+cl(ch)+'">'+sp(ch)+'</span>');
+    const riskChip=danger?'<span class="rchip dgr">● risk</span>':(watch?'<span class="rchip wch">● watch</span>':'');
+    return '<div class="row'+(danger?' dngr':(watch?' wtch':''))+'" onclick="openShare(\''+(p.underlying||'')+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:5px">'
+      +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span class="rn">'+p.label+'</span>'
+      +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span>'
+      +(bu?'<span class="rsub '+buCls+'" style="border:1px solid var(--n400);padding:0 4px">'+bu+'</span>':'')
+      +riskChip+'<span class="p '+cl(mtm)+'" style="margin-left:auto;font-family:var(--fm);font-weight:600">'+inr(mtm)+'</span></div>'
+      +'<div class="rsub">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+' · '+p.holder+'</div>'
+      +(meta.length?'<div class="rsub mono" style="color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
+      +(p.risk_why?'<div class="rsub" style="color:'+(danger?'var(--down)':'var(--warn)')+'">'+p.risk_why+'</div>':'')
+      +'</div>';
   }).join('');
 }
 /* ---- share detail: Screener Premium + price/volume on tap ---- */

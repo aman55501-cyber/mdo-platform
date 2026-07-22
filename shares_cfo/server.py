@@ -1541,6 +1541,76 @@ def _parse_contract(label: str) -> dict:
             "expiry": "", "kind": "equity"}
 
 
+# Session OI baseline per contract token, so "OI up/down" reflects today's build-up
+# (first value seen this session vs now), refreshed every time positions are polled.
+_OI_SNAP: dict = {}
+
+
+def _oi_trend(token: str | None, oi) -> tuple:
+    """(oi_change, oi_change_pct) vs the first OI seen for this token today."""
+    if token is None or oi is None:
+        return None, None
+    import time
+    day = time.strftime("%Y-%m-%d")
+    snap = _OI_SNAP.get(token)
+    if not snap or snap.get("day") != day:
+        _OI_SNAP[token] = {"day": day, "base": oi}
+        return 0, 0.0
+    base = snap.get("base") or 0
+    change = oi - base
+    return change, (round(change / base * 100.0, 1) if base else 0.0)
+
+
+def _leg_bias(r: dict) -> int:
+    """Directional bias of a leg: +1 bullish, -1 bearish, 0 neutral.
+    Long call / short put / long future = bullish; long put / short call / short future = bearish."""
+    qty = r.get("quantity") or 0
+    long_ = qty > 0
+    opt = (r.get("opt") or "").upper()
+    if r.get("kind") == "future":
+        return 1 if long_ else -1
+    if opt == "CE":
+        return 1 if long_ else -1
+    if opt == "PE":
+        return -1 if long_ else 1
+    return 0
+
+
+def _buildup(change_pct, oi_change) -> str | None:
+    """Classic OI + price read (the core F&O tell)."""
+    if change_pct is None or oi_change is None:
+        return None
+    pu, pd = change_pct > 0.05, change_pct < -0.05
+    ou, od = oi_change > 0, oi_change < 0
+    if pu and ou:
+        return "Long buildup"
+    if pd and ou:
+        return "Short buildup"
+    if pu and od:
+        return "Short covering"
+    if pd and od:
+        return "Long unwinding"
+    return "Flat"
+
+
+def _leg_risk(r: dict) -> tuple:
+    """(level, why) — flags a leg where losses are likely to deepen, to help cut early."""
+    pnl = r.get("pnl") or 0
+    bias = _leg_bias(r)
+    ch = r.get("change_pct")
+    oi_c = r.get("oi_change") or 0
+    adverse = bias != 0 and ch is not None and ((bias > 0 and ch < 0) or (bias < 0 and ch > 0))
+    if pnl < 0 and adverse and oi_c > 0:
+        return "danger", "Losing and OI is building against your side — conviction rising the wrong way. Consider cutting or hedging."
+    if pnl < 0 and adverse:
+        return "danger", "In loss with price moving against your leg. Respect your stop."
+    if pnl < 0:
+        return "watch", "In loss — keep the stop tight."
+    if pnl > 0 and adverse:
+        return "watch", "In profit but momentum turning against you — consider trailing your stop."
+    return "ok", ""
+
+
 async def _live_positions() -> dict:
     """Live F&O positions across accounts, enriched with Angel LTP/OI/volume + MTM.
     Reusable core (endpoint + proactive agent both call this)."""
@@ -1585,6 +1655,7 @@ async def _live_positions() -> dict:
             for i in idxs:
                 r = rows[i]
                 r["oi"], r["volume"], r["change_pct"] = q.get("oi"), q.get("volume"), q.get("change_pct")
+                r["_atok"] = str(atok)
                 ltp = q.get("ltp")
                 if ltp:
                     r["last_price"] = ltp
@@ -1594,13 +1665,24 @@ async def _live_positions() -> dict:
                     if q.get("change_pct") is not None:  # today's move on the leg
                         prev = ltp / (1 + q["change_pct"] / 100.0) if q["change_pct"] != -100 else ltp
                         r["day_pnl"] = round(r["quantity"] * (ltp - prev), 2)
-    rows.sort(key=lambda r: abs(r["pnl"] or 0), reverse=True)
+    # Real-time decision signals: OI trend vs session base, price+OI buildup, risk flag.
+    for r in rows:
+        if r["kind"] in ("option", "future"):
+            r["oi_change"], r["oi_change_pct"] = _oi_trend(r.get("_atok"), r.get("oi"))
+            r["buildup"] = _buildup(r.get("change_pct"), r.get("oi_change"))
+            r["bias"] = _leg_bias(r)
+            r["risk"], r["risk_why"] = _leg_risk(r)
+        r.pop("_atok", None)
+    # Sort: risk first (danger, then watch), then biggest MTM swing.
+    _rank = {"danger": 0, "watch": 1, "ok": 2}
+    rows.sort(key=lambda r: (_rank.get(r.get("risk"), 3), -abs(r.get("pnl") or 0)))
     fno = [r for r in rows if r["kind"] in ("option", "future")]
     return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
+            "at_risk": sum(1 for r in rows if r.get("risk") == "danger"),
             "day_pnl": round(sum((r["day_pnl"] or 0) for r in rows), 2),
             "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
-            "note": "MTM P&L + today's move computed from Angel's live price; OI + volume from "
-                    "Angel FULL quote on the matched-expiry NFO contract."}
+            "note": "MTM + today's move from Angel live price; OI trend vs session base; "
+                    "buildup = price×OI read; risk flags legs where losses may deepen."}
 
 
 @app.get("/positions/live")
