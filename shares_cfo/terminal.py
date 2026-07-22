@@ -139,7 +139,7 @@ a{color:var(--a700);text-decoration:none}
   <div class="hdr">
     <div><div class="hti">MARKET<b>·</b>CONSOLE</div>
       <div class="mkt"><span class="sd" id="sd"></span><span id="mstat">—</span></div></div>
-    <div class="hnw"><div class="v" id="hnw">₹—</div><div class="d muted" id="hday">—</div></div>
+    <div class="hnw"><div class="d" id="hday">—</div><div class="v" id="hnw" style="display:none"></div></div>
   </div>
   <div class="tick"><div class="tickrow" id="tickrow"><span class="ti muted">loading feed…</span></div></div>
   <a class="banner" id="banner" href="#"></a>
@@ -166,16 +166,10 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-portfolio" class="on"><div class="wrap" id="markets-wrap">
-    <div class="panel span2"><div class="pb">
-      <div class="lbl">Consolidated net worth</div>
-      <div class="nwbig" id="nw">₹—</div><div class="mono" id="nwday" style="font-size:12px;margin-top:3px">—</div>
-      <div class="nwrow">
-        <div><div class="k">Unrealised</div><div class="v" id="nwu">—</div></div>
-        <div><div class="k">Cash</div><div class="v" id="nwc">—</div></div>
-        <div><div class="k">Invested</div><div class="v" id="nwi">—</div></div>
-      </div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Sector map</span><span class="lbl" id="hday2">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div></div></div>
+    <!-- net-worth figures kept out of the top view (privacy); values live in the Hub. Hidden stubs keep the refresh loop happy. -->
+    <div style="display:none"><span id="nw"></span><span id="nwday"></span><span id="nwu"></span><span id="nwc"></span><span id="nwi"></span></div>
     <div class="panel"><div class="ph"><span class="t">Accounts</span><span class="lbl" id="acc-n"></span></div><div id="accs"><div class="load">loading</div></div></div>
-    <div class="panel"><div class="ph"><span class="t">Sector heatmap</span><span class="lbl">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div></div></div>
     <div class="panel"><div class="ph"><span class="t">Movers</span><span class="lbl">today</span></div><div class="two"><div><div class="mvh">Gainers</div><div id="gain"></div></div><div><div class="mvh">Losers</div><div id="lose"></div></div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Holdings</span><span class="lbl" id="hold-n">tap for Screener</span></div><div id="hold-list"><div class="load">loading</div></div></div>
   </div></section>
