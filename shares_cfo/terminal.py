@@ -358,12 +358,19 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
-  if(t==='positions'){loadPositions();if(!posLoaded){posLoaded=1;setInterval(()=>{if(document.getElementById('s-positions').classList.contains('on'))loadPositions();},20000);}}
+  if(t==='positions')loadPositions();
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='news'&&!newsLoaded){newsLoaded=1;loadNews();}});
 
-mktStatus();setInterval(mktStatus,30000);
-loadTicker();setInterval(loadTicker,30000);
-loadHome();setInterval(loadHome,20000);
+/* single 30s heartbeat — refreshes header/portfolio/ticker + the active tab.
+   Fetches are error-tolerant (keep last data on failure), so a server blip never
+   blanks the screen; the next tick recovers automatically. */
+async function heartbeat(){
+  try{mktStatus();}catch(e){}
+  try{await loadTicker();}catch(e){}
+  try{await loadHome();}catch(e){}
+  try{const on=document.querySelector('section.on');if(on&&on.id==='s-positions')loadPositions();}catch(e){}
+}
+heartbeat();setInterval(heartbeat,30000);
 </script></body></html>"""

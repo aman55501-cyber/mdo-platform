@@ -1093,6 +1093,29 @@ async def healthz() -> dict:
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+async def _start_proactive() -> None:
+    """Launch the market-hours proactive agent (pushes alerts to the phone)."""
+    try:
+        from . import proactive
+        proactive.start(_consolidated)
+    except Exception as exc:  # never block startup on the agent
+        import logging
+        logging.getLogger("shares_cfo").warning("proactive agent not started: %s", exc)
+
+
+@app.post("/proactive/test")
+async def proactive_test(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Send a test push so you can confirm alerts reach your phone."""
+    _check_token(request, token)
+    from . import notify
+    ch = notify.configured()
+    if not ch:
+        return {"sent": [], "note": "No channel set — add CFO_NTFY_TOPIC or Telegram env vars."}
+    sent = notify.send("Shares CFO test", "Proactive alerts are wired. ✅")
+    return {"channels": ch, "sent": sent}
+
+
 @app.get("/health")
 async def health(request: Request, token: str | None = Query(default=None)) -> dict:
     _check_token(request, token)
