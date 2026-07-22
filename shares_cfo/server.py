@@ -2392,7 +2392,8 @@ async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
 
 
 _ORDER_FIELDS = ("creds_key", "exchange", "symbol", "token", "side", "quantity",
-                 "product", "order_type", "price", "trigger_price", "underlying")
+                 "product", "order_type", "price", "trigger_price", "underlying",
+                 "stop_loss", "target")
 
 
 async def _day_pnl() -> float:
