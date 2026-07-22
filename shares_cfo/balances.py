@@ -45,20 +45,31 @@ def _write(items: list[dict]) -> None:
     _STORE.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
 
 
+_FX: dict = {"rate": None, "ts": 0.0}
+
+
 def usdinr() -> float:
-    """Live USDINR, else CFO_USDINR from env, else a sane fallback. Never raises."""
+    """Live USDINR (cached ~1h so home refreshes don't hit the network), else
+    CFO_USDINR from env, else a sane fallback. Never raises."""
+    import time
+    if _FX["rate"] and (time.time() - _FX["ts"]) < 3600:
+        return _FX["rate"]
+    rate = None
     try:
         from .analysis import eodhd
         if eodhd.enabled():
             v = eodhd.get_spot("USDINR.FOREX")
             if v and v > 0:
-                return float(v)
+                rate = float(v)
     except Exception:
         pass
-    try:
-        return float(os.environ.get("CFO_USDINR", "") or 86.0)
-    except ValueError:
-        return 86.0
+    if rate is None:
+        try:
+            rate = float(os.environ.get("CFO_USDINR", "") or 86.0)
+        except ValueError:
+            rate = 86.0
+    _FX.update(rate=rate, ts=time.time())
+    return rate
 
 
 def _to_inr(amount: float, currency: str, rate: float) -> float:

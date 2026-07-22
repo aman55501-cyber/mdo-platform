@@ -166,7 +166,11 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-portfolio" class="on"><div class="wrap" id="markets-wrap">
-    <div class="panel span2"><div class="ph"><span class="t">Sector map</span><span class="lbl" id="hday2">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Sector map</span><span class="lbl" id="hday2">your book · today</span></div><div class="pb"><div class="heat" id="heat"></div>
+      <div id="tw-home" onclick="twToggle()" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--n200);display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+        <span class="lbl">Total Wealth <span class="rsub" style="text-transform:none">tap to reveal</span></span>
+        <span class="mono" id="tw-home-v" style="font-weight:600">••••••</span></div>
+    </div></div>
     <!-- net-worth figures kept out of the top view (privacy); values live in the Hub. Hidden stubs keep the refresh loop happy. -->
     <div style="display:none"><span id="nw"></span><span id="nwday"></span><span id="nwu"></span><span id="nwc"></span><span id="nwi"></span></div>
     <div class="panel"><div class="ph"><span class="t">Accounts</span><span class="lbl" id="acc-n"></span></div><div id="accs"><div class="load">loading</div></div></div>
@@ -293,8 +297,13 @@ async function loadHome(){
   document.getElementById('nwu').innerHTML='<span class="'+cl(p.unrealised_pnl)+'">'+inr(p.unrealised_pnl)+'</span>';
   document.getElementById('nwc').textContent=inr(p.cash);
   document.getElementById('nwi').textContent=inr(p.invested_value);
-  renderAccounts(p);renderHeat(p);renderMovers(p);renderHoldings(p);
+  renderAccounts(p);renderHeat(p);renderMovers(p);renderHoldings(p);loadWealthHome();
 }
+/* Total Wealth on the home: masked by default (tap to reveal), so nothing shows on a glance/screen-share. */
+let TW_VAL=null,TW_SHOW=false;
+async function loadWealthHome(){const r=await j('/wealth?'+Q);if(r.ok)TW_VAL=r.d.total_wealth;renderTW();}
+function renderTW(){const e=document.getElementById('tw-home-v');if(!e)return;e.textContent=(TW_SHOW&&TW_VAL!=null)?inr(TW_VAL):'••••••';}
+function twToggle(){TW_SHOW=!TW_SHOW;renderTW();}
 function acctVal(a){return (a.holdings||[]).reduce((s,x)=>s+(x.market_value||0),0);}
 function renderAccounts(p){
   const accs=(p.accounts||[]).map(a=>({a,v:acctVal(a),ok:a.ok!==false&&a.status!=='degraded'}));
