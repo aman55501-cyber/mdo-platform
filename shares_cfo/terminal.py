@@ -11,6 +11,13 @@ grows screen by screen. Served at '/', with the classic dashboard kept at '/clas
 TERMINAL_HTML = r"""<!doctype html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Market Console</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0e13">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Console">
+<link rel="apple-touch-icon" href="/icon.svg"><link rel="icon" href="/icon.svg">
+<script>try{var _t=new URLSearchParams(location.search).get('token');if(_t)localStorage.setItem('cfo_token',_t);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -185,8 +192,10 @@ a{color:var(--a700);text-decoration:none}
 </div>
 
 <script>
-const token=new URLSearchParams(location.search).get('token')||'';
+let token=new URLSearchParams(location.search).get('token')||'';
+try{token=token||localStorage.getItem('cfo_token')||'';if(token)localStorage.setItem('cfo_token',token);}catch(e){}
 const Q='token='+encodeURIComponent(token);
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}
 async function j(u){try{const r=await fetch(u);return {ok:r.ok,d:await r.json()};}catch(e){return {ok:false,d:{}};}}
 const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
 const sp=p=>(p>=0?'+':'')+(p==null||isNaN(p)?'—':p.toFixed(2)+'%');

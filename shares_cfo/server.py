@@ -41,6 +41,13 @@ log = logging.getLogger("shares_cfo.server")
 
 app = FastAPI(title="Shares CFO", version="0.1.0")
 
+# CORS: every endpoint is token-gated (token in query, not cookies), so allowing any
+# origin lets external design previews / a PWA read the live API without exposing more
+# than the token already gates. No credentials (cookies) are used.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
+                   allow_methods=["*"], allow_headers=["*"])
+
 # Inject any app-connected accounts (added via the Login tab) into the environment
 # so config.load_account picks them up alongside .env-defined accounts.
 from . import account_store  # noqa: E402
@@ -1078,6 +1085,56 @@ async def root() -> str:
 @app.get("/classic", response_class=HTMLResponse)
 async def classic() -> str:
     return DASHBOARD_HTML
+
+
+# --- PWA: installable full-screen on Android/Z Fold, cached app shell -----------
+from fastapi.responses import JSONResponse, Response  # noqa: E402
+
+_PWA_ICON = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    '<rect width="512" height="512" fill="#0b0e13"/>'
+    '<rect x="96" y="96" width="320" height="320" fill="none" stroke="#3f8cde" stroke-width="18"/>'
+    '<path d="M150 330 L220 250 L280 300 L370 190" fill="none" stroke="#2ebd85" stroke-width="20" '
+    'stroke-linecap="square"/></svg>'
+)
+
+
+@app.get("/icon.svg")
+async def pwa_icon() -> Response:
+    return Response(_PWA_ICON, media_type="image/svg+xml")
+
+
+@app.get("/manifest.json")
+async def pwa_manifest() -> JSONResponse:
+    return JSONResponse({
+        "name": "Market Console", "short_name": "Console",
+        "description": "Shares CFO — live trading & portfolio cockpit",
+        "start_url": "/", "scope": "/", "display": "standalone",
+        "orientation": "any", "background_color": "#07090d", "theme_color": "#0b0e13",
+        "icons": [
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+        ],
+    })
+
+
+@app.get("/sw.js")
+async def service_worker() -> Response:
+    # Network-first for data (always fresh), cache-first fallback for the shell so the
+    # app opens instantly and survives a brief server/network blip.
+    sw = """
+const CACHE='mc-v1';
+self.addEventListener('install',e=>{self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(clients.claim());});
+self.addEventListener('fetch',e=>{
+  const u=new URL(e.request.url);
+  if(e.request.method!=='GET'){return;}
+  if(u.pathname==='/'||u.pathname==='/manifest.json'||u.pathname==='/icon.svg'){
+    e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return r;})
+      .catch(()=>caches.match(e.request)));
+  }
+});
+"""
+    return Response(sw, media_type="application/javascript")
 
 
 @app.get("/preview", response_class=HTMLResponse)
