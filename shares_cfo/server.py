@@ -1535,16 +1535,31 @@ async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Q
     return RedirectResponse(f"{account.base_url}/login?api_key={account.api_key}")
 
 
+_used_request_tokens: dict[str, str] = {}  # request_token -> account key (per-process replay guard)
+
+
 @app.get("/hdfc/callback", response_class=HTMLResponse)
 async def hdfc_callback(
     requestToken: str | None = Query(default=None),
     request_token: str | None = Query(default=None),
     key: str | None = Query(default=None),
 ) -> str:
-    """HDFC redirects here with the request token; we exchange it and arm the server."""
+    """HDFC redirects here with the request token; we exchange it and arm the server.
+
+    Idempotent: browsers frequently hit the callback twice (refresh, prefetch). A
+    request token is single-use at HDFC's end, so the second exchange used to 401
+    and paint a failure over an already-successful login. Replays now short-circuit
+    to the success page."""
     rt = requestToken or request_token
     if not rt:
         return "<h3>No request token found in the callback URL.</h3>"
+    if rt in _used_request_tokens:
+        key = _used_request_tokens[rt]
+        return (
+            f"<div style='font-family:sans-serif;padding:24px'>"
+            f"<h2 style='color:#3fb950'>✅ {key} logged in for today.</h2>"
+            f"<p>You can close this tab and open your dashboard.</p></div>"
+        )
     key = (key or token_store.get_pending()).upper()  # which account we're arming
     account = load_account(key)
     adapter = HdfcAdapter(account)
@@ -1555,6 +1570,9 @@ async def hdfc_callback(
     finally:
         await adapter.close()
     token_store.set_token(key, access_token)
+    if len(_used_request_tokens) > 100:
+        _used_request_tokens.clear()
+    _used_request_tokens[rt] = key
     return (
         f"<div style='font-family:sans-serif;padding:24px'>"
         f"<h2 style='color:#3fb950'>✅ {key} logged in for today.</h2>"

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from .normalise import normalise
@@ -33,6 +34,10 @@ class SectorMap:
 
     def sector_of(self, ticker: str) -> str:
         key = (ticker or "").upper().strip()
+        # Brokers append NSE series suffixes ("TATASTEEL-EQ", "SARVESHWAR-BE");
+        # the map stores base symbols. Without this strip, every suffixed ticker
+        # resolved UNKNOWN and sector-concentration alerts ran on noise.
+        key = re.sub(r"-(EQ|BE|BZ|BL|SM|ST|IQ)$", "", key)
         sector = self._map.get(key)
         if sector is None:
             self._missing.add(key)

@@ -187,7 +187,8 @@ a{color:var(--a700);text-decoration:none}
 <script>
 const token=new URLSearchParams(location.search).get('token')||'';
 const Q='token='+encodeURIComponent(token);
-async function j(u){try{const r=await fetch(u);return {ok:r.ok,d:await r.json()};}catch(e){return {ok:false,d:{}};}}
+const _fails={};function _failbar(){let b=document.getElementById('failbar');if(!b){b=document.createElement('div');b.id='failbar';b.style.cssText='position:sticky;top:0;z-index:99;background:#3a1113;color:#f0a0a0;font:500 12px IBM Plex Mono,monospace;padding:6px 12px;border-bottom:1px solid #7a2a2a;display:none';document.body.prepend(b);}const k=Object.keys(_fails);if(k.length){b.style.display='block';b.textContent='DATA FEED ERROR: '+k.map(u=>u.split('?')[0]+' ('+_fails[u]+')').join(' · ')+' — retrying automatically';}else{b.style.display='none';}return b;}
+async function j(u){try{const r=await fetch(u);if(!r.ok){_fails[u]='HTTP '+r.status;_failbar();return {ok:false,d:{}};}delete _fails[u];_failbar();return {ok:true,d:await r.json()};}catch(e){_fails[u]=String(e&&e.message||'network');_failbar();return {ok:false,d:{}};}}
 const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
 const sp=p=>(p>=0?'+':'')+(p==null||isNaN(p)?'—':p.toFixed(2)+'%');
 const cl=v=>v>=0?'up':'down';
@@ -328,7 +329,7 @@ async function loadIdeas(){
       +'<span class="rsub" style="margin-left:9px;border:1px solid var(--n400);padding:1px 6px">'+i.horizon+'</span>'
       +'<span class="mono" style="margin-left:auto;font-weight:600;color:var(--a700)">CONV '+i.conviction+'</span></div>'
       +'<div class="mono" style="display:flex;gap:16px;font-size:13px;flex-wrap:wrap"><span class="sec">Entry <b style="color:var(--text)">'+i.entry+'</b></span><span class="down">SL '+i.stop_loss+'</span><span class="up">TGT '+i.target+'</span><span class="sec">R:R <b style="color:var(--text)">'+i.reward_risk+'</b></span></div>'
-      +(i.pattern?'<div class="rsub" style="color:var(--n600)">'+i.pattern.replace(/_/g,\' \')+' · '+i.hit_rate+'% hit · avg '+(i.avg_return_pct>=0?\'+\':\'\')+i.avg_return_pct+'% over horizon</div>':'')
+      +(i.pattern?'<div class="rsub" style="color:var(--n600)">'+i.pattern.replace(/_/g,' ')+' · '+i.hit_rate+'% hit · avg '+(i.avg_return_pct>=0?'+':'')+i.avg_return_pct+'% over horizon</div>':'')
       +'<div class="rsub">F '+i.fundamental_score+' · T '+(i.technical_score!=null?i.technical_score:'—')+(flag?' · <span class="down">⚠ '+flag+'</span>':'')+'</div>'
       +'</div>';
   }).join('')+'<div class="pb rsub" style="color:var(--n500)">'+(r.d.note||'')+'</div>';
