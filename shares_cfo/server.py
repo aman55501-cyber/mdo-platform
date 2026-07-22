@@ -1305,6 +1305,48 @@ async def business_get(request: Request, dataset: str, limit: int = 200,
             "kpi": kpi() if kpi else business.generic_summary(dataset)}
 
 
+# --- External balances (US stocks / crypto / bank / trading cash) -> Total Wealth ---
+@app.get("/balances")
+async def balances_list(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import balances
+    return await asyncio.to_thread(balances.summary)
+
+
+@app.post("/balances")
+async def balances_upsert(request: Request, entry: dict = Body(...),
+                          token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import balances
+    try:
+        return balances.upsert(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/balances/{entry_id}")
+async def balances_delete(request: Request, entry_id: str,
+                          token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import balances
+    return {"deleted": balances.delete(entry_id)}
+
+
+@app.get("/wealth")
+async def wealth(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Total Wealth = live demat net worth + external balances (kept separate from the
+    trading net-worth figure so the live book stays clean)."""
+    _check_token(request, token)
+    from . import balances
+    book = await _consolidated()
+    ext = await asyncio.to_thread(balances.summary)
+    demat = book.get("net_worth") or 0.0
+    return {"demat_net_worth": round(demat, 2),
+            "external_total": ext["total_external_inr"],
+            "total_wealth": round(demat + ext["total_external_inr"], 2),
+            "by_bucket": ext["by_bucket"], "usdinr": ext["usdinr"]}
+
+
 @app.get("/preview", response_class=HTMLResponse)
 async def preview() -> str:
     """Interactive design prototype (mock data, no auth) — the reference for the redesign."""
@@ -1995,7 +2037,10 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
         f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:12px'>{rows}</div>"
         f"{missing_block}"
         f"{add_form}"
-        f"<p style='margin-top:16px'><a href='/?token={t}' style='color:#58a6ff'>→ Open dashboard</a></p></div>"
+        f"<p style='margin-top:16px;display:flex;gap:18px;flex-wrap:wrap'>"
+        f"<a href='/?token={t}' style='color:#58a6ff'>→ Dashboard</a>"
+        f"<a href='/biz?token={t}' style='color:#58a6ff'>→ Business OS</a>"
+        f"<a href='/life?token={t}' style='color:#58a6ff'>→ Life OS</a></p></div>"
     )
 
 

@@ -145,7 +145,21 @@ a{color:var(--a700);text-decoration:none}
   <a class="banner" id="banner" href="#"></a>
 
   <section id="s-settings"><div class="wrap">
+    <div class="panel span2"><div class="pb">
+      <div class="lbl">Total Wealth · demat + external</div>
+      <div class="nwbig" id="tw-total">₹—</div>
+      <div class="mono" id="tw-split" style="font-size:12px;margin-top:3px;color:var(--n600)">—</div>
+    </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Accounts &amp; login</span><span class="lbl" id="set-acc-n"></span></div><div id="set-accs"><div class="load">loading</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">External balances</span><span class="lbl" id="bal-usd"></span></div>
+      <div id="bal-list"><div class="load">loading</div></div>
+      <div class="pb" style="border-top:1px solid var(--n200);display:flex;flex-wrap:wrap;gap:7px;align-items:center">
+        <input id="bal-label" placeholder="e.g. Binance" style="flex:1;min-width:110px">
+        <select id="bal-bucket"><option>US Stocks</option><option>Crypto</option><option>Bank</option><option>Trading Cash</option><option>Other</option></select>
+        <input id="bal-amt" type="number" inputmode="decimal" placeholder="amount" style="width:110px">
+        <select id="bal-cur"><option>INR</option><option>USD</option></select>
+        <button class="segb" style="padding:9px 14px" onclick="saveBal()">Add</button>
+      </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Data feeds</span></div><div class="pb" id="set-feeds"><div class="load">checking</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Trading</span></div><div class="pb" id="set-trade"><div class="sec" style="font-size:12px">Order execution is guarded (caps, allow-list, kill-switch). Master switch is set in the server env.</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Views</span></div><div class="pb" style="display:flex;flex-direction:column;gap:10px"><a id="set-biz" href="#" class="lbl" style="color:var(--a700)">Open Business OS →</a><a id="set-life" href="#" class="lbl" style="color:var(--a700)">Open Life OS →</a><a id="set-classic" href="#" class="lbl" style="color:var(--a700)">Open classic dashboard →</a></div></div>
@@ -607,7 +621,29 @@ async function loadSettings(){
   document.getElementById('set-classic').href='/classic?'+Q;
   const bz=document.getElementById('set-biz');if(bz)bz.href='/biz?'+Q;
   const lf=document.getElementById('set-life');if(lf)lf.href='/life?'+Q;
+  loadBalances();
 }
+async function loadBalances(){
+  const [b,w]=await Promise.all([j('/balances?'+Q),j('/wealth?'+Q)]);
+  if(w.ok){document.getElementById('tw-total').textContent=inr(w.d.total_wealth);
+    document.getElementById('tw-split').innerHTML='Demat '+inr(w.d.demat_net_worth)+' + External '+inr(w.d.external_total)+' · USDINR '+(w.d.usdinr||'—');}
+  const box=document.getElementById('bal-list');if(!b.ok){box.innerHTML='<div class="load">could not load</div>';return;}
+  const its=b.d.items||[];document.getElementById('bal-usd').textContent='USDINR '+(b.d.usdinr||'—');
+  if(!its.length){box.innerHTML='<div class="load">No external balances yet — add US stocks, crypto, bank, trading cash below.</div>';return;}
+  box.innerHTML=its.map(x=>'<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+x.label+' <span class="rsub">'+x.bucket+'</span></div>'
+    +'<div class="rsub">'+(x.currency==='USD'?('$'+(x.amount).toLocaleString('en-US')+' → '):'')+inr(x.inr_value)+'</div></div>'
+    +'<div class="rr"><button class="iconbtn" onclick="event.stopPropagation();delBal(\''+x.id+'\')" style="color:var(--n500);font-size:14px;background:0;border:0;cursor:pointer">✕</button></div></div>').join('');
+}
+async function saveBal(){
+  const label=document.getElementById('bal-label').value.trim();const amt=document.getElementById('bal-amt').value;
+  if(!label||amt===''){return;}
+  const body={label,bucket:document.getElementById('bal-bucket').value,amount:parseFloat(amt),currency:document.getElementById('bal-cur').value};
+  const r=await j2('/balances?'+Q,'POST',body);
+  if(r.ok){document.getElementById('bal-label').value='';document.getElementById('bal-amt').value='';loadBalances();}
+  else alert(r.d.detail||'failed');
+}
+async function delBal(id){if(!confirm('Remove this balance?'))return;const r=await j2('/balances/'+id+'?'+Q,'DELETE');if(r.ok)loadBalances();}
+async function j2(u,m,body){try{const o={method:m,headers:{'Content-Type':'application/json'}};if(body)o.body=JSON.stringify(body);const r=await fetch(u,o);return {ok:r.ok,d:await r.json().catch(()=>({}))};}catch(e){return {ok:false,d:{}};}}
 async function loadNews(){
   const box=document.getElementById('news-list');if(!PORT){box.innerHTML='<div class="load">load portfolio first</div>';return;}
   const top=allHoldings(PORT).sort((a,b)=>b.mv-a.mv).slice(0,6);let items=[];
@@ -616,8 +652,8 @@ async function loadNews(){
   box.innerHTML=items.map(a=>'<a class="row" href="'+a.link+'" target="_blank" style="display:block"><div class="rn" style="font-size:13px;line-height:1.35">'+a.title+'</div><div class="rsub" style="margin-top:4px">'+a.sym+' · '+(a.source||'')+(a.when?' · '+a.when:'')+'</div></a>').join('');
 }
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  const t=b.dataset.t;
-  if(t==='login'){location.href='/login?'+Q;return;}
+  let t=b.dataset.t;
+  if(t==='login')t='settings';          // Login + Settings are one combined hub now
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
@@ -637,6 +673,7 @@ async function heartbeat(){
   try{const on=document.querySelector('section.on');
     if(on&&on.id==='s-positions'){loadPositions();}
     else if(on&&on.id==='s-ideas'){loadIdeas();}         // Ideas now stays live while you watch it
+    else if(on&&on.id==='s-settings'){loadBalances();}   // keep Total Wealth live in the hub
   }catch(e){}
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
