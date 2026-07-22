@@ -1329,6 +1329,22 @@ def options_edge(request: Request, underlying: str,
     return data
 
 
+@app.get("/options/contract/{underlying}")
+def options_contract(request: Request, underlying: str, kind: str = "fut",
+                     token: str | None = Query(default=None)) -> dict:
+    """Nearest tradeable F&O contract for an underlying (futures) — for the order ticket."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    u = underlying.upper().split()[0]
+    c = angel_scrip.fut_contract(u)
+    if not c or not c.get("tradingsymbol"):
+        return {"underlying": u, "found": False,
+                "note": f"{u} has no F&O futures on the NFO chain."}
+    return {"underlying": u, "found": True, "kind": "future",
+            "tradingsymbol": c["tradingsymbol"], "token": c["token"],
+            "lot": c["lot"], "expiry": c["expiry"]}
+
+
 import re as _re
 
 _POS_RE_OPT = _re.compile(r"^([A-Z0-9&\-]+)\s+(\d+(?:\.\d+)?)(CE|PE)\s*(.*)$", _re.I)

@@ -183,7 +183,9 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
-    <div class="panel span2"><div class="ph"><span class="t">High-conviction ideas</span><span class="lbl">fundamental + technical + backtest</span></div><div id="ideas-list"><div class="load">scanning for setups</div></div></div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;grid-column:1/-1"><button class="segb on" id="ist-ideas" onclick="istTab('ideas')" style="flex:1;padding:10px 0">Ideas</button><button class="segb" id="ist-income" onclick="istTab('income')" style="flex:1;padding:10px 0">Income</button></div>
+    <div class="panel span2" id="ideas-panel"><div class="ph"><span class="t">High-conviction ideas</span><span class="lbl">fundamental + technical + backtest</span></div><div id="ideas-list"><div class="load">scanning for setups</div></div></div>
+    <div class="panel span2" id="income-panel" style="display:none"><div class="ph"><span class="t">Income engine</span><span class="lbl" id="inc-sum">covered calls + cash puts</span></div><div id="income-list"><div class="load">—</div></div></div>
   </div></section>
 
   <section id="s-news"><div class="wrap">
@@ -201,10 +203,12 @@ a{color:var(--a700);text-decoration:none}
 <div class="sheet" id="tsheet"><div class="sgrab"></div>
   <div class="sh"><span class="ssym" id="tk-sym">—</span><span class="mono muted" id="tk-ltp" style="margin-left:auto;font-size:15px"></span></div>
   <div style="display:flex;gap:6px;margin-top:12px"><button class="segb tk-side on" data-s="BUY" onclick="tkSide('BUY')" style="flex:1;padding:12px 0;font-size:13px">BUY</button><button class="segb tk-side" data-s="SELL" onclick="tkSide('SELL')" style="flex:1;padding:12px 0;font-size:13px">SELL</button></div>
-  <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkSet('product','CNC',this)">CNC</button><button class="segb tk-prod" onclick="tkSet('product','MIS',this)">MIS</button></div>
+  <div class="ssub">Segment</div><div style="display:flex;gap:6px" id="tk-segs"><button class="segb tk-seg on" onclick="tkSeg('CASH',this)">CASH</button><button class="segb tk-seg" onclick="tkSeg('FUT',this)">FUT</button></div>
+  <div class="rsub" id="tk-contract" style="margin-top:6px;color:var(--n500)"></div>
+  <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkProd(this)">CNC</button><button class="segb tk-prod" onclick="tkProd(this)">MIS</button></div>
   <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button></div>
   <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
-  <div class="ssub">Quantity (shares)</div>
+  <div class="ssub" id="tk-qtylbl">Quantity (shares)</div>
   <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><span class="mono" id="tk-qty" style="font-size:22px;min-width:64px;text-align:center">1</span><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
   <div id="tk-guard" class="fg" style="margin-top:14px;border:1px solid var(--n300);display:none"></div>
   <button class="segb" id="tk-go" onclick="tkReview()" style="width:100%;padding:14px 0;margin-top:14px;font-size:13px">Review order</button>
@@ -350,27 +354,44 @@ async function openShare(sym){
 }
 function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
 /* ---- order ticket (guarded: propose -> confirm) ---- */
-let TK={sym:'',ltp:0,side:'BUY',product:'CNC',ot:'MARKET',qty:1,pid:null,code:null};
-function openTicket(sym,ltp,side){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',product:'CNC',ot:'MARKET',qty:1,pid:null,code:null};
+let TK={sym:'',ltp:0,side:'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
+function openTicket(sym,ltp,side){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
   document.getElementById('tk-sym').textContent=TK.sym;document.getElementById('tk-ltp').textContent=TK.ltp?('LTP '+TK.ltp):'';
   document.getElementById('tk-price').value=TK.ltp||'';document.getElementById('tk-qty').textContent='1';
+  document.getElementById('tk-contract').textContent='';document.getElementById('tk-qtylbl').textContent='Quantity (shares)';
   document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===TK.side));
+  document.querySelectorAll('.tk-seg').forEach((b,i)=>b.classList.toggle('on',i===0));
   document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));
   document.querySelectorAll('.tk-ot').forEach((b,i)=>b.classList.toggle('on',i===0));
   document.getElementById('tk-price-wrap').style.display='none';document.getElementById('tk-guard').style.display='none';
   document.getElementById('tk-go').textContent='Review order';tkVal();
   document.getElementById('tscrim').classList.add('on');document.getElementById('tsheet').classList.add('on');}
+async function tkSeg(v,el){[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));tkReset();TK.seg=v;
+  const ci=document.getElementById('tk-contract');
+  if(v==='FUT'){ci.textContent='resolving futures…';const r=await j('/options/contract/'+encodeURIComponent(TK.sym)+'?'+Q);
+    if(r.ok&&r.d.found){TK.exch='NFO';TK.fut=r.d;TK.lot=r.d.lot||1;TK.product='NRML';
+      ci.textContent=r.d.tradingsymbol+' · lot '+TK.lot+' · exp '+r.d.expiry;
+      document.getElementById('tk-qtylbl').textContent='Quantity (lots × '+TK.lot+')';
+      document.querySelectorAll('.tk-prod').forEach(b=>{b.textContent=b.textContent==='CNC'?'NRML':b.textContent;});
+      document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));}
+    else{ci.textContent=(r.d&&r.d.note)||'no futures';TK.seg='CASH';el.parentElement.children[0].classList.add('on');el.classList.remove('on');}}
+  else{TK.exch='NSE';TK.fut=null;TK.lot=1;TK.product='CNC';ci.textContent='';document.getElementById('tk-qtylbl').textContent='Quantity (shares)';
+    document.querySelectorAll('.tk-prod').forEach(b=>{if(b.textContent==='NRML')b.textContent='CNC';});
+    document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));}
+  tkVal();}
 function closeTicket(){document.getElementById('tscrim').classList.remove('on');document.getElementById('tsheet').classList.remove('on');}
 function tkReset(){TK.pid=null;document.getElementById('tk-go').textContent='Review order';}
 function tkSide(s){TK.side=s;tkReset();document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===s));}
-function tkSet(k,v,el){TK[k]=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));}
+function tkProd(el){TK.product=el.textContent.trim();tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));}
 function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));document.getElementById('tk-price-wrap').style.display=v==='LIMIT'?'block':'none';tkVal();}
 function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').textContent=TK.qty;tkReset();tkVal();}
-function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;document.getElementById('tk-val').textContent=px?inr(TK.qty*px):'';}
+function tkUnits(){return TK.qty*(TK.seg==='FUT'?TK.lot:1);}
+function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;document.getElementById('tk-val').textContent=px?inr(tkUnits()*px):'';}
 async function tkReview(){
   if(TK.pid){return tkConfirm();}
   const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
-  const order={creds_key:angelKey(),exchange:'NSE',symbol:TK.sym,token:'',side:TK.side,quantity:TK.qty,product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym};
+  const fut=TK.seg==='FUT'&&TK.fut;
+  const order={creds_key:angelKey(),exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:fut?TK.fut.token:'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym};
   const g=document.getElementById('tk-guard');g.style.display='block';g.innerHTML='<div class="rsub">checking guardrails…</div>';
   const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
   if(r.ok){TK.pid=r.d.proposal_id;TK.code=r.d.confirm_code;g.innerHTML='<div class="rsub" style="color:var(--up)">Passes all guardrails.</div><div class="rsub" style="margin-top:4px">'+(r.d.review||'')+'</div>';document.getElementById('tk-go').textContent='Confirm '+TK.side+' →';}
@@ -394,6 +415,46 @@ function renderHoldings(p){
     +'<div style="flex:1;min-width:0"><div class="rn">'+x.s+' <span class="rsub">'+(x.hold||'')+'</span></div></div>'
     +'<div class="rr"><div class="p">'+inr(x.mv)+'</div><div class="c '+cl(x.pct)+'">'+sp(x.pct)+'</div></div></div>').join('')||'<div class="load">no holdings</div>';
 }
+function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
+/* ---- income engine (covered calls + cash puts, guarded one-tap) ---- */
+let INCOME_DATA={cc:[],cp:[]},incLoaded=0;
+function istTab(t){const ideas=t==='ideas';
+  document.getElementById('ist-ideas').classList.toggle('on',ideas);document.getElementById('ist-income').classList.toggle('on',!ideas);
+  document.getElementById('ideas-panel').style.display=ideas?'':'none';document.getElementById('income-panel').style.display=ideas?'none':'';
+  if(!ideas&&!incLoaded){incLoaded=1;loadIncomeT();}}
+async function loadIncomeT(){
+  const box=document.getElementById('income-list');const r=await j('/income/ideas?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}
+  const d=r.d,s=d.summary||{};INCOME_DATA={cc:d.covered_calls||[],cp:d.cash_secured_puts||[]};
+  document.getElementById('inc-sum').textContent='+'+inr(s.total_premium||0)+' this cycle';
+  const cc=INCOME_DATA.cc,cp=INCOME_DATA.cp;
+  if(!cc.length&&!cp.length){box.innerHTML='<div class="load">No income setups — need an F&O holding of a full lot (calls) or cash (puts), and the chain live.</div>';return;}
+  box.innerHTML=cc.map((x,i)=>incCard(x,i,true)).join('')+cp.map((x,i)=>incCard(x,i,false)).join('');
+}
+function incCard(x,i,isCC){
+  const src=x.premium_source==='live'?'':' <span class="rsub" style="color:var(--warn)">theo</span>';
+  const line=isCC?('Yield '+x.yield_pct+'% · Ann '+x.annualised_pct+'% · cushion +'+x.cushion_pct+'% · assign '+x.assignment_prob_pct+'%')
+                 :('Yield/cash '+x.yield_on_cash_pct+'% · Ann '+x.annualised_pct+'% · disc '+x.discount_pct+'% · cap '+inr(x.capital_reserved));
+  return '<div class="row" style="flex-direction:column;align-items:stretch;gap:6px">'
+    +'<div style="display:flex;align-items:baseline"><span class="rn" style="font-size:15px">'+x.symbol+'</span>'
+    +'<span class="rsub" style="margin-left:8px">'+(isCC?'CC':'CSP')+' '+x.strike+(isCC?'CE':'PE')+' · '+x.expiry+src+'</span>'
+    +'<span class="mono" style="margin-left:auto;font-weight:600;color:'+(isCC?'var(--up)':'#a78bfa')+'">+'+inr(x.income)+'</span></div>'
+    +'<div class="rsub mono" style="color:var(--n600)">'+line+' · OI '+(x.oi!=null?kfmt(x.oi):'—')+' · DTE '+x.dte+'</div>'
+    +'<button class="segb" style="width:100%;padding:10px 0;font-size:12px" onclick="incPlace(\''+x.strategy+'\','+i+',this)">Place · sell '+x.contracts+' lot'+(x.contracts>1?'s':'')+'</button></div>';
+}
+async function incPlace(strat,i,btn){
+  const x=strat==='covered_call'?INCOME_DATA.cc[i]:INCOME_DATA.cp[i];if(!x)return;
+  if(btn.dataset.pid){btn.textContent='Placing…';
+    const r=await j('/execution/confirm?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:btn.dataset.pid,confirm_code:btn.dataset.code})});
+    btn.textContent=r.ok?'✅ Placed':(r.status===501?'Send pending':'Rejected');return;}
+  const qty=x.contracts*x.lot;
+  const order={creds_key:angelKey(),exchange:'NFO',symbol:x.tradingsymbol,token:x.token,side:'SELL',quantity:qty,product:'NRML',order_type:'LIMIT',price:x.premium,trigger_price:0,underlying:x.symbol};
+  btn.textContent='Checking guardrails…';
+  const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
+  if(r.ok){btn.dataset.pid=r.d.proposal_id;btn.dataset.code=r.d.confirm_code;btn.textContent='Confirm SELL '+x.contracts+' lot →';}
+  else{btn.textContent='Blocked: '+((r.d.detail||'error')+'').slice(0,42);}
+}
+
 /* ---- chart + F&O edge ---- */
 let CHART_SYM='NIFTY 50',CHART_EDGE='NIFTY',CHART_RANGE=66,CHART_DATA=null,chartLoaded=0;
 function chartChips(){const holds=PORT?allHoldings(PORT).sort((a,b)=>b.mv-a.mv).slice(0,6).map(x=>x.s):[];
