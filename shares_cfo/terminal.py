@@ -233,7 +233,9 @@ try{token=token||localStorage.getItem('cfo_token')||'';if(token)localStorage.set
 const Q='token='+encodeURIComponent(token);
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}
 const _fails={};function _failbar(){let b=document.getElementById('failbar');if(!b){b=document.createElement('div');b.id='failbar';b.style.cssText='position:sticky;top:0;z-index:99;background:#3a1113;color:#f0a0a0;font:500 12px IBM Plex Mono,monospace;padding:6px 12px;border-bottom:1px solid #7a2a2a;display:none';document.body.prepend(b);}const k=Object.keys(_fails);if(k.length){b.style.display='block';b.textContent='DATA FEED ERROR: '+k.map(u=>u.split('?')[0]+' ('+_fails[u]+')').join(' · ')+' — retrying automatically';}else{b.style.display='none';}return b;}
-async function j(u){try{const r=await fetch(u);if(!r.ok){_fails[u]='HTTP '+r.status;_failbar();return {ok:false,d:{}};}delete _fails[u];_failbar();return {ok:true,d:await r.json()};}catch(e){_fails[u]=String(e&&e.message||'network');_failbar();return {ok:false,d:{}};}}
+async function j(u){const c=new AbortController();const to=setTimeout(()=>c.abort(),30000);
+  try{const r=await fetch(u,{signal:c.signal});clearTimeout(to);if(!r.ok){_fails[u]='HTTP '+r.status;_failbar();return {ok:false,d:{},s:r.status};}delete _fails[u];_failbar();return {ok:true,d:await r.json()};}
+  catch(e){clearTimeout(to);_fails[u]=(e&&e.name==='AbortError')?'timeout':String(e&&e.message||'network');_failbar();return {ok:false,d:{}};}}
 const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
 const sp=p=>(p>=0?'+':'')+(p==null||isNaN(p)?'—':p.toFixed(2)+'%');
 const cl=v=>v>=0?'up':'down';
@@ -561,7 +563,10 @@ async function heartbeat(){
   try{mktStatus();}catch(e){}
   try{await loadTicker();}catch(e){}
   try{await loadHome();}catch(e){}
-  try{const on=document.querySelector('section.on');if(on&&on.id==='s-positions')loadPositions();}catch(e){}
+  try{const on=document.querySelector('section.on');
+    if(on&&on.id==='s-positions'){loadPositions();}
+    else if(on&&on.id==='s-ideas'){loadIdeas();}         // Ideas now stays live while you watch it
+  }catch(e){}
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
 heartbeat();setInterval(heartbeat,30000);
