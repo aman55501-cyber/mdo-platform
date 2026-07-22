@@ -36,7 +36,7 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .rsub{font-size:11px;color:var(--n600);font-family:var(--fh);letter-spacing:.04em}
 table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--n200);white-space:nowrap}th{font-family:var(--fh);text-transform:uppercase;letter-spacing:.06em;font-size:9.5px;color:var(--n500)}
 .tblwrap{overflow-x:auto}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:env(safe-area-inset-bottom)}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);display:grid;grid-template-columns:repeat(6,1fr);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);letter-spacing:.03em;font-size:10px;font-weight:600;text-transform:uppercase;padding:14px 1px 13px;cursor:pointer;min-height:50px}
 .tabs button.on{color:var(--a700);border-top-color:var(--acc)}
 section{display:none}section.on{display:block}
@@ -46,7 +46,7 @@ input[type=file]{color:var(--n500);font-size:12px;max-width:100%}
 a{color:var(--a700);text-decoration:none}
 </style></head><body>
 <div class="app">
-  <div class="hdr"><div class="hti">AMAN<b>·</b>BUSINESS</div><a class="lbl" id="tolink" href="#">Trading →</a></div>
+  <div class="hdr"><div class="hti">AMAN<b>·</b>BUSINESS</div><div><a class="lbl" id="lifelink" href="#">Life →</a> &nbsp; <a class="lbl" id="tolink" href="#">Trading →</a></div>
 
   <section id="s-brief" class="on"><div class="wrap">
     <div class="panel span2"><div class="ph"><span class="t">Tenders — pipeline</span><span class="lbl" id="t-cnt"></span></div><div class="pb"><div class="big up mono" id="t-val">₹—</div><div id="t-up" class="rsub" style="margin-top:6px"></div></div></div>
@@ -58,6 +58,11 @@ a{color:var(--a700);text-decoration:none}
   <section id="s-tenders"><div class="wrap"><div class="panel span2"><div class="ph"><span class="t">Tenders</span><span class="lbl" id="td-meta"></span></div><div id="td-body"><div class="load">—</div></div></div></div></section>
   <section id="s-recv"><div class="wrap"><div class="panel span2"><div class="ph"><span class="t">Receivables</span><span class="lbl" id="rc-meta"></span></div><div id="rc-body"><div class="load">—</div></div></div></div></section>
   <section id="s-hotel"><div class="wrap"><div class="panel span2"><div class="ph"><span class="t">Hotel</span><span class="lbl" id="ht-meta"></span></div><div id="ht-body"><div class="load">—</div></div></div></div></section>
+  <section id="s-board"><div class="wrap">
+    <div class="panel span2"><div class="ph"><span class="t">Tasks</span><span class="lbl" id="tk-meta"></span></div><div id="tk-body"><div class="load">—</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Projects</span><span class="lbl" id="pj-meta"></span></div><div id="pj-body"><div class="load">—</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Compliance</span><span class="lbl" id="cp-meta"></span></div><div id="cp-body"><div class="load">—</div></div></div>
+  </div></section>
 
   <section id="s-import"><div class="wrap">
     <div class="panel span2"><div class="ph"><span class="t">Import data</span><span class="lbl">.xlsx / .csv</span></div>
@@ -72,12 +77,14 @@ a{color:var(--a700);text-decoration:none}
   <button data-t="tenders">Tenders</button>
   <button data-t="recv">Recv</button>
   <button data-t="hotel">Hotel</button>
+  <button data-t="board">Board</button>
   <button data-t="import">Import</button>
 </div>
 <script>
 const token=new URLSearchParams(location.search).get('token')||(localStorage.getItem('cfo_token')||'');
 const Q='token='+encodeURIComponent(token);
 document.getElementById('tolink').href='/?'+Q;
+document.getElementById('lifelink').href='/life?'+Q;
 async function j(u,o){try{const r=await fetch(u,o);return {ok:r.ok,d:await r.json()};}catch(e){return {ok:false,d:{}};}}
 const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
 async function loadBrief(){
@@ -108,6 +115,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   if(t==='tenders')loadDS('tenders','td-meta','td-body');
   if(t==='recv')loadDS('receivables','rc-meta','rc-body');
   if(t==='hotel')loadDS('hotel','ht-meta','ht-body');
+  if(t==='board'){loadDS('tasks','tk-meta','tk-body');loadDS('projects','pj-meta','pj-body');loadDS('compliance','cp-meta','cp-body');}
   if(t==='import')buildImport();});
 loadBrief();setInterval(loadBrief,60000);
 </script></body></html>"""

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from . import token_store
 from .brokers import make_adapter
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
 from .config import (ACCOUNT_LABELS, DEFAULT_CLIENT_CODES, get_accounts,
-                     get_api_token, load_account)
+                     get_api_token, get_share_token, load_account)
 from .exceptions import SharesCFOError, TokenExpiredError
 from .models import AccountBook, FundInfo, Holding, Position
 from .normalise import normalise
@@ -922,6 +923,25 @@ def _check_token(request: Request, token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Missing or invalid CFO token.")
 
 
+def _life_scope(request: Request, token: str | None) -> str:
+    """Return the caller's Life OS scope: 'full' (owner) or 'share' (partner).
+
+    The owner token unlocks everything; the partner token unlocks only shared life
+    items and light edits. The partner token is NEVER accepted anywhere except the
+    /life endpoints, so it can't reach the trading or business book.
+    """
+    supplied = request.headers.get("X-CFO-Token") or token
+    owner = get_api_token()
+    share = get_share_token()
+    if not owner:  # unauthenticated local mode — full access
+        return "full"
+    if supplied == owner:
+        return "full"
+    if share and supplied == share:
+        return "share"
+    raise HTTPException(status_code=401, detail="Missing or invalid token.")
+
+
 async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
     """Fetch one account; degrade gracefully (never raise) so the book still completes."""
     try:
@@ -1092,6 +1112,71 @@ async def classic() -> str:
 async def biz_console() -> str:
     from .biz import BIZ_HTML
     return BIZ_HTML
+
+
+@app.get("/life", response_class=HTMLResponse)
+async def life_console() -> str:
+    from .life_console import LIFE_HTML
+    return LIFE_HTML
+
+
+# --- Life OS: shared household cockpit (owner full, partner sees only `shared`) --
+@app.get("/life/items")
+async def life_items(request: Request, token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    return life.list_items(scope)
+
+
+@app.post("/life/items")
+async def life_add(request: Request, item: dict = Body(...),
+                   token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)  # partner adds land in the shared space
+    from . import life
+    try:
+        return life.add(item, scope=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/life/items/{item_id}")
+async def life_update(request: Request, item_id: str, patch: dict = Body(...),
+                      token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    try:
+        return life.update(item_id, patch, scope)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="You can only edit shared items.")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Item not found.")
+
+
+@app.get("/life/share-link")
+async def life_share_link(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Owner-only: the link to hand Jahnavi. Carries the share token (its whole purpose),
+    which unlocks ONLY shared life items — never the trading/business book."""
+    scope = _life_scope(request, token)
+    if scope != "full":
+        raise HTTPException(status_code=403, detail="Owner-only.")
+    share = get_share_token()
+    if not share:
+        return {"configured": False,
+                "hint": "Set CFO_SHARE_TOKEN in backend/.env, then restart, to enable Jahnavi's link."}
+    base = os.environ.get("CFO_APP_URL", "").rstrip("/")
+    path = f"/life?token={share}"
+    return {"configured": True, "url": (base + path) if base else path}
+
+
+@app.delete("/life/items/{item_id}")
+async def life_delete(request: Request, item_id: str,
+                      token: str | None = Query(default=None)) -> dict:
+    scope = _life_scope(request, token)
+    from . import life
+    try:
+        return {"deleted": life.delete(item_id, scope)}
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="You can only delete shared items.")
 
 
 # --- PWA: installable full-screen on Android/Z Fold, cached app shell -----------

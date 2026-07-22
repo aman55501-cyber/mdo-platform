@@ -122,6 +122,27 @@ async def _compliance_agent() -> None:
                          "File now or confirm it's done.", tab="")
 
 
+async def _life_agent() -> None:
+    """Nudge on Life OS items (shared household + personal) that are due soon or overdue."""
+    from . import life
+    data = life.list_items("full")
+    today = _now().strftime("%Y-%m-%d")
+    for it in data["items"]:
+        if it.get("done") or not it.get("due"):
+            continue
+        days = _days_until(business._to_date(it["due"]))
+        if days is None or days > 1:
+            continue
+        nm = str(it.get("title") or "item")[:44]
+        who = " · shared" if it.get("shared") else ""
+        if _fresh(f"life:{today}:{it['id']}", 12 * 3600):
+            lvl = "🔴" if days < 0 else "🟡"
+            when = f"overdue {-days}d" if days < 0 else ("due TODAY" if days == 0 else f"due in {days}d")
+            await _alert(lvl, nm, f"life {when}{who}",
+                         f"{it.get('kind', 'task').title()} on the household board at its deadline.",
+                         "Do it, delegate, or move the date.", tab="")
+
+
 async def _mis_agent(get_book) -> None:
     """Once-a-morning MIS digest (~08:15–08:45 IST): trading + business at a glance."""
     now = _now()
@@ -151,6 +172,14 @@ async def _mis_agent(get_book) -> None:
         lines.append(f"Receivables {_inr(r.get('total_outstanding'))}, 60+ {_inr(r.get('overdue_60_plus'))}")
     if tasks["rows"]:
         lines.append(f"Open tasks {open_tasks}")
+    try:
+        from . import life
+        lst = life.stats()
+        if lst.get("open"):
+            over = f", {lst['overdue']} overdue" if lst.get("overdue") else ""
+            lines.append(f"Life {lst['open']} open{over}")
+    except Exception:
+        pass
     body = " · ".join(lines) if lines else "Import business data to populate the MIS."
     await _alert("🟢", "DAILY MIS", now.strftime("%d %b"), body,
                  "Scan the day's priorities in the app.", tab="")
@@ -175,6 +204,7 @@ def start(get_book) -> None:
                 await _projects_agent()
                 await _receivables_agent()
                 await _compliance_agent()
+                await _life_agent()
             except Exception as exc:
                 log.warning("agents cycle error: %s", exc)
             await asyncio.sleep(900)  # every 15 min; daily items self-gate by time

@@ -196,6 +196,13 @@ def get_api_token() -> str:
     return os.environ.get("CFO_API_TOKEN", "").strip()
 
 
+def get_share_token() -> str:
+    """Partner (Jahnavi) token — a separate secret that authenticates ONLY the Life OS
+    endpoints, and only for items flagged `shared`. Never grants the trading/business book.
+    Unset means life-sharing is off."""
+    return os.environ.get("CFO_SHARE_TOKEN", "").strip()
+
+
 def write_env_var(key: str, value: str, env_path: Path | None = None) -> None:
     """Insert or update a single KEY=value line in .env, preserving the rest.
 
