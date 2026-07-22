@@ -60,6 +60,8 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .hnw{text-align:right}.hnw .v{font-family:var(--fm);font-weight:600;font-size:15px}.hnw .d{font-size:11px;font-family:var(--fm);font-weight:500}
 .lgn{font-family:var(--fh);letter-spacing:.1em;font-size:10px;color:var(--a700);border:1px solid var(--a300);padding:3px 8px;margin-left:8px;text-transform:uppercase;white-space:nowrap}
 .banner{display:none;background:rgba(240,84,76,.12);border-bottom:1px solid var(--down);color:var(--down);padding:11px 16px;font-family:var(--fh);letter-spacing:.05em;font-size:12px;text-transform:uppercase;font-weight:600}
+.segb{background:var(--n100);border:1px solid var(--n400);color:var(--n600);font-family:var(--fh);letter-spacing:.05em;font-size:11px;padding:6px 12px;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.segb.on{background:var(--acc);border-color:var(--acc);color:#fff}
 /* ticker */
 .tick{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--n300);background:var(--n100);padding:6px 0}
 .tickrow{display:inline-block;padding-left:100%;animation:mar 40s linear infinite}
@@ -155,7 +157,20 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel span2"><div class="ph"><span class="t">Holdings</span><span class="lbl" id="hold-n">tap for Screener</span></div><div id="hold-list"><div class="load">loading</div></div></div>
   </div></section>
 
-  <section id="s-chart"><div class="soon"><div class="b">Chart · F&amp;O edge</div><div style="margin-top:8px;font-size:12px">Next slice — line/candle, PCR, Max&nbsp;Pain, OI.</div></div></section>
+  <section id="s-chart"><div class="wrap">
+    <div class="panel span2"><div class="pb">
+      <div style="display:flex;align-items:baseline;gap:10px"><span class="ssym" id="ch-sym" style="font-size:20px">NIFTY 50</span><span class="mono" id="ch-px" style="font-size:20px;margin-left:auto">—</span></div>
+      <div id="ch-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
+      <div style="display:flex;gap:6px;margin-top:10px" id="ch-range">
+        <button class="segb on" data-r="66">3M</button><button class="segb" data-r="132">6M</button><button class="segb" data-r="252">1Y</button>
+      </div>
+      <canvas id="ch-canvas" width="900" height="360" style="width:100%;height:auto;margin-top:12px;display:block"></canvas>
+      <div class="rsub" id="ch-lvl" style="margin-top:6px"></div>
+    </div></div>
+    <div class="panel span2"><div class="ph"><span class="t">F&amp;O edge</span><span class="lbl" id="ch-edge-exp"></span></div>
+      <div class="pb"><div class="fgrid" id="ch-edge"></div><div class="rsub" id="ch-edge-note" style="margin-top:8px"></div></div>
+    </div>
+  </div></section>
 
   <section id="s-positions"><div class="wrap">
     <div class="panel span2"><div class="pb" style="display:flex;gap:20px">
@@ -312,6 +327,7 @@ async function openShare(sym){
     +g('Volume',d.vol_x,'×')+g('RSI 14',d.rsi14)+g('Trend',(d.above_200dma==null?null:(d.above_200dma?'above 200D':'below 200D')))+'</div>';
   const lv=d.levels||{};
   if(lv.support||lv.resistance)h+='<div class="ssub">Levels</div><div class="fgrid">'+g('Support',lv.support)+g('Pivot',lv.pivot)+g('Resistance',lv.resistance)+'</div>';
+  h+='<div style="margin-top:14px"><button class="segb" style="width:100%;padding:11px 0;font-size:12px" onclick="goChart(\''+sym+'\')">View chart →</button></div>';
   document.getElementById('sh-body').innerHTML=h;
 }
 function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
@@ -323,6 +339,42 @@ function renderHoldings(p){
     +'<div style="flex:1;min-width:0"><div class="rn">'+x.s+' <span class="rsub">'+(x.hold||'')+'</span></div></div>'
     +'<div class="rr"><div class="p">'+inr(x.mv)+'</div><div class="c '+cl(x.pct)+'">'+sp(x.pct)+'</div></div></div>').join('')||'<div class="load">no holdings</div>';
 }
+/* ---- chart + F&O edge ---- */
+let CHART_SYM='NIFTY 50',CHART_EDGE='NIFTY',CHART_RANGE=66,CHART_DATA=null,chartLoaded=0;
+function chartChips(){const holds=PORT?allHoldings(PORT).sort((a,b)=>b.mv-a.mv).slice(0,6).map(x=>x.s):[];
+  const base=[['NIFTY 50','NIFTY'],['BANK NIFTY','BANKNIFTY']].concat(holds.map(s=>[s,s]));
+  document.getElementById('ch-chips').innerHTML=base.map(([s,e])=>'<button class="segb'+(s===CHART_SYM?' on':'')+'" onclick="setChart(\''+s+'\',\''+e+'\')">'+s+'</button>').join('');}
+function setChart(sym,edge){CHART_SYM=sym;CHART_EDGE=edge||sym;document.getElementById('ch-sym').textContent=sym;chartChips();loadChart();}
+function goChart(sym){closeShare();setChart(sym,sym);document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==='chart'));document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));document.getElementById('s-chart').classList.add('on');if(!chartLoaded){chartLoaded=1;}window.scrollTo(0,0);}
+function drawChart(d){
+  const c=document.getElementById('ch-canvas');if(!c||!d)return;const x=c.getContext('2d'),W=c.width,H=c.height;x.clearRect(0,0,W,H);
+  let clz=(d.closes||[]),s50=(d.sma50||[]),s200=(d.sma200||[]);const n=Math.min(CHART_RANGE,clz.length);if(!n)return;
+  clz=clz.slice(-n);s50=s50.slice(-n);s200=s200.slice(-n);
+  const all=clz.concat(s50.filter(v=>v!=null),s200.filter(v=>v!=null));let mn=Math.min(...all),mx=Math.max(...all);const pd=(mx-mn)*0.08||1;mn-=pd;mx+=pd;
+  const X=i=>i/(n-1)*W,Y=v=>H-((v-mn)/(mx-mn))*H;
+  x.strokeStyle='#1d232d';x.lineWidth=1;for(let gi=1;gi<3;gi++){const yy=H*gi/3;x.beginPath();x.moveTo(0,yy);x.lineTo(W,yy);x.stroke();}
+  x.beginPath();clz.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.lineTo(W,H);x.lineTo(0,H);x.closePath();
+  const gr=x.createLinearGradient(0,0,0,H);gr.addColorStop(0,'rgba(63,140,222,.25)');gr.addColorStop(1,'rgba(63,140,222,0)');x.fillStyle=gr;x.fill();
+  x.beginPath();clz.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.strokeStyle='#3f8cde';x.lineWidth=2;x.lineJoin='round';x.stroke();
+  const dS=(arr,col)=>{x.beginPath();let st=false;arr.forEach((v,i)=>{if(v==null)return;st?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v));st=true;});x.strokeStyle=col;x.lineWidth=1.2;x.stroke();};
+  dS(s50,'#f0a13c');dS(s200,'#a78bfa');
+  const lv=d.levels||{};x.setLineDash([4,4]);[['#2ebd85',lv.support],['#f0544c',lv.resistance]].forEach(p=>{const val=p[1];if(val==null||val<mn||val>mx)return;x.beginPath();x.moveTo(0,Y(val));x.lineTo(W,Y(val));x.strokeStyle=p[0];x.lineWidth=1;x.stroke();});x.setLineDash([]);
+}
+async function loadChart(){
+  const r=await j('/chart/'+encodeURIComponent(CHART_SYM)+'?'+Q);
+  if(r.ok&&r.d.last!=null){const d=r.d;CHART_DATA=d;
+    document.getElementById('ch-px').innerHTML='<span class="'+cl(d.day_change_pct)+'">'+d.last+'  '+sp(d.day_change_pct)+'</span>';
+    const lv=d.levels||{};document.getElementById('ch-lvl').innerHTML='<span style="color:#f0a13c">━</span> 50D  <span style="color:#a78bfa">━</span> 200D  ·  S '+(lv.support||'—')+' · Pivot '+(lv.pivot||'—')+' · R '+(lv.resistance||'—')+' · RSI '+(d.rsi14||'—');
+    drawChart(d);}
+  else document.getElementById('ch-px').textContent='no data';
+  const e=await j('/options/edge/'+encodeURIComponent(CHART_EDGE)+'?'+Q),box=document.getElementById('ch-edge');
+  const g=(k,v)=>'<div class="fg"><div class="k">'+k+'</div><div class="v">'+(v!=null&&v!==''?v:'—')+'</div></div>';
+  if(e.ok&&e.d.supported&&e.d.pcr!=null){const d=e.d;document.getElementById('ch-edge-exp').textContent=d.expiry||'';
+    box.innerHTML=g('PCR',d.pcr)+g('Max Pain',d.max_pain)+g('Spot',d.spot)+g('Put wall',d.support_wall)+g('Call wall',d.resistance_wall)+g('Bias',(d.bias||'').toUpperCase());
+    document.getElementById('ch-edge-note').textContent=d.note||'';}
+  else{document.getElementById('ch-edge-exp').textContent='';box.innerHTML='<div class="fg" style="grid-column:1/-1"><div class="rsub">'+((e.ok&&e.d.note)||'PCR / Max Pain available for NIFTY & BANK NIFTY.')+'</div></div>';document.getElementById('ch-edge-note').textContent='';}
+}
+document.getElementById('ch-range').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CHART_RANGE=+b.dataset.r;document.querySelectorAll('#ch-range .segb').forEach(x=>x.classList.toggle('on',x===b));if(CHART_DATA)drawChart(CHART_DATA);});
 let newsLoaded=0,setLoaded=0,ideasLoaded=0;
 async function loadIdeas(){
   const box=document.getElementById('ideas-list');const r=await j('/ideas/high-conviction?'+Q);
@@ -370,6 +422,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   if(t==='positions')loadPositions();
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
+  if(t==='chart'){if(!chartLoaded){chartLoaded=1;chartChips();}loadChart();}
   if(t==='news'&&!newsLoaded){newsLoaded=1;loadNews();}});
 
 /* single 30s heartbeat — refreshes header/portfolio/ticker + the active tab.

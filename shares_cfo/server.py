@@ -1265,6 +1265,70 @@ async def ideas_oi(request: Request, token: str | None = Query(default=None)) ->
                     "the second day the app runs."}
 
 
+_EDGE_CACHE: dict = {}
+
+
+@app.get("/options/edge/{underlying}")
+def options_edge(request: Request, underlying: str,
+                 token: str | None = Query(default=None)) -> dict:
+    """F&O edge for an index: PCR + Max Pain from live option-chain OI. NIFTY/BANKNIFTY."""
+    _check_token(request, token)
+    import time
+    u = underlying.upper()
+    hit = _EDGE_CACHE.get(u)
+    if hit and (time.time() - hit[0]) < 60:
+        return hit[1]
+    if u not in ("NIFTY", "BANKNIFTY"):
+        return {"underlying": u, "supported": False,
+                "note": "PCR/Max-Pain shown for NIFTY & BANKNIFTY."}
+    from .brokers import angel_scrip
+    from .analysis import eodhd
+    step = 50 if u == "NIFTY" else 100
+    spot = None
+    q = eodhd.quote("^NSEI" if u == "NIFTY" else "^NSEBANK")
+    if q:
+        spot = q.get("last")
+    chain = angel_scrip._load_options().get(u, {})
+    exp = angel_scrip.nearest_expiry(u)
+    node = chain.get(exp, {}) if exp else {}
+    if not node or not spot:
+        return {"underlying": u, "supported": True, "spot": spot, "expiry": exp,
+                "pcr": None, "max_pain": None, "note": "chain/spot unavailable right now"}
+    atm = round(spot / step) * step
+    want = [atm + step * i for i in range(-15, 16)]
+    toks: dict = {}
+    for s in want:
+        n = node.get(str(s), {})
+        if n.get("CE"):
+            toks[str(n["CE"])] = (s, "CE")
+        if n.get("PE"):
+            toks[str(n["PE"])] = (s, "PE")
+    quotes = angel_scrip.option_full(list(toks.keys())) if toks else {}
+    calloi: dict = {}
+    putoi: dict = {}
+    for tk, (s, typ) in toks.items():
+        oi = (quotes.get(tk) or {}).get("oi") or 0
+        (calloi if typ == "CE" else putoi)[s] = oi
+    tot_call, tot_put = sum(calloi.values()), sum(putoi.values())
+    pcr = round(tot_put / tot_call, 2) if tot_call else None
+
+    def pain(E: int) -> float:
+        return sum(calloi.get(K, 0) * max(0, E - K) + putoi.get(K, 0) * max(0, K - E) for K in want)
+
+    max_pain = min(want, key=pain) if (tot_call or tot_put) else None
+    # walls: strikes with the most OI (support = highest put OI, resistance = highest call OI)
+    put_wall = max(putoi, key=putoi.get) if putoi else None
+    call_wall = max(calloi, key=calloi.get) if calloi else None
+    data = {"underlying": u, "supported": True, "spot": round(spot, 2), "expiry": exp,
+            "atm": atm, "pcr": pcr, "max_pain": max_pain,
+            "total_call_oi": tot_call, "total_put_oi": tot_put,
+            "support_wall": put_wall, "resistance_wall": call_wall,
+            "bias": ("bullish" if (pcr and pcr > 1.2) else "bearish" if (pcr and pcr < 0.7) else "neutral"),
+            "note": "PCR>1.2 supportive, <0.7 heavy calls. Max Pain = expiry magnet."}
+    _EDGE_CACHE[u] = (time.time(), data)
+    return data
+
+
 import re as _re
 
 _POS_RE_OPT = _re.compile(r"^([A-Z0-9&\-]+)\s+(\d+(?:\.\d+)?)(CE|PE)\s*(.*)$", _re.I)
