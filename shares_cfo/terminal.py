@@ -205,6 +205,7 @@ a{color:var(--a700);text-decoration:none}
   <div style="display:flex;gap:6px;margin-top:12px"><button class="segb tk-side on" data-s="BUY" onclick="tkSide('BUY')" style="flex:1;padding:12px 0;font-size:13px">BUY</button><button class="segb tk-side" data-s="SELL" onclick="tkSide('SELL')" style="flex:1;padding:12px 0;font-size:13px">SELL</button></div>
   <div class="ssub">Segment</div><div style="display:flex;gap:6px" id="tk-segs"><button class="segb tk-seg on" onclick="tkSeg('CASH',this)">CASH</button><button class="segb tk-seg" onclick="tkSeg('FUT',this)">FUT</button></div>
   <div class="rsub" id="tk-contract" style="margin-top:6px;color:var(--n500)"></div>
+  <div class="ssub">Account</div><select id="tk-acct" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fh);letter-spacing:.03em"></select>
   <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkProd(this)">CNC</button><button class="segb tk-prod" onclick="tkProd(this)">MIS</button></div>
   <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button></div>
   <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
@@ -356,7 +357,11 @@ async function openShare(sym){
 function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
 /* ---- order ticket (guarded: propose -> confirm) ---- */
 let TK={sym:'',ltp:0,side:'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
-function openTicket(sym,ltp,side){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
+function fillTkAccts(sel){const s=document.getElementById('tk-acct');if(!s)return;const accs=(PORT&&PORT.accounts)||[];
+  s.innerHTML=accs.map(a=>'<option value="'+a.creds_key+'">'+(a.label||a.creds_key)+' · '+a.creds_key+'</option>').join('')||'<option value="ANGEL1">ANGEL1</option>';
+  if(sel)s.value=sel;}
+function openTicket(sym,ltp,side,acct){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
+  fillTkAccts(acct);
   document.getElementById('tk-sym').textContent=TK.sym;document.getElementById('tk-ltp').textContent=TK.ltp?('LTP '+TK.ltp):'';
   document.getElementById('tk-price').value=TK.ltp||'';document.getElementById('tk-qty').textContent='1';
   document.getElementById('tk-stop').value=TK.ltp?(TK.ltp*0.95).toFixed(2):'';
@@ -395,7 +400,8 @@ async function tkReview(){
   const fut=TK.seg==='FUT'&&TK.fut;
   const stop=+document.getElementById('tk-stop').value||0;
   const tgt=px?+((TK.side==='BUY'?px*1.1:px*0.9).toFixed(2)):0;
-  const order={creds_key:angelKey(),exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:fut?TK.fut.token:'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym,stop_loss:stop,target:tgt};
+  const acct=(document.getElementById('tk-acct')||{}).value||angelKey();
+  const order={creds_key:acct,exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:fut?TK.fut.token:'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym,stop_loss:stop,target:tgt};
   const g=document.getElementById('tk-guard');g.style.display='block';g.innerHTML='<div class="rsub">checking guardrails…</div>';
   const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
   if(r.ok){TK.pid=r.d.proposal_id;TK.code=r.d.confirm_code;g.innerHTML='<div class="rsub" style="color:var(--up)">Passes all guardrails.</div><div class="rsub" style="margin-top:4px">'+(r.d.review||'')+'</div>';document.getElementById('tk-go').textContent='Confirm '+TK.side+' →';}
@@ -452,7 +458,7 @@ async function incPlace(strat,i,btn){
     const r=await j('/execution/confirm?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:btn.dataset.pid,confirm_code:btn.dataset.code})});
     btn.textContent=r.ok?'✅ Placed':(r.status===501?'Send pending':'Rejected');return;}
   const qty=x.contracts*x.lot;
-  const order={creds_key:angelKey(),exchange:'NFO',symbol:x.tradingsymbol,token:x.token,side:'SELL',quantity:qty,product:'NRML',order_type:'LIMIT',price:x.premium,trigger_price:0,underlying:x.symbol};
+  const order={creds_key:x.account||angelKey(),exchange:'NFO',symbol:x.tradingsymbol,token:x.token,side:'SELL',quantity:qty,product:'NRML',order_type:'LIMIT',price:x.premium,trigger_price:0,underlying:x.symbol,stop_loss:+(x.premium*2).toFixed(2),target:+(x.premium*0.2).toFixed(2)};
   btn.textContent='Checking guardrails…';
   const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
   if(r.ok){btn.dataset.pid=r.d.proposal_id;btn.dataset.code=r.d.confirm_code;btn.textContent='Confirm SELL '+x.contracts+' lot →';}

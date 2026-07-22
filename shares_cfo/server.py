@@ -2672,6 +2672,21 @@ async def market_regime(request: Request, token: str | None = Query(default=None
     return market.regime()
 
 
+@app.post("/debug/hdfc-order-preview")
+async def hdfc_order_preview(request: Request, order: dict = Body(...),
+                            token: str | None = Query(default=None)) -> dict:
+    """Show the exact HDFC order request that WOULD be sent — nothing is placed.
+    Use to verify the endpoint/payload against HDFC docs before enabling trading."""
+    _check_token(request, token)
+    from .execution.models import OrderRequest
+    from .brokers import hdfc_order
+    try:
+        o = OrderRequest(**{k: order[k] for k in _ORDER_FIELDS if k in order})
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad order fields: {exc}")
+    return hdfc_order.preview(o)
+
+
 @app.post("/execution/propose")
 async def execution_propose(request: Request, order: dict = Body(...),
                             token: str | None = Query(default=None)) -> dict:
