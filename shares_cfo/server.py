@@ -1087,6 +1087,12 @@ async def classic() -> str:
     return DASHBOARD_HTML
 
 
+@app.get("/biz", response_class=HTMLResponse)
+async def biz_console() -> str:
+    from .biz import BIZ_HTML
+    return BIZ_HTML
+
+
 # --- PWA: installable full-screen on Android/Z Fold, cached app shell -----------
 from fastapi.responses import JSONResponse, Response  # noqa: E402
 
@@ -1135,6 +1141,58 @@ self.addEventListener('fetch',e=>{
 });
 """
     return Response(sw, media_type="application/javascript")
+
+
+# --- Business OS: import Excel/CSV, query datasets + KPIs -----------------------
+@app.post("/business/import/{dataset}")
+async def business_import(request: Request, dataset: str, file: UploadFile = File(...),
+                          token: str | None = Query(default=None)) -> dict:
+    """Import a sheet (.xlsx/.xls/.csv) into a business dataset (replaces it)."""
+    _check_token(request, token)
+    from . import business
+    import os as _os
+    import tempfile
+    suffix = _os.path.splitext(file.filename or "")[1].lower() or ".xlsx"
+    tmp = Path(tempfile.gettempdir()) / f"biz_upload{suffix}"
+    tmp.write_bytes(await file.read())
+    try:
+        rows = business._rows_from_file(tmp)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    if not rows:
+        raise HTTPException(status_code=400, detail="No rows parsed — is it a valid .xlsx/.csv with a header row?")
+    return {"imported": True, **business.save(dataset, rows)}
+
+
+@app.get("/business/summary")
+async def business_summary(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import business
+    return business.summary()
+
+
+@app.get("/business/datasets")
+async def business_datasets(request: Request, token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import business
+    return {"datasets": business.datasets()}
+
+
+@app.get("/business/{dataset}")
+async def business_get(request: Request, dataset: str, limit: int = 200,
+                       token: str | None = Query(default=None)) -> dict:
+    """Rows of a dataset + its computed KPI block (aging / pipeline / hotel / generic)."""
+    _check_token(request, token)
+    from . import business
+    d = business.load(dataset)
+    kpi = {"receivables": business.receivables_aging, "tenders": business.tender_pipeline,
+           "hotel": business.hotel_kpis}.get(dataset.lower())
+    return {"dataset": dataset, "count": d["count"], "columns": d["columns"],
+            "imported_at": d.get("imported_at"), "rows": d["rows"][:max(1, min(limit, 1000))],
+            "kpi": kpi() if kpi else business.generic_summary(dataset)}
 
 
 @app.get("/preview", response_class=HTMLResponse)
