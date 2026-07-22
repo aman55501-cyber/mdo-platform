@@ -1218,6 +1218,12 @@ async def _start_proactive() -> None:
     except Exception as exc:  # never block startup on the agent
         import logging
         logging.getLogger("shares_cfo").warning("proactive agent not started: %s", exc)
+    try:
+        from . import agents
+        agents.start(_consolidated)
+    except Exception as exc:
+        import logging
+        logging.getLogger("shares_cfo").warning("business agents not started: %s", exc)
 
 
 @app.post("/proactive/test")
