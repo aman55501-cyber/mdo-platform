@@ -1087,6 +1087,12 @@ async def preview() -> str:
     return PREVIEW_HTML
 
 
+@app.get("/healthz")
+async def healthz() -> dict:
+    """Unauthenticated liveness probe for the container healthcheck (no data touched)."""
+    return {"status": "ok"}
+
+
 @app.get("/health")
 async def health(request: Request, token: str | None = Query(default=None)) -> dict:
     _check_token(request, token)
@@ -1991,8 +1997,8 @@ def _horizon(sessions) -> str:
 
 
 @app.get("/ideas/high-conviction")
-async def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
-                                token: str | None = Query(default=None)) -> dict:
+def ideas_high_conviction(request: Request, min_conviction: float = 62.0,
+                          token: str | None = Query(default=None)) -> dict:
     """Only high-conviction BUY ideas, each with a time horizon + entry/stop/target/R:R.
 
     Fundamentals (Screener) rank the universe; technicals + a backtested pattern set

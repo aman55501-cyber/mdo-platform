@@ -16,6 +16,15 @@ services:
       context: .
       dockerfile: Dockerfile.sharescfo
     restart: always
+    labels:
+      - "autoheal=true"        # autoheal restarts this container if it turns unhealthy
+    healthcheck:
+      # liveness only (no auth, no data) — if the app wedges, this fails and autoheal restarts it
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 25s
     environment:
       - PORT=8000
     env_file:
@@ -44,6 +53,17 @@ services:
       - caddy_config:/config
     depends_on:
       - sharescfo
+
+  # Watches healthchecks and restarts any container labeled autoheal=true if it
+  # goes unhealthy (a hung app that never crashes). Completes the "never offline" story.
+  autoheal:
+    image: willfarrell/autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=15
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   caddy_data:
