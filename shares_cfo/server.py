@@ -17,6 +17,7 @@ Run (bind 0.0.0.0 so your phone can reach it):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from pathlib import Path
@@ -1287,8 +1288,9 @@ async def income_ideas(request: Request, token: str | None = Query(default=None)
             # CSP candidate = a stock you already own (so you'd be glad to own more)
             if sym not in seen_syms and row["last_price"]:
                 seen_syms[sym] = {"sym": sym, "last_price": row["last_price"]}
-    ccs = income.covered_calls(holdings, angel_scrip)
-    csps = income.cash_secured_puts(list(seen_syms.values()), book.get("cash", 0), angel_scrip)
+    ccs = await asyncio.to_thread(income.covered_calls, holdings, angel_scrip)
+    csps = await asyncio.to_thread(income.cash_secured_puts, list(seen_syms.values()),
+                                   book.get("cash", 0), angel_scrip)
     return {"as_of": book.get("as_of"), "cash": book.get("cash", 0),
             "covered_calls": ccs, "cash_secured_puts": csps,
             "summary": income.summarise(ccs, csps),
@@ -1316,7 +1318,7 @@ async def ideas_oi(request: Request, token: str | None = Query(default=None)) ->
             dc = h.get("day_change") or 0
             prev = mv - dc
             rows.append({"sym": sym, "price_change_pct": (dc / prev * 100) if prev else 0})
-    signals = oi.buildup(rows, angel_scrip)
+    signals = await asyncio.to_thread(oi.buildup, rows, angel_scrip)
     return {"as_of": book.get("as_of"), "signals": signals,
             "note": "Futures OI vs the prior trading day. Long buildup / short covering read "
                     "bullish; short buildup / long unwinding read bearish. Deltas populate from "
@@ -1459,8 +1461,8 @@ async def _live_positions() -> dict:
             if atok:
                 tokmap.setdefault(str(atok), []).append(i)
     if tokmap:
-        try:
-            quotes = angel_scrip.option_full(list(tokmap.keys()))
+        try:  # sync Angel quote -> off the event loop so it can't freeze the app
+            quotes = await asyncio.to_thread(angel_scrip.option_full, list(tokmap.keys()))
         except Exception:
             quotes = {}
         for atok, idxs in tokmap.items():
@@ -1569,8 +1571,8 @@ async def news(request: Request, ticker: str, token: str | None = Query(default=
     """Recent news headlines for a stock (Google News, free)."""
     _check_token(request, token)
     from .analysis import news as news_mod
-    return {"ticker": _clean_symbol(ticker).upper(),
-            "news": news_mod.get_news(_clean_symbol(ticker))}
+    items = await asyncio.to_thread(news_mod.get_news, _clean_symbol(ticker))
+    return {"ticker": _clean_symbol(ticker).upper(), "news": items}
 
 
 @app.get("/chart/{ticker}")
@@ -1582,7 +1584,7 @@ async def chart(request: Request, ticker: str, bars: int = 130,
     from .analysis.prices import PriceDataUnavailable, get_ohlcv
 
     try:
-        data = get_ohlcv(_clean_symbol(ticker), period="1y")
+        data = await asyncio.to_thread(get_ohlcv, _clean_symbol(ticker), "NSE", "1y")
     except PriceDataUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     closes = data["closes"]
@@ -2593,7 +2595,7 @@ async def market_global(request: Request, token: str | None = Query(default=None
     """Live global-markets backdrop (S&P, Nasdaq, Brent, Gold, USD/INR, India VIX...)."""
     _check_token(request, token)
     from .analysis import market
-    return market.global_backdrop()
+    return await asyncio.to_thread(market.global_backdrop)
 
 
 _IDX_CACHE: dict = {"ts": 0.0, "data": None}
@@ -2613,13 +2615,18 @@ async def market_indices(request: Request, token: str | None = Query(default=Non
     from .analysis import eodhd
     wanted = [("NIFTY 50", "^NSEI"), ("BANK NIFTY", "^NSEBANK"), ("SENSEX", "^BSESN"),
               ("INDIA VIX", "^INDIAVIX"), ("MIDCAP", "^CNXMIDCAP"), ("SMALLCAP", "^CNXSC")]
-    out = []
-    if eodhd.enabled():
-        for name, sym in wanted:
-            q = eodhd.quote(sym)
-            if q and q.get("last") is not None:
-                out.append({"name": name, "symbol": sym,
-                            "last": q["last"], "change_pct": q.get("change_pct")})
+
+    def _fetch() -> list:  # sync EODHD calls, run off the event loop
+        o = []
+        if eodhd.enabled():
+            for name, sym in wanted:
+                q = eodhd.quote(sym)
+                if q and q.get("last") is not None:
+                    o.append({"name": name, "symbol": sym,
+                              "last": q["last"], "change_pct": q.get("change_pct")})
+        return o
+
+    out = await asyncio.to_thread(_fetch)
     data = {"indices": out, "note": "EODHD; unlisted indices omitted." if out
             else "No index feed — set CFO_EODHD_API_KEY."}
     _IDX_CACHE.update(ts=time.time(), data=data)
