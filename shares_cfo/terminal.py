@@ -588,7 +588,10 @@ async function loadIncomeT(){
   const d=r.d,s=d.summary||{};INCOME_DATA={cc:d.covered_calls||[],cp:d.cash_secured_puts||[]};
   document.getElementById('inc-sum').textContent='+'+inr(s.total_premium||0)+' this cycle';
   const cc=INCOME_DATA.cc,cp=INCOME_DATA.cp;
-  if(!cc.length&&!cp.length){box.innerHTML='<div class="load">No income setups — need an F&O holding of a full lot (calls) or cash (puts), and the chain live.</div>';return;}
+  if(!cc.length&&!cp.length){const dg=d.diag||{};
+    const why=dg.reason||'Need an F&O holding of a full lot (calls) or cash (puts), and the chain live.';
+    const stat=dg.fno_universe!=null?('<div class="rsub" style="margin-top:8px;color:var(--n600)">F&O universe: '+dg.fno_universe+' stocks · your F&O holdings: '+(dg.fno_eligible_holdings||0)+' · with a full lot: '+(dg.holdings_with_full_lot||0)+' · free cash '+inr(dg.free_cash||0)+'</div>'):'';
+    box.innerHTML='<div class="pb"><div class="rn">No income setups right now</div><div class="rsub" style="margin-top:6px;color:var(--warn)">'+why+'</div>'+stat+'</div>';return;}
   box.innerHTML=cc.map((x,i)=>incCard(x,i,true)).join('')+cp.map((x,i)=>incCard(x,i,false)).join('');
 }
 function incCard(x,i,isCC){

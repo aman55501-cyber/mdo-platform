@@ -1481,8 +1481,34 @@ async def income_ideas(request: Request, token: str | None = Query(default=None)
     ccs = await asyncio.to_thread(income.covered_calls, holdings, angel_scrip)
     csps = await asyncio.to_thread(income.cash_secured_puts, list(seen_syms.values()),
                                    book.get("cash", 0), angel_scrip)
+    # When empty, say WHY (so it's not a mystery blank): F&O universe loaded?, how many
+    # holdings are F&O stocks, how many you own a full lot of, and free cash.
+    diag = None
+    if not ccs and not csps:
+        def _diag():
+            uni = angel_scrip._load_stock_options()
+            elig = full = 0
+            for h in holdings:
+                m = angel_scrip.fno_meta(h["sym"])
+                if m and m["lot"] > 0:
+                    elig += 1
+                    if int(h.get("quantity") or 0) >= m["lot"]:
+                        full += 1
+            return {"fno_universe": len(uni), "holdings": len(holdings),
+                    "fno_eligible_holdings": elig, "holdings_with_full_lot": full,
+                    "free_cash": round(book.get("cash", 0) or 0, 0)}
+        diag = await asyncio.to_thread(_diag)
+        if diag["fno_universe"] == 0:
+            diag["reason"] = "F&O option chain not loaded — log in to Angel (its feed powers the chain)."
+        elif diag["fno_eligible_holdings"] == 0:
+            diag["reason"] = "None of your holdings are F&O-eligible stocks — covered calls need an F&O name."
+        elif diag["holdings_with_full_lot"] == 0:
+            diag["reason"] = ("You hold F&O stocks but not a full lot of any — covered calls need "
+                              "≥1 lot. Cash-secured puts need free cash ≥ one lot's value.")
+        else:
+            diag["reason"] = "Chain premiums unavailable right now — try again during market hours."
     return {"as_of": book.get("as_of"), "cash": book.get("cash", 0),
-            "covered_calls": ccs, "cash_secured_puts": csps,
+            "covered_calls": ccs, "cash_secured_puts": csps, "diag": diag,
             "summary": income.summarise(ccs, csps),
             "note": "Premiums are live from the NFO chain where available, else Black-Scholes "
                     "(India VIX as IV). Proposals only — nothing is placed."}
