@@ -49,6 +49,33 @@ def _extract_token(payload: dict) -> str | None:
     return str(token) if token else None
 
 
+def _norm_hdfc_order(o: dict, label: str, key: str) -> dict:
+    """One HDFC order -> the unified order-book row shape (shared with Angel).
+
+    HDFC's order JSON field names aren't probe-confirmed, so read each field from a
+    list of likely candidates. Any it can't find degrades to a safe default rather
+    than crashing the whole book.
+    """
+    return {
+        "orderid": _first(o, "order_id", "orderId", "orderid", "nOrdNo", "orderNumber", default=""),
+        "symbol": _first(o, "trading_symbol", "tradingsymbol", "tradingSymbol", "symbol", default=""),
+        "side": (_first(o, "transaction_type", "transactionType", "side", "buy_sell", default="") or "").upper(),
+        "type": _first(o, "order_type", "orderType", "type", default=""),
+        "product": _first(o, "product_type", "productType", "product", default=""),
+        "variety": _first(o, "variety", "order_variety", default="NORMAL") or "NORMAL",
+        "qty": int(to_float(_first(o, "quantity", "qty", "order_qty", default=0)) or 0),
+        "filled": int(to_float(_first(o, "filled_quantity", "filledQty", "traded_quantity", default=0)) or 0),
+        "price": to_float(_first(o, "price", "order_price", default=0)) or 0.0,
+        "trigger": to_float(_first(o, "trigger_price", "triggerPrice", default=0)) or 0.0,
+        "status": (_first(o, "order_status", "orderStatus", "status", default="") or "").lower(),
+        "reason": _first(o, "rejection_reason", "reason", "message", "text", "error", default="") or "",
+        "exchange": _first(o, "exchange", "exchange_segment", default=""),
+        "symboltoken": str(_first(o, "security_id", "securityId", "token", "symboltoken", default="") or ""),
+        "time": _first(o, "order_time", "orderTime", "update_time", "exchange_time", default="") or "",
+        "account": label, "creds_key": key, "broker": "hdfc",
+    }
+
+
 class HdfcAdapter:
     """Async, read-only client for one HDFC account."""
 
@@ -203,6 +230,30 @@ class HdfcAdapter:
                 "raw_mtf": raw_mtf,
             })
         return out
+
+    async def get_order_book(self) -> list[dict]:
+        """Today's orders for THIS HDFC account, in the unified row shape.
+
+        HDFC's order-book path isn't probe-confirmed, so try each candidate until one
+        returns JSON. A 401 (token expired) propagates; a 404/400 just means the wrong
+        path — move to the next. If none work, raise with the paths tried so it's
+        obvious what to correct (set HDFC_ORDERBOOK_PATH), never a silent empty book.
+        """
+        last: Exception | None = None
+        for path in ep.ORDERBOOK_CANDIDATES:
+            try:
+                data = await self._get(path)
+            except TokenExpiredError:
+                raise
+            except (BrokerError, RateLimitError) as exc:
+                last = exc
+                continue
+            rows = self._rows(data, "orders", "orderBook", "order_book", "data")
+            return [_norm_hdfc_order(o, self._acct.label, self._acct.creds_key)
+                    for o in rows if isinstance(o, dict)]
+        raise BrokerError(
+            f"HDFC order book: no working endpoint (tried {ep.ORDERBOOK_CANDIDATES}). "
+            f"Set HDFC_ORDERBOOK_PATH once confirmed. Last: {last}")
 
     async def get_positions(self) -> list[dict]:
         # HDFC returns positions under data.net[] (and possibly data.day[]).

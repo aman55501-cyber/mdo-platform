@@ -15,9 +15,19 @@ VERIFIED facts (from HDFC docs — trusted over convention):
 
 from __future__ import annotations
 
+import os
+
 # --- Auth / token ---
 LOGIN = "/login"                 # GET ?api_key=... (opened in browser)
 ACCESS_TOKEN = "/access-token"   # POST ?api_key=&request_token=  body {"apiSecret": "..."}
+
+# --- Order book (READ). HDFC's exact path isn't probe-confirmed yet, so try a few
+# candidates and let HDFC_ORDERBOOK_PATH override once you've confirmed it. Following
+# the same honest pattern as the write path: never claim success we didn't get. ---
+ORDERBOOK_CANDIDATES = [p for p in [
+    os.environ.get("HDFC_ORDERBOOK_PATH", "").strip(),
+    "/orders", "/order-book", "/orders/book", "/portfolio/orders", "/order/book",
+] if p]
 
 # --- Read-only portfolio endpoints (all CONFIRMED against the live account + docs) ---
 HOLDINGS = "/portfolio/holdings"            # returns sector_name, day_change, day_change_percentage

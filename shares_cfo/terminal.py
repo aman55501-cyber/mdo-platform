@@ -596,32 +596,38 @@ async function tkConfirm(){
 function obStatusCls(s){if(/complete|filled/.test(s))return 'up';if(/reject|cancel/.test(s))return 'down';if(/open|pending|trigger/.test(s))return 'warn';return 'muted';}
 async function loadOrderBook(){const box=document.getElementById('ob-list'),meta=document.getElementById('ob-meta');if(!box)return;
   const r=await j('/orders/book?'+Q);
-  if(r.ok&&r.d.orders){const os=r.d.orders;meta.textContent='broker · '+(r.d.open||0)+' open';
-    OBMAP={};os.forEach(o=>{OBMAP[o.orderid]=o;});
-    if(!os.length){box.innerHTML='<div class="load">No orders today.</div>';return;}
-    box.innerHTML=os.slice(0,30).map(o=>{const cancellable=/open|pending|trigger/.test(o.status||'');
-      return '<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">'
-        +'<div style="display:flex;align-items:center;gap:8px"><span class="rn">'+(o.symbol||'—')+'</span>'
-        +'<span class="rsub '+(o.side==='BUY'?'up':'down')+'">'+(o.side||'')+'</span>'
-        +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+(o.type||'')+'</span>'
-        +'<span class="'+obStatusCls(o.status||'')+'" style="margin-left:auto;font-family:var(--fh);text-transform:uppercase;font-size:10px;letter-spacing:.05em">'+(o.status||'')+'</span></div>'
-        +'<div class="rsub mono" style="color:var(--n600)">Qty '+o.qty+(o.filled?' ('+o.filled+' filled)':'')+' · '+(o.type==='MARKET'?'MKT':(o.price||'—'))+(o.trigger?' · trig '+o.trigger:'')+'</div>'
-        +(o.reason&&/reject/.test(o.status||'')?'<div class="rsub down">'+o.reason+'</div>':'')
-        +(cancellable?'<div style="display:flex;gap:6px"><button class="segb" style="padding:6px 12px;font-size:11px" onclick="modifyOrder(\''+o.orderid+'\')">Modify</button><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelOrder(\''+o.orderid+'\',\''+(o.variety||'NORMAL')+'\')">Cancel</button></div>':'')
-        +'</div>';}).join('');return;}
-  // fallback to the app's audit log if the broker book is unavailable
-  meta.textContent='audit log';const a=await j('/execution/log?'+Q);const ev=(a.ok&&a.d.events)||[];
-  if(!ev.length){box.innerHTML='<div class="load">'+((r.d&&r.d.error)?('Broker order book: '+r.d.error):'No orders yet.')+'</div>';return;}
-  box.innerHTML=ev.slice(0,20).map(e=>{const o=e.order||{},side=o.side||'';
-    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,' '))+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');}
-async function cancelOrder(oid,variety){if(!confirm('Cancel this order?'))return;
-  const r=await j2('/orders/cancel?'+Q,'POST',{orderid:oid,variety:variety});
+  if(!r.ok){  // whole call failed (auth/network) — fall back to the local audit log
+    meta.textContent='audit log';const a=await j('/execution/log?'+Q);const ev=(a.ok&&a.d.events)||[];
+    if(!ev.length){box.innerHTML='<div class="load">Order book unavailable — '+(r.d.detail||('error '+(r.s||'')))+'</div>';return;}
+    box.innerHTML=ev.slice(0,20).map(e=>{const o=e.order||{},side=o.side||'';
+      return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,' '))+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');return;}
+  const os=r.d.orders||[],errs=r.d.errors||[];
+  meta.textContent='broker · '+(r.d.open||0)+' open'+(errs.length?' · '+errs.length+' acct issue':'');
+  OBMAP={};os.forEach(o=>{OBMAP[o.orderid]=o;});
+  let html='';
+  // surface any per-account failure instead of pretending the book is empty
+  if(errs.length){html+=errs.map(e=>'<div class="rsub down" style="padding:5px 0;border-bottom:1px solid var(--n200)">'+e.account+': '+e.error+'</div>').join('');}
+  if(!os.length){box.innerHTML=html+'<div class="load">No orders today'+(errs.length?' (accounts above could not be read)':'')+'.</div>';return;}
+  html+=os.slice(0,40).map(o=>{const cancellable=/open|pending|trigger|modif/.test(o.status||'');const hd=o.broker==='hdfc';
+    return '<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="rn">'+(o.symbol||'—')+'</span>'
+      +'<span class="rsub '+(o.side==='BUY'?'up':'down')+'">'+(o.side||'')+'</span>'
+      +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+(o.type||'')+'</span>'
+      +'<span class="rsub" style="color:var(--n500)">'+(o.account||'')+'</span>'
+      +'<span class="'+obStatusCls(o.status||'')+'" style="margin-left:auto;font-family:var(--fh);text-transform:uppercase;font-size:10px;letter-spacing:.05em">'+(o.status||'')+'</span></div>'
+      +'<div class="rsub mono" style="color:var(--n600)">Qty '+o.qty+(o.filled?' ('+o.filled+' filled)':'')+' · '+(o.type==='MARKET'?'MKT':(o.price||'—'))+(o.trigger?' · trig '+o.trigger:'')+'</div>'
+      +(o.reason&&/reject/.test(o.status||'')?'<div class="rsub down">'+o.reason+'</div>':'')
+      +(cancellable?'<div style="display:flex;gap:6px">'+(hd?'<span class="rsub" style="color:var(--n500);padding:6px 0">manage in HDFC app</span>':'<button class="segb" style="padding:6px 12px;font-size:11px" onclick="modifyOrder(\''+o.orderid+'\')">Modify</button><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelOrder(\''+o.orderid+'\',\''+(o.variety||'NORMAL')+'\',\''+(o.broker||'angel')+'\')">Cancel</button>')+'</div>':'')
+      +'</div>';}).join('');
+  box.innerHTML=html;}
+async function cancelOrder(oid,variety,broker){if(!confirm('Cancel this order?'))return;
+  const r=await j2('/orders/cancel?'+Q,'POST',{orderid:oid,variety:variety,broker:broker||'angel'});
   if(r.ok){loadOrderBook();}else alert(r.d.detail||'cancel failed');}
 let OBMAP={};
 async function modifyOrder(oid){const o=OBMAP[oid];if(!o)return;
   const np=prompt('New limit price (blank = keep '+o.price+'):',o.price);if(np===null)return;
   const nq=prompt('New quantity (blank = keep '+o.qty+'):',o.qty);if(nq===null)return;
-  const body={orderid:o.orderid,variety:o.variety||'NORMAL',tradingsymbol:o.symbol,symboltoken:o.symboltoken||'',exchange:o.exchange||'NSE',order_type:o.type||'LIMIT',quantity:+nq||o.qty,price:+np||o.price,trigger_price:o.trigger||0,product:o.product||'CNC'};
+  const body={orderid:o.orderid,variety:o.variety||'NORMAL',tradingsymbol:o.symbol,symboltoken:o.symboltoken||'',exchange:o.exchange||'NSE',order_type:o.type||'LIMIT',quantity:+nq||o.qty,price:+np||o.price,trigger_price:o.trigger||0,product:o.product||'CNC',broker:o.broker||'angel'};
   const r=await j2('/orders/modify?'+Q,'POST',body);
   if(r.ok){loadOrderBook();}else alert(r.d.detail||'modify failed');}
 /* ---- GTT: good-till-triggered resting orders ---- */

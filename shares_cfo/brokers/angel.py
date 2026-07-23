@@ -28,6 +28,29 @@ LOGIN = "/rest/auth/angelbroking/user/v1/loginByPassword"
 HOLDINGS = "/rest/secure/angelbroking/portfolio/v1/getAllHolding"
 POSITIONS = "/rest/secure/angelbroking/order/v1/getPosition"
 RMS = "/rest/secure/angelbroking/user/v1/getRMS"
+ORDER_BOOK = "/rest/secure/angelbroking/order/v1/getOrderBook"
+
+
+def _norm_angel_order(o: dict, label: str, key: str) -> dict:
+    """One Angel order -> the unified order-book row shape (shared with HDFC)."""
+    return {
+        "orderid": o.get("orderid"),
+        "symbol": _first(o, "tradingsymbol", "symbol", default=""),
+        "side": (_first(o, "transactiontype", "side", default="") or "").upper(),
+        "type": _first(o, "ordertype", "type", default=""),
+        "product": _first(o, "producttype", "product", default=""),
+        "variety": o.get("variety") or "NORMAL",
+        "qty": int(to_float(_first(o, "quantity", "qty", default=0)) or 0),
+        "filled": int(to_float(_first(o, "filledshares", "filled", default=0)) or 0),
+        "price": to_float(o.get("price")) or 0.0,
+        "trigger": to_float(o.get("triggerprice")) or 0.0,
+        "status": (_first(o, "status", "orderstatus", default="") or "").lower(),
+        "reason": o.get("text") or "",
+        "exchange": _first(o, "exchange", default=""),
+        "symboltoken": str(_first(o, "symboltoken", "symtok", default="") or ""),
+        "time": _first(o, "updatetime", "exchtime", "orderentrytime", default="") or "",
+        "account": label, "creds_key": key, "broker": "angel",
+    }
 
 
 _PUBLIC_IP_CACHE: str | None = None
@@ -156,6 +179,13 @@ class AngelAdapter:
         if isinstance(d, dict):
             return d.get("holdings") or d.get("data") or []
         return d if isinstance(d, list) else []
+
+    async def get_order_book(self) -> list[dict]:
+        """Today's orders for THIS Angel account, in the unified row shape."""
+        data = await self._get(ORDER_BOOK)
+        rows = data.get("data") if isinstance(data, dict) else data
+        return [_norm_angel_order(o, self._acct.label, self._acct.creds_key)
+                for o in (rows or []) if isinstance(o, dict)]
 
     async def get_holdings(self) -> list[dict]:
         data = await self._get(HOLDINGS)

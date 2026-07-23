@@ -3367,21 +3367,58 @@ async def execution_kill(request: Request, token: str | None = Query(default=Non
     return engine.engage_kill()
 
 
-# --- Order lifecycle (Angel): real order book + cancel + modify -----------------
+# --- Order lifecycle: multi-account order book + cancel + modify ----------------
+_OPEN_STATES = ("open", "trigger pending", "pending", "validation pending",
+                "modified", "put order req received", "modify pending")
+
+
+async def _account_orders(creds_key: str) -> dict:
+    """Today's orders for ONE account via its own broker adapter. Never raises —
+    a failing account degrades to an error string so the others still return."""
+    from .brokers import make_adapter
+    try:
+        acc = load_account(creds_key)
+    except Exception as exc:
+        return {"key": creds_key, "label": creds_key, "orders": [], "error": str(exc)[:200]}
+    stored = token_store.get_token(creds_key)
+    if stored:
+        acc.access_token = stored
+    adapter = make_adapter(acc)
+    try:
+        orders = await adapter.get_order_book()
+        return {"key": creds_key, "label": acc.label, "orders": orders}
+    except Exception as exc:
+        return {"key": creds_key, "label": acc.label, "orders": [], "error": str(exc)[:200]}
+    finally:
+        try:
+            await adapter.close()
+        except Exception:
+            pass
+
+
 @app.get("/orders/book")
 async def orders_book(request: Request, token: str | None = Query(default=None)) -> dict:
-    """Live broker order book — real per-order status. Read-only."""
+    """Live broker order book across EVERY connected account (HDFC + Angel).
+
+    Each order is tagged with the account it lives in; a broker that errors is
+    surfaced per-account instead of being hidden as 'no orders'. Read-only."""
     _check_token(request, token)
-    from .brokers import angel_scrip
-    try:
-        orders = await asyncio.to_thread(angel_scrip.order_book)
-    except Exception as exc:
-        return {"orders": [], "error": str(exc)[:200]}
-    # open / trigger-pending first (actionable), then the rest by recency
-    _act = {"open": 0, "trigger pending": 0, "pending": 0}
-    orders.sort(key=lambda o: _act.get(o.get("status", ""), 5))
-    return {"orders": orders, "open": sum(1 for o in orders
-                                          if o.get("status") in ("open", "trigger pending", "pending"))}
+    results = list(await asyncio.gather(*[_account_orders(k) for k in get_accounts()]))
+    orders: list[dict] = []
+    errors: list[dict] = []
+    for r in results:
+        orders.extend(r.get("orders") or [])
+        if r.get("error"):
+            errors.append({"account": r.get("label") or r["key"], "error": r["error"]})
+    # actionable (open / trigger-pending / modifiable) first, then the rest
+    orders.sort(key=lambda o: 0 if (o.get("status") or "") in _OPEN_STATES else 1)
+    return {
+        "orders": orders,
+        "open": sum(1 for o in orders if (o.get("status") or "") in _OPEN_STATES),
+        "errors": errors,
+        "accounts": [{"account": r.get("label") or r["key"], "ok": not r.get("error"),
+                      "count": len(r.get("orders") or [])} for r in results],
+    }
 
 
 def _trading_on() -> None:
@@ -3401,6 +3438,11 @@ async def orders_cancel(request: Request, payload: dict = Body(...),
     oid = str(payload.get("orderid") or "").strip()
     if not oid:
         raise HTTPException(status_code=400, detail="orderid required.")
+    broker = (payload.get("broker") or "angel").lower()
+    if broker == "hdfc":
+        raise HTTPException(status_code=501,
+                            detail="HDFC order cancel isn't wired yet — cancel it in the HDFC app. "
+                                   "Angel orders cancel here.")
     from .brokers import angel_scrip
     try:
         res = await asyncio.to_thread(angel_scrip.cancel_order, oid,
@@ -3423,6 +3465,10 @@ async def orders_modify(request: Request, payload: dict = Body(...),
                                        "trigger_price", "product")}
     if not req.get("orderid"):
         raise HTTPException(status_code=400, detail="orderid required.")
+    if (payload.get("broker") or "angel").lower() == "hdfc":
+        raise HTTPException(status_code=501,
+                            detail="HDFC order modify isn't wired yet — modify it in the HDFC app. "
+                                   "Angel orders modify here.")
     from .brokers import angel_scrip
     try:
         res = await asyncio.to_thread(
