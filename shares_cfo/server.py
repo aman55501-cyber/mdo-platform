@@ -1373,18 +1373,32 @@ async def auth_status() -> dict:
     return {"password_required": bool(get_password())}
 
 
+_AUTH_FAILS: dict = {"n": 0, "until": 0.0}
+
+
 @app.post("/auth/login")
 async def auth_login(payload: dict = Body(...)) -> dict:
-    """Exchange the app password for the API token. Constant-time compare; the password
-    and token are never logged."""
+    """Exchange the app password for the API token. Constant-time compare, a rising
+    lock-out after repeated wrong tries, and neither password nor token is ever logged."""
     import hmac
+    import time
     from .config import get_password
     pw = get_password()
     if not pw:
         raise HTTPException(status_code=400, detail="Password login is not enabled.")
+    now = time.time()
+    if now < _AUTH_FAILS["until"]:
+        wait = int(_AUTH_FAILS["until"] - now) + 1
+        raise HTTPException(status_code=429, detail=f"Too many attempts — wait {wait}s.")
     supplied = str(payload.get("password") or "")
     if not hmac.compare_digest(supplied, pw):
+        _AUTH_FAILS["n"] += 1
+        # brief, rising back-off after 4 misses (2s, 4s, 8s … capped) to kill brute force
+        if _AUTH_FAILS["n"] >= 4:
+            _AUTH_FAILS["until"] = now + min(2 ** (_AUTH_FAILS["n"] - 3), 300)
+        await asyncio.sleep(0.5)
         raise HTTPException(status_code=401, detail="Wrong password.")
+    _AUTH_FAILS.update(n=0, until=0.0)
     return {"token": get_api_token()}
 
 
