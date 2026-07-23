@@ -227,6 +227,8 @@ a{color:var(--a700);text-decoration:none}
         <div class="rsub" style="margin-top:8px">Fuses fundamentals, technicals, current news and market regime per F&amp;O underlying, and flags any that conflict with how you're positioned. Cached ~20 min.</div></div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl" id="ob-meta">broker · live</span></div><div id="ob-list"><div class="load">—</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">GTT · resting orders</span><span class="lbl" id="gtt-meta">good till triggered</span></div><div id="gtt-list"><div class="load">—</div></div></div>
+    <div class="panel span2" id="basket-panel" style="display:none"><div class="ph"><span class="t">Basket</span><span class="lbl" id="basket-meta"></span></div><div id="basket-list"></div>
+      <div class="pb" style="display:flex;gap:8px;border-top:1px solid var(--n200)"><button class="segb" style="flex:1;padding:11px 0" onclick="placeBasket()">Place basket</button><button class="segb" style="flex:0 0 auto;padding:11px 16px" onclick="clearBasket()">Clear</button></div></div>
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
@@ -252,6 +254,7 @@ a{color:var(--a700);text-decoration:none}
   <div style="display:flex;gap:6px;margin-top:12px"><button class="segb tk-side on" data-s="BUY" onclick="tkSide('BUY')" style="flex:1;padding:12px 0;font-size:13px">BUY</button><button class="segb tk-side" data-s="SELL" onclick="tkSide('SELL')" style="flex:1;padding:12px 0;font-size:13px">SELL</button></div>
   <div class="ssub">Segment</div><div style="display:flex;gap:6px" id="tk-segs"><button class="segb tk-seg on" onclick="tkSeg('CASH',this)">CASH</button><button class="segb tk-seg" onclick="tkSeg('FUT',this)">FUT</button></div>
   <div class="rsub" id="tk-contract" style="margin-top:6px;color:var(--n500)"></div>
+  <div id="tk-depth" class="mono" style="margin-top:8px;font-size:11.5px;display:none"></div>
   <div class="ssub">Account</div><select id="tk-acct" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fh);letter-spacing:.03em"></select>
   <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkProd(this)">CNC</button><button class="segb tk-prod" onclick="tkProd(this)">MIS</button></div>
   <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button><button class="segb tk-ot" onclick="tkOt('SL',this)">SL</button><button class="segb tk-ot" onclick="tkOt('SL-M',this)">SL-M</button></div>
@@ -265,6 +268,7 @@ a{color:var(--a700);text-decoration:none}
   <div style="display:flex;gap:8px;margin-top:14px">
     <button class="segb" id="tk-go" onclick="tkReview()" style="flex:1;padding:14px 0;font-size:13px">Review order</button>
     <button class="segb" onclick="setGtt()" style="flex:0 0 auto;padding:14px 16px;font-size:13px" title="Good Till Triggered — a resting order at the broker">Set GTT</button>
+    <button class="segb" onclick="addToBasket()" style="flex:0 0 auto;padding:14px 16px;font-size:13px" title="Add as a basket leg">+Basket</button>
   </div>
   <div class="rsub" style="margin-top:8px;color:var(--n500)">Guarded: propose → confirm. Nothing places unless the master switch is on. GTT rests at the broker up to a year.</div>
 </div>
@@ -511,7 +515,8 @@ function openTicket(sym,ltp,side,acct){closeShare();TK={sym:(sym||'').toUpperCas
   document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));
   document.querySelectorAll('.tk-ot').forEach((b,i)=>b.classList.toggle('on',i===0));
   document.getElementById('tk-price-wrap').style.display='none';document.getElementById('tk-guard').style.display='none';
-  document.getElementById('tk-go').textContent='Review order';tkVal();
+  document.getElementById('tk-go').textContent='Review order';tkVal();tkExtras();
+  clearInterval(TK_TIMER);TK_TIMER=setInterval(()=>{if(MKT_OPEN)tkDepth();},4000);  // live depth while open
   document.getElementById('tscrim').classList.add('on');document.getElementById('tsheet').classList.add('on');}
 async function tkSeg(v,el){[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));tkReset();TK.seg=v;
   const ci=document.getElementById('tk-contract');
@@ -526,8 +531,32 @@ async function tkSeg(v,el){[...el.parentElement.children].forEach(b=>b.classList
     document.querySelectorAll('.tk-prod').forEach(b=>{if(b.textContent==='NRML')b.textContent='CNC';});
     document.querySelectorAll('.tk-prod').forEach((b,i)=>b.classList.toggle('on',i===0));}
   tkVal();}
-function closeTicket(){document.getElementById('tscrim').classList.remove('on');document.getElementById('tsheet').classList.remove('on');}
-function tkReset(){TK.pid=null;document.getElementById('tk-go').textContent='Review order';}
+let TK_TIMER=null;
+function closeTicket(){document.getElementById('tscrim').classList.remove('on');document.getElementById('tsheet').classList.remove('on');
+  clearInterval(TK_TIMER);TK_TIMER=null;const dp=document.getElementById('tk-depth');if(dp)dp.style.display='none';}
+function tkReset(){TK.pid=null;document.getElementById('tk-go').textContent='Review order';tkExtras();}
+/* ---- pro order pad: 5-level depth + live margin ---- */
+function tkTok(){return (TK.seg==='FUT'&&TK.fut)?TK.fut.token:TK.token;}
+let TK_EX_T=null;
+function tkExtras(){clearTimeout(TK_EX_T);TK_EX_T=setTimeout(()=>{tkDepth();tkMargin();},300);}
+async function tkDepth(){const el=document.getElementById('tk-depth');if(!el)return;const tok=tkTok();
+  if(!tok){el.style.display='none';return;}
+  const r=await j('/quote/'+encodeURIComponent(tok)+'?exchange='+encodeURIComponent(TK.exch)+'&'+Q);
+  const d=r.ok?r.d:null;if(!d||d.error||!(d.buy&&d.buy.length)){el.style.display='none';return;}
+  el.style.display='block';let rows='';
+  for(let i=0;i<5;i++){const b=d.buy[i]||{},s=d.sell[i]||{};
+    rows+='<div style="display:flex;gap:6px;justify-content:space-between"><span class="up" style="flex:1">'+(b.qty!=null?kfmt(b.qty):'')+'</span><span class="up" style="width:64px;text-align:right">'+(b.price||'')+'</span><span style="width:64px" class="down">'+(s.price||'')+'</span><span class="down" style="flex:1;text-align:right">'+(s.qty!=null?kfmt(s.qty):'')+'</span></div>';}
+  el.innerHTML='<div class="rsub" style="color:var(--n500);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between"><span>bid</span><span>ask</span></div>'+rows
+    +'<div class="rsub" style="color:var(--n600);margin-top:3px">Σ buy '+kfmt(d.total_buy)+' · sell '+kfmt(d.total_sell)+(d.oi?' · OI '+kfmt(d.oi):'')+'</div>';}
+let RMS_CACHE={ts:0,v:null};
+async function tkMargin(){const f=document.getElementById('tk-funds');if(!f)return;
+  if(TK.exch!=='NFO'){return;}  // equity affordability handled by tkVal (cash)
+  if(!RMS_CACHE.v||Date.now()-RMS_CACHE.ts>30000){const rr=await j('/margin/rms?'+Q);if(rr.ok&&!rr.d.error)RMS_CACHE={ts:Date.now(),v:rr.d};}
+  const avail=RMS_CACHE.v?RMS_CACHE.v.available_margin:((PORT&&PORT.cash)||0);const tok=tkTok();if(!tok)return;
+  const px=(TK.ot==='LIMIT'||TK.ot==='SL')?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const r=await j2('/margin/order?'+Q,'POST',{legs:[{exchange:TK.exch,token:tok,product:TK.product,side:TK.side,qty:tkUnits(),price:px}]});
+  if(r.ok&&r.d&&!r.d.error&&r.d.total){const need=r.d.total,ok=need<=avail;
+    f.innerHTML='Margin '+inr(need)+(r.d.span?' · SPAN '+inr(r.d.span):'')+' · Avail '+inr(avail)+(ok?'':' · <span class="down">short</span>');}}
 function tkSide(s){TK.side=s;tkReset();document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===s));const st=document.getElementById('tk-stop');if(st&&TK.ltp)st.value=(TK.ltp*(s==='BUY'?0.95:1.05)).toFixed(2);}
 function tkProd(el){TK.product=el.textContent.trim();tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));}
 function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));
@@ -607,6 +636,29 @@ async function loadGtt(){const box=document.getElementById('gtt-list'),meta=docu
 async function cancelGtt(id,tok,exch){if(!confirm('Cancel this GTT?'))return;
   const r=await j2('/gtt/cancel?'+Q,'POST',{id:id,symboltoken:tok,exchange:exch});
   if(r.ok)loadGtt();else alert(r.d.detail||'cancel failed');}
+/* ---- basket orders (multi-leg, combined margin, guarded placement) ---- */
+let BASKET=[];
+function addToBasket(){const tok=tkTok();if(TK.exch==='NFO'&&!tok){alert('No token — open from Holdings/Positions.');return;}
+  const px=(TK.ot==='LIMIT'||TK.ot==='SL')?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const trig=(TK.ot==='SL'||TK.ot==='SL-M')?(+document.getElementById('tk-trig').value||0):0;
+  const fut=TK.seg==='FUT'&&TK.fut,acct=(document.getElementById('tk-acct')||{}).value||angelKey();
+  BASKET.push({creds_key:acct,exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:tok||'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:trig,underlying:TK.sym,stop_loss:0,target:0});
+  closeTicket();renderBasket();}
+function clearBasket(){BASKET=[];renderBasket();}
+function rmBasket(i){BASKET.splice(i,1);renderBasket();}
+async function renderBasket(){const panel=document.getElementById('basket-panel');if(!panel)return;
+  const list=document.getElementById('basket-list'),meta=document.getElementById('basket-meta');
+  if(!BASKET.length){panel.style.display='none';return;}panel.style.display='block';
+  list.innerHTML=BASKET.map((l,i)=>'<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+l.symbol+' <span class="rsub '+(l.side==='BUY'?'up':'down')+'">'+l.side+'</span></div><div class="rsub mono">'+l.quantity+' · '+l.order_type+(l.price?' @ '+l.price:'')+'</div></div><div class="rr"><button class="segb" style="padding:5px 10px;font-size:11px" onclick="rmBasket('+i+')">✕</button></div></div>').join('');
+  const legs=BASKET.filter(l=>l.exchange==='NFO'&&l.token).map(l=>({exchange:l.exchange,token:l.token,product:l.product,side:l.side,qty:l.quantity,price:l.price}));
+  if(legs.length){const r=await j2('/margin/order?'+Q,'POST',{legs:legs});
+    if(r.ok&&r.d&&r.d.total)meta.innerHTML='margin '+inr(r.d.total)+(r.d.benefit?' <span class="up">saved '+inr(r.d.benefit)+'</span>':'');else meta.textContent=BASKET.length+' legs';}
+  else meta.textContent=BASKET.length+' legs';}
+async function placeBasket(){if(!BASKET.length)return;
+  if(!confirm('Place all '+BASKET.length+' legs? Each passes guardrails + the master switch.'))return;
+  const r=await j2('/basket/place?'+Q,'POST',{legs:BASKET});
+  if(r.ok){const p=r.d.placed||0;alert('Placed '+p+'/'+r.d.total+' legs.'+(p<r.d.total?' Some failed — check the order book.':''));BASKET=[];renderBasket();loadOrderBook();}
+  else alert(r.d.detail||'basket failed');}
 async function setGtt(){
   const tok=(TK.seg==='FUT'&&TK.fut)?TK.fut.token:TK.token;
   if(!tok){alert('No instrument token for this symbol — open it from Holdings to set a GTT.');return;}
@@ -831,7 +883,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
-  if(t==='positions'){loadPositions();loadOrderBook();loadGtt();}
+  if(t==='positions'){loadPositions();loadOrderBook();loadGtt();renderBasket();}
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='chart'){if(!chartLoaded){chartLoaded=1;chartChips();}loadChart();}

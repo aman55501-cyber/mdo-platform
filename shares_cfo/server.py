@@ -3430,6 +3430,71 @@ async def gtt_cancel(request: Request, payload: dict = Body(...),
     return res
 
 
+# --- Pro order pad: 5-level depth, live margin, basket orders -------------------
+@app.get("/quote/{symboltoken}")
+async def quote_depth(request: Request, symboltoken: str, exchange: str = "NFO",
+                      token: str | None = Query(default=None)) -> dict:
+    """5-level market depth + LTP for a token. Read-only."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    try:
+        return await asyncio.to_thread(angel_scrip.quote_full, symboltoken, exchange)
+    except Exception as exc:
+        return {"error": str(exc)[:160]}
+
+
+@app.get("/margin/rms")
+async def margin_rms(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live funds & margin (real F&O buying power). Read-only."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    try:
+        return await asyncio.to_thread(angel_scrip.rms)
+    except Exception as exc:
+        return {"error": str(exc)[:160]}
+
+
+@app.post("/margin/order")
+async def margin_order(request: Request, payload: dict = Body(...),
+                       token: str | None = Query(default=None)) -> dict:
+    """Margin required for one or many legs (basket benefit included). Read-only."""
+    _check_token(request, token)
+    legs = payload.get("legs") or []
+    if not legs:
+        raise HTTPException(status_code=400, detail="No legs.")
+    from .brokers import angel_scrip
+    try:
+        return await asyncio.to_thread(angel_scrip.order_margin, legs)
+    except Exception as exc:
+        return {"error": str(exc)[:160]}
+
+
+@app.post("/basket/place")
+async def basket_place(request: Request, payload: dict = Body(...),
+                       token: str | None = Query(default=None)) -> dict:
+    """Place a multi-leg basket — each leg through every guardrail + the master switch.
+    Partial failures are reported per leg; nothing is placed unless trading is ON."""
+    _check_token(request, token)
+    legs = payload.get("legs") or []
+    if not legs:
+        raise HTTPException(status_code=400, detail="Basket has no legs.")
+    from .execution import engine
+    from .execution.guardrails import GuardrailError
+    from .execution.models import OrderRequest
+    day = await _day_pnl()
+    results = []
+    for i, leg in enumerate(legs):
+        try:
+            o = OrderRequest(**{k: leg[k] for k in _ORDER_FIELDS if k in leg})
+            res = await asyncio.to_thread(engine.place_now, o, day)
+            results.append({"leg": i, "symbol": leg.get("symbol"), "ok": True, "result": res})
+        except GuardrailError as exc:
+            results.append({"leg": i, "symbol": leg.get("symbol"), "ok": False, "error": str(exc)})
+        except Exception as exc:
+            results.append({"leg": i, "symbol": leg.get("symbol"), "ok": False, "error": str(exc)[:200]})
+    return {"placed": sum(1 for r in results if r["ok"]), "total": len(legs), "legs": results}
+
+
 def main() -> None:
     import os
     import uvicorn

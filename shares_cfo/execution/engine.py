@@ -113,6 +113,17 @@ def propose(order: OrderRequest, day_pnl: float = 0.0) -> dict:
     }
 
 
+def place_now(order: OrderRequest, day_pnl: float = 0.0) -> dict:
+    """Place a single order immediately, still through every guardrail + master switch.
+    Used for basket legs where the whole basket is confirmed once at the UI level."""
+    cfg = get_trading_config()
+    guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _STATE["kill"])
+    result = _send_to_broker(order)
+    _STATE["orders_today"] += 1
+    _audit("SENT", {"order": order.to_dict(), "result": result, "via": "basket"})
+    return result
+
+
 def confirm(proposal_id: str, confirm_code: str, day_pnl: float = 0.0) -> dict:
     prop = _PROPOSALS.get(proposal_id)
     if not prop:

@@ -557,6 +557,12 @@ def place_order(order) -> dict:
         symboltoken = order.token
         if not symboltoken or not tradingsymbol:
             raise RuntimeError(f"NFO order needs tradingsymbol + token ({order.symbol})")
+        # F&O trades only in whole lots — reject anything that isn't a lot multiple.
+        lot = lot_size(order.underlying) if order.underlying else 0
+        if lot and int(order.quantity) % lot != 0:
+            raise RuntimeError(
+                f"F&O quantity {int(order.quantity)} must be a multiple of the lot size "
+                f"({lot}) for {order.underlying}.")
     else:
         sym = order.symbol.upper().split("-")[0]
         tradingsymbol = f"{sym}-EQ" if exch == "NSE" else order.symbol
@@ -717,3 +723,64 @@ def _flt(v):
         return float(v)
     except (TypeError, ValueError):
         return 0.0
+
+
+# --- Market depth, funds & order margin (pro order pad) ----------------------
+RMS = "/rest/secure/angelbroking/user/v1/getRMS"
+ORDER_MARGIN = "/rest/secure/angelbroking/margin/v1/batch"
+
+
+def quote_full(symboltoken: str, exchange: str = "NFO") -> dict:
+    """5-level market depth + LTP/OI/volume for one token via Angel FULL quote."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    body = {"mode": "FULL", "exchangeTokens": {(exchange or "NFO").upper(): [str(symboltoken)]}}
+    r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=15.0)
+    fetched = (((r.json() or {}).get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
+    if not fetched:
+        return {}
+    f = fetched[0]
+    d = f.get("depth") or {}
+    lvl = lambda arr: [{"price": _flt(x.get("price")), "qty": _int(x.get("quantity")),
+                        "orders": _int(x.get("orders"))} for x in (arr or [])][:5]
+    return {"ltp": _flt(f.get("ltp")), "oi": _int(f.get("opnInterest")),
+            "volume": _int(f.get("tradeVolume")), "buy": lvl(d.get("buy")),
+            "sell": lvl(d.get("sell")), "total_buy": _int(f.get("totBuyQuan")),
+            "total_sell": _int(f.get("totSellQuan"))}
+
+
+def rms() -> dict:
+    """Funds & margin (Angel getRMS) — real F&O buying power, not just cash."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    r = httpx.get(acc.base_url + RMS, headers=_headers(acc, jwt), timeout=15.0)
+    d = ((r.json() or {}).get("data") or {}) if r.status_code < 400 else {}
+    if not d:
+        raise RuntimeError(f"Angel RMS unavailable [{r.status_code}]: {r.text[:160]}")
+    return {"available_cash": _flt(d.get("availablecash")), "net": _flt(d.get("net")),
+            "available_margin": _flt(d.get("availablecash") or d.get("net")),
+            "utilised": _flt(d.get("utiliseddebits")), "collateral": _flt(d.get("collateral")),
+            "m2m_unrealised": _flt(d.get("m2munrealized"))}
+
+
+def order_margin(legs: list[dict]) -> dict:
+    """Margin required for one or many legs (Angel batch margin — basket benefit included).
+    legs: [{exchange, token, product, side, qty, price}]"""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    positions = [{"exchange": (l["exchange"] or "NFO").upper(), "qty": int(l["qty"]),
+                  "price": float(l.get("price") or 0),
+                  "productType": _PRODUCT.get(l.get("product", "MIS"), "INTRADAY"),
+                  "token": str(l["token"]), "tradeType": (l.get("side") or "BUY").upper()}
+                 for l in legs if l.get("token")]
+    if not positions:
+        return {}
+    r = httpx.post(acc.base_url + ORDER_MARGIN, headers=_headers(acc, jwt),
+                   json={"positions": positions}, timeout=20.0)
+    d = ((r.json() or {}).get("data") or {}) if r.status_code < 400 else {}
+    if r.status_code >= 400:
+        raise RuntimeError(f"Angel margin error [{r.status_code}]: {r.text[:160]}")
+    mc = d.get("marginComponents") or {}
+    return {"total": _flt(d.get("totalMarginRequired")), "span": _flt(mc.get("spanMargin")),
+            "exposure": _flt(mc.get("exposureMargin")), "premium": _flt(mc.get("totOptionsPremium")),
+            "benefit": _flt(mc.get("marginBenefit"))}
