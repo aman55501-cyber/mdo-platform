@@ -289,7 +289,7 @@ let Q='token='+encodeURIComponent(token);
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}
 const _fails={};function _failbar(){let b=document.getElementById('failbar');if(!b){b=document.createElement('div');b.id='failbar';b.style.cssText='position:sticky;top:0;z-index:99;background:#3a1113;color:#f0a0a0;font:500 12px IBM Plex Mono,monospace;padding:6px 12px;border-bottom:1px solid #7a2a2a;display:none';document.body.prepend(b);}const k=Object.keys(_fails);if(k.length){b.style.display='block';b.textContent='DATA FEED ERROR: '+k.map(u=>u.split('?')[0]+' ('+_fails[u]+')').join(' · ')+' — retrying automatically';}else{b.style.display='none';}return b;}
 async function j(u){const c=new AbortController();const to=setTimeout(()=>c.abort(),30000);
-  try{const r=await fetch(u,{signal:c.signal});clearTimeout(to);if(!r.ok){_fails[u]='HTTP '+r.status;_failbar();return {ok:false,d:{},s:r.status};}delete _fails[u];_failbar();return {ok:true,d:await r.json()};}
+  try{const r=await fetch(u,{signal:c.signal});clearTimeout(to);if(!r.ok){if(r.status===401)reauth();_fails[u]='HTTP '+r.status;_failbar();return {ok:false,d:{},s:r.status};}delete _fails[u];_failbar();return {ok:true,d:await r.json()};}
   catch(e){clearTimeout(to);_fails[u]=(e&&e.name==='AbortError')?'timeout':String(e&&e.message||'network');_failbar();return {ok:false,d:{}};}}
 const inr=n=>{if(n==null||isNaN(n))return '₹—';const a=Math.abs(n),s=n<0?'-':'';if(a>=1e7)return s+'₹'+(a/1e7).toFixed(2)+'Cr';if(a>=1e5)return s+'₹'+(a/1e5).toFixed(2)+'L';return s+'₹'+Math.round(a).toLocaleString('en-IN');};
 const sp=p=>(p>=0?'+':'')+(p==null||isNaN(p)?'—':p.toFixed(2)+'%');
@@ -924,19 +924,32 @@ async function unlock(){
   try{
     const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
     const d=await r.json().catch(()=>({}));
-    if(r.ok&&d.token){token=d.token;Q='token='+encodeURIComponent(token);try{localStorage.setItem('cfo_token',token);}catch(e){}
+    if(r.ok&&d.token){token=d.token;Q='token='+encodeURIComponent(token);_reauthing=false;try{localStorage.setItem('cfo_token',token);}catch(e){}
       document.getElementById('gate').style.display='none';boot();}
     else{m.textContent=d.detail||'Wrong password.';}
   }catch(e){m.textContent='Network error — try again.';}
+}
+let _reauthing=false;
+function showGate(msg){const g=document.getElementById('gate');if(!g)return;g.style.display='flex';
+  const pw=document.getElementById('gate-pw');if(pw){pw.focus();pw.onkeydown=e=>{if(e.key==='Enter')unlock();};}
+  const m=document.getElementById('gate-msg');if(m&&msg)m.textContent=msg;}
+/* A 401 means the stored token is dead (e.g. it was rotated). Wipe it and, if the
+   server has a password, show the unlock screen — so the app self-heals on the phone
+   without needing a manual cache clear. */
+async function reauth(){
+  if(_reauthing)return;_reauthing=true;
+  try{localStorage.removeItem('cfo_token');}catch(e){}
+  token='';Q='token=';
+  let need=false;
+  try{const r=await fetch('/auth/status');const d=await r.json();need=!!d.password_required;}catch(e){}
+  if(need)showGate('Session expired — re-enter your password.');
 }
 async function initApp(){
   if(token){boot();return;}
   let need=false;
   try{const r=await fetch('/auth/status');const d=await r.json();need=!!d.password_required;}catch(e){}
-  if(need){const g=document.getElementById('gate');g.style.display='flex';
-    const pw=document.getElementById('gate-pw');pw.focus();
-    pw.addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});}
-  else{boot();}   // no password configured + no token = local/open mode
+  if(need)showGate();
+  else boot();   // no password configured + no token = local/open mode
 }
 initApp();
 </script></body></html>"""
