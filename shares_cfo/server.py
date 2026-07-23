@@ -18,6 +18,7 @@ Run (bind 0.0.0.0 so your phone can reach it):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 
@@ -1015,6 +1016,33 @@ async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
 
 _BOOK_CACHE: dict = {"ts": 0.0, "data": None}
 _BOOK_REFRESHING: dict = {"flag": False}
+_LAST_BOOK_FILE = Path(__file__).resolve().parent / "data" / "state" / "last_book.json"
+
+
+def _book_quality(b: dict | None) -> int:
+    """How complete a book is — number of fresh (non-degraded) accounts. Used to make
+    sure a MORE degraded fetch (e.g. HDFC logged out after a reboot) never replaces a
+    better book we already have."""
+    if not b:
+        return -1
+    return int((b.get("book_health") or {}).get("fresh", 0))
+
+
+def _save_last_book(b: dict) -> None:
+    """Persist the last good book so it survives a restart — the app shows the last
+    session instantly instead of a blank page while accounts re-authenticate."""
+    try:
+        _LAST_BOOK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_BOOK_FILE.write_text(json.dumps(b), encoding="utf-8")
+    except (OSError, TypeError):
+        pass
+
+
+def _load_last_book() -> dict | None:
+    try:
+        return json.loads(_LAST_BOOK_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 async def _consolidated(force: bool = False) -> dict:
@@ -1022,14 +1050,30 @@ async def _consolidated(force: bool = False) -> dict:
     fetch (with 5 accounts a full fetch is slow; every tab re-fetching made the app
     crawl)."""
     import time
+    from .angel_ws import _market_open
+
     data = _BOOK_CACHE["data"]
+    # Cold start after a restart: seed from the last good book on disk so the app shows
+    # the last session immediately instead of a blank page while accounts re-auth.
+    if data is None:
+        disk = _load_last_book()
+        if disk:
+            _BOOK_CACHE.update(ts=0.0, data=disk)  # ts=0 -> stale, will refresh if market open
+            data = disk
+
     age = time.time() - _BOOK_CACHE["ts"]
+    mkt = _market_open()
+
+    # After market close the book is FIXED: serve the last good one and don't refresh.
+    # Post-close fetches only re-pull the same closing prices, or worse, a degraded book
+    # after a token reset — so freezing keeps F&O + holdings steady until the next open.
+    if not force and data and not mkt:
+        return data
     if not force and data and age < 15:
         return data
-    # Stale-while-revalidate: if we have a recent-ish book, hand it back INSTANTLY and
-    # refresh in the background. A slow/hung broker then never freezes the tabs that
-    # await this — they just see a book a few seconds old. Only a cold start (no data)
-    # or an explicit force blocks on the live fetch.
+
+    # Stale-while-revalidate during market hours: hand back the current book INSTANTLY
+    # and refresh in the background so a slow/hung broker never freezes the tabs.
     if not force and data:
         if not _BOOK_REFRESHING["flag"]:
             _BOOK_REFRESHING["flag"] = True
@@ -1037,7 +1081,13 @@ async def _consolidated(force: bool = False) -> dict:
             async def _bg_refresh() -> None:
                 try:
                     result = await _consolidated_uncached()
-                    _BOOK_CACHE.update(ts=time.time(), data=result)
+                    # Quality guard: never let a MORE degraded book replace a better one
+                    # (e.g. HDFC logged out after a reboot). Keep the last good data.
+                    if _book_quality(result) >= _book_quality(_BOOK_CACHE["data"]):
+                        _BOOK_CACHE.update(ts=time.time(), data=result)
+                        _save_last_book(result)
+                    else:
+                        _BOOK_CACHE["ts"] = time.time()  # checked; keep the better book
                 except Exception as exc:  # keep serving the last good book
                     log.warning("book refresh failed: %s", exc)
                 finally:
@@ -1045,8 +1095,12 @@ async def _consolidated(force: bool = False) -> dict:
 
             asyncio.create_task(_bg_refresh())
         return data
+
+    # Cold fetch (nothing cached and nothing on disk).
     result = await _consolidated_uncached()
     _BOOK_CACHE.update(ts=time.time(), data=result)
+    if _book_quality(result) > 0:
+        _save_last_book(result)
     return result
 
 
