@@ -1381,6 +1381,11 @@ async def _start_proactive() -> None:
     except Exception as exc:
         import logging
         logging.getLogger("shares_cfo").warning("business agents not started: %s", exc)
+    try:
+        asyncio.get_event_loop().create_task(_tick_loop())  # warm live-quote cache
+    except Exception as exc:
+        import logging
+        logging.getLogger("shares_cfo").warning("tick loop not started: %s", exc)
 
 
 @app.post("/proactive/test")
@@ -1659,6 +1664,43 @@ def _leg_risk(r: dict) -> tuple:
     return "ok", ""
 
 
+# --- Warm live-quote cache: a background loop keeps the F&O leg quotes fresh in
+# memory (~3s) so /positions/live reads instantly instead of a broker call per poll. ---
+_LIVE_TICKS: dict = {"ts": 0.0, "q": {}}
+_STREAM_TOKENS: set = set()
+
+
+def _mkt_open_ist() -> bool:
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    if now.weekday() > 4:
+        return False
+    mins = now.hour * 60 + now.minute
+    return 555 <= mins <= 930  # 09:15–15:30 IST
+
+
+async def _tick_loop() -> None:
+    """Refresh the live quotes for the tokens currently on screen, every ~3s in market
+    hours. One batched call, off the request path, so the UI never waits on the broker."""
+    import time
+    from .brokers import angel_scrip
+    await asyncio.sleep(15)
+    while True:
+        try:
+            toks = list(_STREAM_TOKENS)
+            if toks and _mkt_open_ist():
+                q = await asyncio.to_thread(angel_scrip.option_full, toks)
+                if q:
+                    _LIVE_TICKS["q"].update(q)
+                    _LIVE_TICKS["ts"] = time.time()
+                await asyncio.sleep(3)
+            else:
+                await asyncio.sleep(20)
+        except Exception as exc:
+            log.warning("tick loop: %s", exc)
+            await asyncio.sleep(10)
+
+
 async def _live_positions() -> dict:
     """Live F&O positions across accounts, enriched with Angel LTP/OI/volume + MTM.
     Reusable core (endpoint + proactive agent both call this)."""
@@ -1694,10 +1736,19 @@ async def _live_positions() -> dict:
             if atok:
                 tokmap.setdefault(str(atok), []).append(i)
     if tokmap:
-        try:  # sync Angel quote -> off the event loop so it can't freeze the app
-            quotes = await asyncio.to_thread(angel_scrip.option_full, list(tokmap.keys()))
-        except Exception:
-            quotes = {}
+        import time
+        _STREAM_TOKENS.update(tokmap.keys())   # feed the background tick loop
+        tk = _LIVE_TICKS
+        if (time.time() - tk["ts"]) < 8 and all(t in tk["q"] for t in tokmap):
+            quotes = {t: tk["q"][t] for t in tokmap}   # instant: served from warm ticks
+        else:
+            try:  # cold: fetch once, off the loop, and seed the tick cache
+                quotes = await asyncio.to_thread(angel_scrip.option_full, list(tokmap.keys()))
+            except Exception:
+                quotes = {}
+            if quotes:
+                tk["q"].update(quotes)
+                tk["ts"] = time.time()
         for atok, idxs in tokmap.items():
             q = quotes.get(str(atok)) or {}
             for i in idxs:

@@ -737,8 +737,8 @@ async function heartbeat(){
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
 heartbeat();setInterval(heartbeat,30000);
-/* Positions tab refreshes every 15s while open DURING MARKET HOURS only — real-time
-   P&L when it matters, and completely still after close (nothing moves). */
+/* Positions tab refreshes every 5s while open DURING MARKET HOURS — the server serves
+   P&L from a warm ~3s tick cache, so this is cheap and feels real-time. Still after close. */
 setInterval(()=>{try{const on=document.querySelector('section.on');
-  if(MKT_OPEN&&on&&on.id==='s-positions')loadPositions();}catch(e){}},15000);
+  if(MKT_OPEN&&on&&on.id==='s-positions')loadPositions();}catch(e){}},5000);
 </script></body></html>"""
