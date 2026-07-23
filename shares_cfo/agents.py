@@ -199,12 +199,15 @@ def start(get_book) -> None:
             return
         while True:
             try:
+                from . import health
+                health.beat("ops_agents")
                 await _mis_agent(get_book)
                 await _tasks_agent()
                 await _projects_agent()
                 await _receivables_agent()
                 await _compliance_agent()
                 await _life_agent()
+                health.beat("nudges")
             except Exception as exc:
                 log.warning("agents cycle error: %s", exc)
             await asyncio.sleep(900)  # every 15 min; daily items self-gate by time

@@ -1097,6 +1097,8 @@ async def _consolidated_uncached() -> dict:
     unrealised_pnl = holdings_value - invested_value
     unrealised_pnl_pct = (unrealised_pnl / invested_value) if invested_value else 0.0
 
+    from . import health as _health
+    _health.beat("holdings", "sector_map", ok=len(ok_books) > 0)
     return {
         "as_of": utc_now_iso(),
         "complete": len(degraded) == 0,
@@ -1364,6 +1366,48 @@ async def preview() -> str:
 async def healthz() -> dict:
     """Unauthenticated liveness probe for the container healthcheck (no data touched)."""
     return {"status": "ok"}
+
+
+@app.get("/health.json")
+async def health_feed() -> Response:
+    """Proof-of-life feed for the status dashboard: per-module heartbeats + session
+    state. Unauthenticated by design (no secrets, no financials) so a wall-board can
+    poll it; every value is a real timestamp the server stamped, never a hardcoded LIVE."""
+    from . import health
+    return JSONResponse(health.snapshot(), headers={"Cache-Control": "no-store"})
+
+
+# Auto-heartbeat: stamp a module every time its endpoint actually returns data. A page
+# reading /health.json then reflects reality — anything not stamped shows "no signal".
+_HEALTH_PATHS = [
+    ("/holdings/grouped", ("holdings", "sector_map")),
+    ("/portfolio", ("holdings", "sector_map")),
+    ("/positions/deep", ("deep",)),
+    ("/positions/live", ("positions",)),
+    ("/income/ideas", ("income",)),
+    ("/chart/", ("charts",)),
+    ("/fundamentals/", ("share_page",)),
+    ("/execution/", ("execution",)),
+    ("/business/summary", ("import_kpis",)),
+    ("/business/", ("import_kpis",)),
+    ("/life/items", ("shared_board",)),
+]
+
+
+@app.middleware("http")
+async def _health_heartbeat(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        if response.status_code < 400:
+            from . import health
+            p = request.url.path
+            for prefix, mods in _HEALTH_PATHS:
+                if p.startswith(prefix):
+                    health.beat(*mods)
+                    break
+    except Exception:
+        pass
+    return response
 
 
 @app.get("/auth/status")
@@ -1849,8 +1893,9 @@ async def _live_positions() -> dict:
     _rank = {"danger": 0, "watch": 1, "ok": 2}
     rows.sort(key=lambda r: (_rank.get(r.get("risk"), 3), -abs(r.get("pnl") or 0)))
     fno = [r for r in rows if r["kind"] in ("option", "future")]
-    from . import angel_ws
+    from . import angel_ws, health as _health
     import time as _t
+    _health.beat("positions")
     ws_live = angel_ws.STATE.get("connected") and (_t.time() - angel_ws.STATE.get("last_tick", 0)) < 10
     return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
             "at_risk": sum(1 for r in rows if r.get("risk") == "danger"),
@@ -1946,6 +1991,8 @@ async def _deep_report(refresh: bool = False, narrate: bool = False) -> dict:
             "narrated": narrate, "reports": reports,
             "note": "Advisory synthesis from your own data — verify before acting."}
     cache.update(ts=time.time(), data=data)
+    from . import health as _health
+    _health.beat("deep")
     return data
 
 

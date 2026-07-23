@@ -285,6 +285,8 @@ def start(get_book) -> None:
         while True:
             delay = 300
             try:
+                from . import health
+                health.beat("agent")
                 now = _now()
                 book = await get_book()
                 await _daily(book, now)
