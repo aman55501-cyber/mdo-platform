@@ -126,10 +126,22 @@ KEYWORD_MAPS: dict[str, dict[str, list[str]]] = {
         "age": ["age", "days", "ageing", "aging", "overdue"],
     },
     "tenders": {
-        "name": ["tender", "name", "title", "project", "description", "work"],
-        "value": ["value", "amount", "emd", "estimated", "worth", "cost"],
-        "deadline": ["deadline", "due date", "submission", "closing", "last date", "date"],
-        "status": ["status", "stage", "state"],
+        # Tuned to GeM Tender-Summary export headers (#14).
+        "name": ["boq title", "boq", "title", "tender", "bid details", "project",
+                 "description", "work", "name"],
+        # EMD deliberately REMOVED — the pipeline total must never sum EMD.
+        "value": ["estimated bid value", "bid value", "contract value", "estimated",
+                  "value", "amount", "worth", "cost"],
+        "emd": ["emd"],
+        # Bare "submission" is LAST so "Hard Copy Submission" (not a date) can't win;
+        # no bare "end date"/"state" — they false-match "Bid Offer Validity
+        # (From End Date)" and "Ministry/State Name/".
+        "deadline": ["submission deadline", "submission date", "bid end", "closing",
+                     "last date", "due date", "deadline", "bid opening", "opening date",
+                     "date", "submission"],
+        "status": ["status", "stage"],
+        "department": ["department", "ministry", "office"],
+        "min_turnover": ["turnover"],
     },
     "hotel": {
         "date": ["date", "day", "business date"],
@@ -210,6 +222,15 @@ def _parse_date(value: Any) -> date | None:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
+    # Fallback: pull the first dd<sep>mm<sep>yyyy triplet (day/month/year) out of
+    # a messy cell like "20:02.2026 from 15:30 Hrs" -> 2026-02-20.
+    m = re.search(r"\b(\d{1,2})[.:/-](\d{1,2})[.:/-](\d{4})\b", s)
+    if m:
+        dd, mm, yy = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return date(yy, mm, dd)
+        except ValueError:
+            return None
     return None
 
 
@@ -273,10 +294,12 @@ def _kpi_receivables(rows, cols) -> dict[str, Any]:
 def _kpi_tenders(rows, cols) -> dict[str, Any]:
     today = date.today()
     total_value = 0.0
+    total_emd = 0.0
     upcoming: list[dict[str, Any]] = []
     for r in rows:
         val = _num(r, cols.get("value"), 0.0) or 0.0
         total_value += val
+        total_emd += _num(r, cols.get("emd"), 0.0) or 0.0
         dl = _parse_date(r.get(cols.get("deadline") or ""))
         if dl:
             days = (dl - today).days
@@ -292,6 +315,7 @@ def _kpi_tenders(rows, cols) -> dict[str, Any]:
         "kind": "tenders",
         "pipeline_count": len(rows),
         "total_value": round(total_value, 2),
+        "total_emd": round(total_emd, 2),
         "upcoming_deadlines": upcoming[:10],
         "closing_this_week": sum(1 for u in upcoming if u["days_left"] <= 7),
         "columns_used": cols,
