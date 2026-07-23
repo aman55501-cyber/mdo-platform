@@ -3298,6 +3298,77 @@ async def execution_kill(request: Request, token: str | None = Query(default=Non
     return engine.engage_kill()
 
 
+# --- Order lifecycle (Angel): real order book + cancel + modify -----------------
+@app.get("/orders/book")
+async def orders_book(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live broker order book — real per-order status. Read-only."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    try:
+        orders = await asyncio.to_thread(angel_scrip.order_book)
+    except Exception as exc:
+        return {"orders": [], "error": str(exc)[:200]}
+    # open / trigger-pending first (actionable), then the rest by recency
+    _act = {"open": 0, "trigger pending": 0, "pending": 0}
+    orders.sort(key=lambda o: _act.get(o.get("status", ""), 5))
+    return {"orders": orders, "open": sum(1 for o in orders
+                                          if o.get("status") in ("open", "trigger pending", "pending"))}
+
+
+def _trading_on() -> None:
+    """Master switch guard for live broker writes (cancel/modify)."""
+    from .config import get_trading_config
+    if not get_trading_config().enabled:
+        raise HTTPException(status_code=403,
+                            detail="Trading is OFF (master switch CFO_TRADING_ENABLED not set).")
+
+
+@app.post("/orders/cancel")
+async def orders_cancel(request: Request, payload: dict = Body(...),
+                        token: str | None = Query(default=None)) -> dict:
+    """Cancel an open / trigger-pending order. Gated on the master switch."""
+    _check_token(request, token)
+    _trading_on()
+    oid = str(payload.get("orderid") or "").strip()
+    if not oid:
+        raise HTTPException(status_code=400, detail="orderid required.")
+    from .brokers import angel_scrip
+    try:
+        res = await asyncio.to_thread(angel_scrip.cancel_order, oid,
+                                      payload.get("variety") or "NORMAL")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200])
+    from .execution import engine
+    engine._audit("CANCEL", {"orderid": oid, "result": res})
+    return res
+
+
+@app.post("/orders/modify")
+async def orders_modify(request: Request, payload: dict = Body(...),
+                        token: str | None = Query(default=None)) -> dict:
+    """Modify a pending order's price / qty / trigger. Gated on the master switch."""
+    _check_token(request, token)
+    _trading_on()
+    req = {k: payload.get(k) for k in ("orderid", "variety", "tradingsymbol", "symboltoken",
+                                       "exchange", "order_type", "quantity", "price",
+                                       "trigger_price", "product")}
+    if not req.get("orderid"):
+        raise HTTPException(status_code=400, detail="orderid required.")
+    from .brokers import angel_scrip
+    try:
+        res = await asyncio.to_thread(
+            angel_scrip.modify_order, str(req["orderid"]), req.get("variety") or "NORMAL",
+            req.get("tradingsymbol") or "", str(req.get("symboltoken") or ""),
+            req.get("exchange") or "NSE", req.get("order_type") or "LIMIT",
+            int(req.get("quantity") or 0), float(req.get("price") or 0),
+            float(req.get("trigger_price") or 0), req.get("product") or "CNC")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200])
+    from .execution import engine
+    engine._audit("MODIFY", {"orderid": req["orderid"], "result": res})
+    return res
+
+
 def main() -> None:
     import os
     import uvicorn

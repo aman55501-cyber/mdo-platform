@@ -225,7 +225,7 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel span2"><div class="ph"><span class="t">Deep analysis</span><span class="lbl" id="deep-meta">fundamental · technical · news · macro</span></div>
       <div id="deep-list"><div class="pb"><button class="segb" style="padding:11px 16px" onclick="loadDeep(1)">Run deep analysis →</button>
         <div class="rsub" style="margin-top:8px">Fuses fundamentals, technicals, current news and market regime per F&amp;O underlying, and flags any that conflict with how you're positioned. Cached ~20 min.</div></div></div></div>
-    <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl">audit log</span></div><div id="ob-list"><div class="load">—</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl" id="ob-meta">broker · live</span></div><div id="ob-list"><div class="load">—</div></div></div>
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
@@ -253,8 +253,9 @@ a{color:var(--a700);text-decoration:none}
   <div class="rsub" id="tk-contract" style="margin-top:6px;color:var(--n500)"></div>
   <div class="ssub">Account</div><select id="tk-acct" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fh);letter-spacing:.03em"></select>
   <div class="ssub">Product</div><div style="display:flex;gap:6px" id="tk-prods"><button class="segb tk-prod on" onclick="tkProd(this)">CNC</button><button class="segb tk-prod" onclick="tkProd(this)">MIS</button></div>
-  <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button></div>
+  <div class="ssub">Order type</div><div style="display:flex;gap:6px" id="tk-ots"><button class="segb tk-ot on" onclick="tkOt('MARKET',this)">MKT</button><button class="segb tk-ot" onclick="tkOt('LIMIT',this)">LMT</button><button class="segb tk-ot" onclick="tkOt('SL',this)">SL</button><button class="segb tk-ot" onclick="tkOt('SL-M',this)">SL-M</button></div>
   <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
+  <div id="tk-trig-wrap" style="display:none"><div class="ssub">Trigger price</div><input id="tk-trig" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
   <div class="ssub" id="tk-qtylbl">Quantity (shares)</div>
   <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><span class="mono" id="tk-qty" style="font-size:22px;min-width:64px;text-align:center">1</span><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
   <div class="rsub mono" id="tk-funds" style="margin-top:7px;color:var(--n500)"></div>
@@ -525,10 +526,13 @@ function closeTicket(){document.getElementById('tscrim').classList.remove('on');
 function tkReset(){TK.pid=null;document.getElementById('tk-go').textContent='Review order';}
 function tkSide(s){TK.side=s;tkReset();document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===s));const st=document.getElementById('tk-stop');if(st&&TK.ltp)st.value=(TK.ltp*(s==='BUY'?0.95:1.05)).toFixed(2);}
 function tkProd(el){TK.product=el.textContent.trim();tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));}
-function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));document.getElementById('tk-price-wrap').style.display=v==='LIMIT'?'block':'none';tkVal();}
+function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));
+  document.getElementById('tk-price-wrap').style.display=(v==='LIMIT'||v==='SL')?'block':'none';   // SL is a stop-LIMIT
+  document.getElementById('tk-trig-wrap').style.display=(v==='SL'||v==='SL-M')?'block':'none';
+  tkVal();}
 function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').textContent=TK.qty;tkReset();tkVal();}
 function tkUnits(){return TK.qty*(TK.seg==='FUT'?TK.lot:1);}
-function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+function tkVal(){const px=(TK.ot==='LIMIT'||TK.ot==='SL')?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
   const val=px?tkUnits()*px:0;document.getElementById('tk-val').textContent=val?inr(val):'';
   // Kite/Angel-style affordability: show available cash and flag a delivery buy you can't fund.
   const f=document.getElementById('tk-funds');if(!f)return;const cash=(PORT&&PORT.cash)||0;
@@ -537,12 +541,14 @@ function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').
   f.innerHTML='Order '+inr(val)+' · Available cash '+inr(cash)+(overCnc?' · <span class="down">exceeds cash</span>':'');}
 async function tkReview(){
   if(TK.pid){return tkConfirm();}
-  const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const px=(TK.ot==='LIMIT'||TK.ot==='SL')?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const trig=(TK.ot==='SL'||TK.ot==='SL-M')?(+document.getElementById('tk-trig').value||0):0;
+  if((TK.ot==='SL'||TK.ot==='SL-M')&&!trig){const g=document.getElementById('tk-guard');g.style.display='block';g.innerHTML='<div class="rsub" style="color:var(--down)">Enter a trigger price for an SL order.</div>';return;}
   const fut=TK.seg==='FUT'&&TK.fut;
   const stop=+document.getElementById('tk-stop').value||0;
   const tgt=px?+((TK.side==='BUY'?px*1.1:px*0.9).toFixed(2)):0;
   const acct=(document.getElementById('tk-acct')||{}).value||angelKey();
-  const order={creds_key:acct,exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:fut?TK.fut.token:'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:0,underlying:TK.sym,stop_loss:stop,target:tgt};
+  const order={creds_key:acct,exchange:TK.exch,symbol:fut?TK.fut.tradingsymbol:TK.sym,token:fut?TK.fut.token:'',side:TK.side,quantity:tkUnits(),product:TK.product,order_type:TK.ot,price:px,trigger_price:trig,underlying:TK.sym,stop_loss:stop,target:tgt};
   const g=document.getElementById('tk-guard');g.style.display='block';g.innerHTML='<div class="rsub">checking guardrails…</div>';
   const r=await j('/execution/propose?'+Q,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(order)});
   if(r.ok){TK.pid=r.d.proposal_id;TK.code=r.d.confirm_code;g.innerHTML='<div class="rsub" style="color:var(--up)">Passes all guardrails.</div><div class="rsub" style="margin-top:4px">'+(r.d.review||'')+'</div>';document.getElementById('tk-go').textContent='Confirm '+TK.side+' →';}
@@ -554,10 +560,29 @@ async function tkConfirm(){
   if(r.ok){g.innerHTML='<div class="rsub" style="color:var(--up)">✅ Order placed.</div>';document.getElementById('tk-go').textContent='Done';setTimeout(closeTicket,1200);loadOrderBook();}
   else{g.innerHTML='<div class="rsub" style="color:var(--down)">'+(r.status===501?'Order-send pending broker enablement.':(r.d.detail||'Rejected.'))+'</div>';tkReset();}
 }
-async function loadOrderBook(){const box=document.getElementById('ob-list');if(!box)return;const r=await j('/execution/log?'+Q);
-  const ev=(r.ok&&r.d.events)||[];if(!ev.length){box.innerHTML='<div class="load">No orders yet.</div>';return;}
+function obStatusCls(s){if(/complete|filled/.test(s))return 'up';if(/reject|cancel/.test(s))return 'down';if(/open|pending|trigger/.test(s))return 'warn';return 'muted';}
+async function loadOrderBook(){const box=document.getElementById('ob-list'),meta=document.getElementById('ob-meta');if(!box)return;
+  const r=await j('/orders/book?'+Q);
+  if(r.ok&&r.d.orders){const os=r.d.orders;meta.textContent='broker · '+(r.d.open||0)+' open';
+    if(!os.length){box.innerHTML='<div class="load">No orders today.</div>';return;}
+    box.innerHTML=os.slice(0,30).map(o=>{const cancellable=/open|pending|trigger/.test(o.status||'');
+      return '<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">'
+        +'<div style="display:flex;align-items:center;gap:8px"><span class="rn">'+(o.symbol||'—')+'</span>'
+        +'<span class="rsub '+(o.side==='BUY'?'up':'down')+'">'+(o.side||'')+'</span>'
+        +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+(o.type||'')+'</span>'
+        +'<span class="'+obStatusCls(o.status||'')+'" style="margin-left:auto;font-family:var(--fh);text-transform:uppercase;font-size:10px;letter-spacing:.05em">'+(o.status||'')+'</span></div>'
+        +'<div class="rsub mono" style="color:var(--n600)">Qty '+o.qty+(o.filled?' ('+o.filled+' filled)':'')+' · '+(o.type==='MARKET'?'MKT':(o.price||'—'))+(o.trigger?' · trig '+o.trigger:'')+'</div>'
+        +(o.reason&&/reject/.test(o.status||'')?'<div class="rsub down">'+o.reason+'</div>':'')
+        +(cancellable?'<div><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelOrder(\''+o.orderid+'\',\''+(o.variety||'NORMAL')+'\')">Cancel</button></div>':'')
+        +'</div>';}).join('');return;}
+  // fallback to the app's audit log if the broker book is unavailable
+  meta.textContent='audit log';const a=await j('/execution/log?'+Q);const ev=(a.ok&&a.d.events)||[];
+  if(!ev.length){box.innerHTML='<div class="load">'+((r.d&&r.d.error)?('Broker order book: '+r.d.error):'No orders yet.')+'</div>';return;}
   box.innerHTML=ev.slice(0,20).map(e=>{const o=e.order||{},side=o.side||'';
-    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,' '))+(o.risk_reward?' · R:R '+o.risk_reward:'')+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');}
+    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(o.symbol||e.event||'—')+' <span class="rsub">'+(o.quantity?o.quantity+' @ '+(o.price||'—'):'')+'</span></div><div class="rsub">'+((e.event||'').replace(/_/g,' '))+'</div></div><div class="rr"><div class="c '+(side==='BUY'?'up':side==='SELL'?'down':'muted')+'">'+(side||'')+'</div></div></div>';}).join('');}
+async function cancelOrder(oid,variety){if(!confirm('Cancel this order?'))return;
+  const r=await j2('/orders/cancel?'+Q,'POST',{orderid:oid,variety:variety});
+  if(r.ok){loadOrderBook();}else alert(r.d.detail||'cancel failed');}
 /* Holdings are shown grouped (market-cap or sector), each group drilling into its
    stocks, then into the enriched share page. Data from /holdings/grouped. */
 let GROUPED=null,GVIEW='cap',POSMAP={};

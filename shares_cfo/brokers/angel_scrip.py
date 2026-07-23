@@ -499,11 +499,35 @@ def get_candles(symbol: str, days: int = 380, interval: str = "ONE_DAY") -> dict
     return res
 
 
-# --- Live order placement (Angel SmartAPI) -----------------------------------
+# --- Live order placement + management (Angel SmartAPI) ----------------------
 # Reached ONLY from execution.engine after every guardrail passes and the master
 # switch is ON. Places the entry order, then a stop-loss order so no bet is naked.
 PLACE_ORDER = "/rest/secure/angelbroking/order/v1/placeOrder"
+MODIFY_ORDER = "/rest/secure/angelbroking/order/v1/modifyOrder"
+CANCEL_ORDER = "/rest/secure/angelbroking/order/v1/cancelOrder"
+ORDER_BOOK = "/rest/secure/angelbroking/order/v1/getOrderBook"
+TRADE_BOOK = "/rest/secure/angelbroking/order/v1/getTradeBook"
 _PRODUCT = {"CNC": "DELIVERY", "MIS": "INTRADAY", "NRML": "CARRYFORWARD", "MARGIN": "MARGIN"}
+
+# app order type -> (Angel variety, Angel ordertype). SL/SL-M are stop entries.
+_ORDER_TYPE = {
+    "MARKET": ("NORMAL", "MARKET"), "LIMIT": ("NORMAL", "LIMIT"),
+    "SL": ("STOPLOSS", "STOPLOSS_LIMIT"), "SL-M": ("STOPLOSS", "STOPLOSS_MARKET"),
+    "SLM": ("STOPLOSS", "STOPLOSS_MARKET"),
+}
+
+
+def _session():
+    """(key, account, jwt) for the Angel account, or raise. Shared by order ops."""
+    from ..config import get_accounts, load_account
+    key = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+    if not key:
+        raise RuntimeError("No Angel account configured — connect ANGEL1 to trade.")
+    acc = load_account(key)
+    jwt, note = _login(acc)
+    if not jwt:
+        raise RuntimeError(f"Angel login failed: {note}")
+    return key, acc, jwt
 
 
 def _place(acc, jwt, body: dict) -> dict:
@@ -540,16 +564,19 @@ def place_order(order) -> dict:
         if not symboltoken:
             raise RuntimeError(f"No Angel instrument token for {sym}")
 
+    variety, otype = _ORDER_TYPE.get((order.order_type or "MARKET").upper(), ("NORMAL", "MARKET"))
     entry = {
-        "variety": "NORMAL", "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
+        "variety": variety, "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
         "transactiontype": order.side, "exchange": exch,
-        "ordertype": order.order_type, "producttype": _PRODUCT.get(order.product, "DELIVERY"),
+        "ordertype": otype, "producttype": _PRODUCT.get(order.product, "DELIVERY"),
         "duration": "DAY", "quantity": str(int(order.quantity)),
-        "price": str(order.price) if order.order_type == "LIMIT" else "0",
+        "price": str(order.price) if otype in ("LIMIT", "STOPLOSS_LIMIT") else "0",
+        # stop entries (SL / SL-M) trigger at trigger_price
+        "triggerprice": str(order.trigger_price) if variety == "STOPLOSS" else "0",
     }
     data = _place(acc, jwt, entry)
     result = {"broker": "angel", "account": key, "orderid": data.get("orderid"),
-              "tradingsymbol": tradingsymbol}
+              "tradingsymbol": tradingsymbol, "ordertype": otype}
 
     # protective stop-loss on the opposite side (so the bet is never naked)
     if order.stop_loss and order.stop_loss > 0:
@@ -567,3 +594,73 @@ def place_order(order) -> dict:
         except Exception as exc:
             result["stop_loss_error"] = str(exc)[:160]
     return result
+
+
+def order_book() -> list[dict]:
+    """Live broker order book — real status (open / complete / rejected / cancelled /
+    trigger pending) for today's orders. Read-only."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    r = httpx.get(acc.base_url + ORDER_BOOK, headers=_headers(acc, jwt), timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    rows = (j.get("data") or []) if isinstance(j, dict) else []
+    out = []
+    for o in rows or []:
+        out.append({
+            "orderid": o.get("orderid"), "symbol": o.get("tradingsymbol"),
+            "side": o.get("transactiontype"), "type": o.get("ordertype"),
+            "product": o.get("producttype"), "variety": o.get("variety", "NORMAL"),
+            "qty": _int(o.get("quantity")), "filled": _int(o.get("filledshares")),
+            "price": _flt(o.get("price")), "trigger": _flt(o.get("triggerprice")),
+            "status": (o.get("status") or o.get("orderstatus") or "").lower(),
+            "reason": o.get("text") or "", "exchange": o.get("exchange"),
+            "time": o.get("updatetime") or o.get("exchtime") or "",
+        })
+    return out
+
+
+def cancel_order(orderid: str, variety: str = "NORMAL") -> dict:
+    """Cancel an open/trigger-pending order. Guard + master switch enforced upstream."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    body = {"variety": (variety or "NORMAL").upper(), "orderid": str(orderid)}
+    r = httpx.post(acc.base_url + CANCEL_ORDER, headers=_headers(acc, jwt), json=body, timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code >= 400 or (isinstance(j, dict) and j.get("status") is False):
+        raise RuntimeError(f"Angel cancel rejected [{r.status_code}]: {r.text[:200]}")
+    return {"cancelled": orderid, "data": (j.get("data") if isinstance(j, dict) else None)}
+
+
+def modify_order(orderid: str, variety: str, tradingsymbol: str, symboltoken: str,
+                 exchange: str, order_type: str, quantity: int,
+                 price: float = 0.0, trigger_price: float = 0.0, product: str = "CNC") -> dict:
+    """Modify a pending order's price / qty / trigger. Guard enforced upstream."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    _v, otype = _ORDER_TYPE.get((order_type or "LIMIT").upper(), ("NORMAL", "LIMIT"))
+    body = {"variety": (variety or "NORMAL").upper(), "orderid": str(orderid),
+            "tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
+            "exchange": (exchange or "NSE").upper(), "ordertype": otype,
+            "producttype": _PRODUCT.get(product, "DELIVERY"), "duration": "DAY",
+            "quantity": str(int(quantity)),
+            "price": str(price) if otype in ("LIMIT", "STOPLOSS_LIMIT") else "0",
+            "triggerprice": str(trigger_price or 0)}
+    r = httpx.post(acc.base_url + MODIFY_ORDER, headers=_headers(acc, jwt), json=body, timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code >= 400 or (isinstance(j, dict) and j.get("status") is False):
+        raise RuntimeError(f"Angel modify rejected [{r.status_code}]: {r.text[:200]}")
+    return {"modified": orderid, "data": (j.get("data") if isinstance(j, dict) else None)}
+
+
+def _int(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _flt(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
