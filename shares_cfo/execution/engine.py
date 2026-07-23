@@ -90,13 +90,19 @@ def propose(order: OrderRequest, day_pnl: float = 0.0) -> dict:
     confirm_code = secrets.token_hex(4)
     _PROPOSALS[pid] = {"order": order, "confirm_code": confirm_code}
     _audit("PROPOSE", {"proposal_id": pid, "order": order.to_dict()})
+    # F&O reads in lots (+ premium for an option buy); equity reads in units.
+    if order.is_fno and order.lot_size:
+        size = f"{int(order.lots())} lot{'s' if order.lots() != 1 else ''} ({order.quantity})"
+        extra = f" | premium ₹{order.premium_outlay():,.0f}" if order.premium_outlay() else ""
+    else:
+        size, extra = str(order.quantity), ""
     return {
         "proposal_id": pid,
         "confirm_code": confirm_code,
         "order": order.to_dict(),
         "review": (
-            f"{order.side} {order.quantity} {order.symbol} @ "
-            f"{'MKT' if order.order_type == 'MARKET' else order.price} | "
+            f"{order.side} {size} {order.symbol} @ "
+            f"{'MKT' if order.order_type == 'MARKET' else order.price}{extra} | "
             f"SL {order.stop_loss} → risk ₹{order.max_loss():,.0f} | "
             f"target {order.target} → reward ₹{order.max_gain():,.0f} | "
             f"R:R {order.risk_reward()}:1. Confirm to place."

@@ -2956,7 +2956,25 @@ async def backtest(request: Request, ticker: str, strategy: str = "dma_cross",
 
 _ORDER_FIELDS = ("creds_key", "exchange", "symbol", "token", "side", "quantity",
                  "product", "order_type", "price", "trigger_price", "underlying",
-                 "stop_loss", "target")
+                 "stop_loss", "target", "lot_size")
+
+
+def _build_order(d: dict):
+    """Build an OrderRequest from a request body, auto-filling the F&O lot size.
+
+    For an NFO order the guardrails need the real lot size to enforce whole-lot
+    sizing and the lots cap. We resolve it live from Angel's futures scrip master
+    (cached to disk) unless the client already supplied one.
+    """
+    from .execution.models import OrderRequest
+    o = OrderRequest(**{k: d[k] for k in _ORDER_FIELDS if k in d})
+    if o.is_fno and not o.lot_size and o.underlying:
+        try:
+            from .brokers import angel_scrip
+            o.lot_size = int(angel_scrip.lot_size(o.underlying) or 0)
+        except Exception:
+            o.lot_size = 0
+    return o
 
 
 async def _day_pnl() -> float:
@@ -3082,6 +3100,58 @@ async def execution_status(request: Request, token: str | None = Query(default=N
     _check_token(request, token)
     from .execution import engine
     return engine.status()
+
+
+@app.get("/execution/preflight")
+async def execution_preflight(request: Request, token: str | None = Query(default=None)) -> dict:
+    """One-glance 'ready to trade?' — checks every knob + the broker session for
+    EQUITY and F&O separately, and names the exact missing item for each.
+
+    Green means an order of that segment can pass the guardrails right now; red
+    lists precisely what to set. Reads config only — places nothing."""
+    _check_token(request, token)
+    from .config import get_trading_config
+    from .execution import engine
+    cfg = get_trading_config()
+
+    # Is the Angel account logged in (F&O routes through Angel)?
+    angel_ready, angel_note = False, "not checked"
+    try:
+        from .brokers import angel_scrip
+        _k, _acc, _jwt = await asyncio.to_thread(angel_scrip._session)
+        angel_ready, angel_note = True, "session live"
+    except Exception as exc:
+        angel_note = str(exc)[:160]
+
+    def _need(label: str, ok: bool, hint: str) -> dict:
+        return {"item": label, "ok": bool(ok), "fix": "" if ok else hint}
+
+    st = engine.status()
+    shared = [
+        _need("master switch", cfg.enabled, "set CFO_TRADING_ENABLED=true"),
+        _need("kill-switch clear", not st["kill_switch"], "kill-switch engaged — restart to clear"),
+        _need("per-trade risk cap", cfg.max_risk_per_trade > 0, "set CFO_MAX_RISK_PER_TRADE"),
+        _need("daily order cap", cfg.max_orders_per_day > 0, "set CFO_MAX_ORDERS_PER_DAY"),
+    ]
+    equity = shared + [
+        _need("qty cap", cfg.max_qty_per_order > 0, "set CFO_MAX_QTY_PER_ORDER"),
+        _need("value cap", cfg.max_value_per_order > 0, "set CFO_MAX_VALUE_PER_ORDER"),
+        _need("equity allow-list", bool(cfg.allowed_underlyings), "set CFO_ALLOWED_UNDERLYINGS"),
+    ]
+    fno = shared + [
+        _need("F&O switch", cfg.fno_enabled, "set CFO_FNO_ENABLED=true"),
+        _need("F&O allow-list", bool(cfg.fno_underlyings()),
+              "set CFO_FNO_ALLOWED_UNDERLYINGS (or CFO_ALLOWED_UNDERLYINGS)"),
+        _need("lots cap", cfg.max_lots_per_order > 0, "set CFO_MAX_LOTS_PER_ORDER"),
+        _need("option premium cap", cfg.max_premium_per_order > 0, "set CFO_MAX_PREMIUM_PER_ORDER"),
+        _need("Angel session", angel_ready, f"Angel not logged in: {angel_note}"),
+    ]
+    return {
+        "equity": {"ready": all(c["ok"] for c in equity), "checks": equity},
+        "fno": {"ready": all(c["ok"] for c in fno), "checks": fno},
+        "notional_fno_cap": cfg.max_notional_fno or None,  # optional, informational
+        "angel_session": {"ready": angel_ready, "note": angel_note},
+    }
 
 
 @app.get("/execution/log")
@@ -3249,7 +3319,7 @@ async def hdfc_order_preview(request: Request, order: dict = Body(...),
     from .execution.models import OrderRequest
     from .brokers import hdfc_order
     try:
-        o = OrderRequest(**{k: order[k] for k in _ORDER_FIELDS if k in order})
+        o = _build_order(order)
     except TypeError as exc:
         raise HTTPException(status_code=400, detail=f"Bad order fields: {exc}")
     return hdfc_order.preview(o)
@@ -3262,9 +3332,8 @@ async def execution_propose(request: Request, order: dict = Body(...),
     _check_token(request, token)
     from .execution import engine
     from .execution.guardrails import GuardrailError
-    from .execution.models import OrderRequest
     try:
-        o = OrderRequest(**{k: order[k] for k in _ORDER_FIELDS if k in order})
+        o = _build_order(order)
     except TypeError as exc:
         raise HTTPException(status_code=400, detail=f"Bad order fields: {exc}")
     try:
@@ -3480,12 +3549,11 @@ async def basket_place(request: Request, payload: dict = Body(...),
         raise HTTPException(status_code=400, detail="Basket has no legs.")
     from .execution import engine
     from .execution.guardrails import GuardrailError
-    from .execution.models import OrderRequest
     day = await _day_pnl()
     results = []
     for i, leg in enumerate(legs):
         try:
-            o = OrderRequest(**{k: leg[k] for k in _ORDER_FIELDS if k in leg})
+            o = _build_order(leg)
             res = await asyncio.to_thread(engine.place_now, o, day)
             results.append({"leg": i, "symbol": leg.get("symbol"), "ok": True, "result": res})
         except GuardrailError as exc:
