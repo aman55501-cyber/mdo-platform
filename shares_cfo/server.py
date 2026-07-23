@@ -1214,12 +1214,19 @@ async def tips_list(request: Request, token: str | None = Query(default=None)) -
     syms = sorted({t.get("symbol") for t in items if t.get("symbol")})
     ltps = await asyncio.to_thread(angel_scrip.equity_ltps, syms) if syms else {}
     toks = await asyncio.to_thread(lambda: {s: angel_scrip.token_for(s) for s in syms})
+    from .config import get_trading_config
+    risk_cap = get_trading_config().max_risk_per_trade
     by_channel: dict = {}
     actionable = 0
     for t in items:
         ltp = ltps.get(t.get("symbol"))
         st = tips.state(t, ltp)
         row = {**t, "ltp": ltp, "token": toks.get(t.get("symbol")), **st}
+        # Risk-based size for one-tap GTT arming: qty so ₹loss at his stop = your cap.
+        buy, stop = t.get("buy"), t.get("stop")
+        if t.get("kind") == "trade" and buy and stop and risk_cap:
+            rps = abs(buy - stop)
+            row["suggested_qty"] = int(risk_cap / rps) if rps > 0 else 0
         if st.get("actionable"):
             actionable += 1
         by_channel.setdefault(t.get("source", "Other"), []).append(row)

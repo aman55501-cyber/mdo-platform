@@ -281,7 +281,7 @@ a{color:var(--a700);text-decoration:none}
   <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
   <div id="tk-trig-wrap" style="display:none"><div class="ssub">Trigger price</div><input id="tk-trig" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
   <div class="ssub" id="tk-qtylbl">Quantity (shares)</div>
-  <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><span class="mono" id="tk-qty" style="font-size:22px;min-width:64px;text-align:center">1</span><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
+  <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><input class="mono" id="tk-qty" inputmode="numeric" pattern="[0-9]*" value="1" oninput="tkQtySet()" style="font-size:22px;width:90px;text-align:center;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:8px 0"><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
   <div class="rsub mono" id="tk-funds" style="margin-top:7px;color:var(--n500)"></div>
   <div class="ssub">Stop-loss (required)</div><input id="tk-stop" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px">
   <div id="tk-guard" class="fg" style="margin-top:14px;border:1px solid var(--n300);display:none"></div>
@@ -529,7 +529,7 @@ function fillTkAccts(sel){const s=document.getElementById('tk-acct');if(!s)retur
 function openTicket(sym,ltp,side,acct){closeShare();TK={sym:(sym||'').toUpperCase(),ltp:+ltp||0,side:side||'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
   fillTkAccts(acct);
   document.getElementById('tk-sym').textContent=TK.sym;document.getElementById('tk-ltp').textContent=TK.ltp?('LTP '+TK.ltp):'';
-  document.getElementById('tk-price').value=TK.ltp||'';document.getElementById('tk-qty').textContent='1';
+  document.getElementById('tk-price').value=TK.ltp||'';document.getElementById('tk-qty').value='1';
   document.getElementById('tk-stop').value=TK.ltp?(TK.ltp*0.95).toFixed(2):'';
   document.getElementById('tk-contract').textContent='';document.getElementById('tk-qtylbl').textContent='Quantity (shares)';
   document.querySelectorAll('#tsheet .tk-side').forEach(b=>b.classList.toggle('on',b.dataset.s===TK.side));
@@ -585,7 +585,8 @@ function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>
   document.getElementById('tk-price-wrap').style.display=(v==='LIMIT'||v==='SL')?'block':'none';   // SL is a stop-LIMIT
   document.getElementById('tk-trig-wrap').style.display=(v==='SL'||v==='SL-M')?'block':'none';
   tkVal();}
-function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').textContent=TK.qty;tkReset();tkVal();}
+function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').value=TK.qty;tkReset();tkVal();}
+function tkQtySet(){const v=parseInt(document.getElementById('tk-qty').value);TK.qty=(v&&v>0)?v:1;tkReset();tkVal();}
 function tkUnits(){return TK.qty*(TK.seg==='FUT'?TK.lot:1);}
 function tkVal(){const px=(TK.ot==='LIMIT'||TK.ot==='SL')?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
   const val=px?tkUnits()*px:0;document.getElementById('tk-val').textContent=val?inr(val):'';
@@ -780,9 +781,18 @@ async function addTip(){const m=document.getElementById('tp-msg');
   if(r.ok){m.textContent='Added.';m.style.color='var(--up)';['tp-sym','tp-buy','tp-tgt','tp-stop','tp-note'].forEach(id=>document.getElementById(id).value='');loadCalls();}
   else{m.textContent=r.d.detail||'could not add';m.style.color='var(--down)';}}
 async function delTip(id){if(!confirm('Delete this call?'))return;const r=await j2('/tips/'+id+'?'+Q,'DELETE',{});if(r.ok)loadCalls();}
-function tradeTip(sym,buy,stop){istRun&&clearTimeout(istRun);openTicket(sym,buy||0,'BUY');
+function tradeTip(sym,buy,stop){openTicket(sym,buy||0,'BUY');
   const lmt=[...document.querySelectorAll('.tk-ot')].find(b=>b.textContent.trim()==='LMT');if(lmt&&buy)tkOt('LIMIT',lmt);
   if(buy)document.getElementById('tk-price').value=buy;if(stop)document.getElementById('tk-stop').value=stop;tkVal&&tkVal();}
+async function armTip(sym,token,buy,stop,sug){
+  if(!token){alert('No NSE token for '+sym+' — can\'t arm a GTT.');return;}
+  if(!buy){alert('This call has no buy price to rest an entry at.');return;}
+  const q=prompt('Rest a BUY GTT for '+sym+' at ₹'+buy+' (protective stop ₹'+stop+').\\nQuantity'+(sug?' (risk-sized: '+sug+')':'')+':',sug||'');
+  if(q===null)return;const qty=parseInt(q)||0;if(qty<=0)return;
+  const body={tradingsymbol:sym.toUpperCase()+'-EQ',symboltoken:String(token),exchange:'NSE',side:'BUY',price:buy,qty:qty,trigger:buy,product:'CNC'};
+  const r=await j2('/gtt/create?'+Q,'POST',body);
+  if(r.ok){alert('✅ Entry GTT armed: BUY '+qty+' '+sym+' @ ₹'+buy+'.\\nOnce it fills, arm the stop at ₹'+stop+' from Positions.');}
+  else{alert('Could not arm: '+(r.d.detail||'GTT failed')+(/OFF/.test(r.d.detail||'')?'\\n(Enable trading + set equity caps first.)':''));}}
 let istRun=null;
 async function loadCalls(){const box=document.getElementById('calls-list'),meta=document.getElementById('calls-meta');if(!box)return;
   const r=await j('/tips?'+Q);
@@ -796,8 +806,9 @@ function tipCard(t){const ltp=t.ltp,act=t.actionable,alert=t.alert;
   let levels='';
   if(t.kind==='invest'){const lv=t.levels||[];levels='<div class="rsub mono" style="color:var(--n600)">Ladder: '+lv.map(x=>'<span style="'+(ltp&&ltp<=x?'color:var(--up)':'')+'">'+(+x).toFixed(1)+'</span>').join(' · ')+'</div>';}
   else{levels='<div class="rsub mono" style="color:var(--n600)">Buy '+px(t.buy)+' · Target '+px(t.target)+' · Stop <span class="down">'+px(t.stop)+'</span></div>';}
-  const actions='<div style="display:flex;gap:6px;margin-top:2px">'
+  const actions='<div style="display:flex;gap:6px;margin-top:2px;flex-wrap:wrap">'
     +(t.kind==='trade'?'<button class="segb" style="padding:6px 12px;font-size:11px;color:var(--up);border-color:#1f5c46" onclick="tradeTip(\''+t.symbol+'\','+(t.buy||0)+','+(t.stop||0)+')">Trade →</button>':'')
+    +(t.kind==='trade'?'<button class="segb" style="padding:6px 12px;font-size:11px" onclick="armTip(\''+t.symbol+'\',\''+(t.token||'')+'\','+(t.buy||0)+','+(t.stop||0)+','+(t.suggested_qty||0)+')">⚡ Arm GTT</button>':'')
     +'<button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="delTip(\''+t.id+'\')">Delete</button></div>';
   return '<div class="row" style="flex-direction:column;align-items:stretch;gap:5px">'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="rn">'+t.symbol+'</span>'
