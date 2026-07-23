@@ -70,7 +70,7 @@ def narrate(brief: dict, timeout: float = 20.0) -> str | None:
             API_URL,
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": model, "max_tokens": 500, "temperature": 0.3,
+            json={"model": model, "max_tokens": 500,
                   "messages": [{"role": "user", "content": _prompt(brief)}]},
             timeout=timeout,
         )
