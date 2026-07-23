@@ -1673,6 +1673,23 @@ async def _tick_loop() -> None:
             await asyncio.sleep(10)
 
 
+def _avg_plausible(kind: str, avg: float, ltp: float) -> bool:
+    """Is the avg cost believable given the live price?
+
+    A FUTURE or EQUITY whose LTP is >3x or <1/3 of its avg almost never reflects a
+    real move — it's a bad cost basis (a corporate action, a field the broker doesn't
+    populate for F&O, or a mis-resolved contract). We refuse to compute MTM/% off it,
+    so the app never shows a fake 20x 'gain'. Options are exempt (they really do move
+    that much), and a zero/absent avg is left to the caller.
+    """
+    if kind not in ("future", "equity"):
+        return True
+    if not avg or not ltp:
+        return True
+    ratio = ltp / avg
+    return 0.33 <= ratio <= 3.0
+
+
 async def _live_positions() -> dict:
     """Live F&O positions across accounts, enriched with Angel LTP/OI/volume + MTM.
     Reusable core (endpoint + proactive agent both call this)."""
@@ -1731,7 +1748,9 @@ async def _live_positions() -> dict:
                 if ltp:
                     r["last_price"] = ltp
                     avg = r["average_price"] or 0
-                    if avg:  # MTM from the live price (broker gives none for positions)
+                    # MTM from the live price (broker gives none for positions) — but
+                    # ONLY when the avg is believable, else we'd manufacture a fake gain.
+                    if avg and _avg_plausible(r["kind"], avg, ltp):
                         r["pnl"] = round(r["quantity"] * (ltp - avg), 2)
                     if q.get("change_pct") is not None:  # today's move on the leg
                         prev = ltp / (1 + q["change_pct"] / 100.0) if q["change_pct"] != -100 else ltp
@@ -1740,8 +1759,15 @@ async def _live_positions() -> dict:
     for r in rows:
         # Live P&L % on cost (direction-correct: pnl already carries the qty sign).
         avg, qty = r.get("average_price") or 0, abs(r.get("quantity") or 0)
+        ltp = r.get("last_price") or 0
         cost = avg * qty
-        r["pnl_pct"] = round((r.get("pnl") or 0) / cost * 100, 2) if cost else None
+        if not _avg_plausible(r.get("kind"), avg, ltp):
+            # Bad cost basis — don't show a fake % or MTM. Flag for verification.
+            r["avg_suspect"] = True
+            r["pnl_pct"] = None
+            r["note_flag"] = f"avg {avg} vs live {ltp} looks off — verify cost basis (corp action / contract)"
+        else:
+            r["pnl_pct"] = round((r.get("pnl") or 0) / cost * 100, 2) if cost else None
         if r["kind"] in ("option", "future"):
             r["oi_change"], r["oi_change_pct"] = _oi_trend(r.get("_atok"), r.get("oi"))
             r["buildup"] = _buildup(r.get("change_pct"), r.get("oi_change"))
@@ -2056,7 +2082,11 @@ async def chart(request: Request, ticker: str, bars: int = 130,
         data = await asyncio.to_thread(get_ohlcv, _clean_symbol(ticker), "NSE", "1y")
     except PriceDataUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    closes = data["closes"]
+    except Exception as exc:  # any provider surprise -> clean 502, never a bare 500
+        raise HTTPException(status_code=502, detail=f"Price provider error for {ticker}: {str(exc)[:160]}")
+    closes = data.get("closes") or []
+    if not closes:
+        raise HTTPException(status_code=503, detail=f"No price series available for {ticker}.")
 
     def sma_series(vals: list[float], w: int) -> list:
         return [None] * min(w - 1, len(vals)) + [

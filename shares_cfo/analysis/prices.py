@@ -33,7 +33,13 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     from . import eodhd
     if eodhd.enabled():
         try:
-            return eodhd.get_ohlcv(symbol, exchange, period)
+            res = eodhd.get_ohlcv(symbol, exchange, period)
+            # EODHD doesn't license NSE equity — it can return an EMPTY series without
+            # error. Only accept a non-empty result, else fall through to Angel (which
+            # DOES serve NSE stocks). Returning empty here 500s the chart downstream.
+            if res and res.get("closes"):
+                return res
+            tried.append("EODHD returned no closes (NSE equity unlicensed?)")
         except Exception as exc:
             tried.append(f"EODHD failed ({str(exc)[:60]})")
     else:
