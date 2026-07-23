@@ -410,13 +410,13 @@ async function loadPositions(){
     if(p.volume!=null)meta.push('Vol '+kfmt(p.volume));
     if(ch!=null)meta.push('Px <span class="'+cl(ch)+'">'+sp(ch)+'</span>');
     const riskChip=danger?'<span class="rchip dgr">● risk</span>':(watch?'<span class="rchip wch">● watch</span>':'');
-    const suspChip=p.avg_suspect?'<span class="rchip wch">⚠ avg?</span>':'';
+    const suspChip=p.avg_suspect?'<span class="rchip wch">⚠ avg?</span>':(p.avg_reconstructed?'<span class="rsub" style="color:var(--n500);border:1px solid var(--n400);padding:0 4px" title="cost basis reconstructed from broker P&L">≈ avg</span>':'');
     return '<div class="row'+(danger?' dngr':(watch?' wtch':''))+'" onclick="openShare(\''+(p.underlying||'')+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:5px">'
       +'<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span class="rn">'+p.label+'</span>'
       +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+tag+'</span>'
       +(bu?'<span class="rsub '+buCls+'" style="border:1px solid var(--n400);padding:0 4px">'+bu+'</span>':'')
       +riskChip+suspChip+'<span class="p '+cl(mtm)+'" style="margin-left:auto;font-family:var(--fm);font-weight:600">'+(mtm>=0?'+':'')+inr(mtm)+(p.pnl_pct!=null?' <span style="font-size:11px">('+(p.pnl_pct>=0?'+':'')+p.pnl_pct+'%)</span>':'')+'</span></div>'
-      +'<div class="rsub">Qty '+p.quantity+' · Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+' · '+p.holder+'</div>'
+      +'<div class="rsub">Qty '+p.quantity+' · '+(p.avg_reconstructed?'≈':'')+'Avg '+(p.average_price||0).toFixed(1)+' · LTP '+(p.last_price||0).toFixed(1)+' · '+p.holder+'</div>'
       +(meta.length?'<div class="rsub mono" style="color:var(--n600)">'+meta.join('  ·  ')+'</div>':'')
       +(p.risk_why?'<div class="rsub" style="color:'+(danger?'var(--down)':'var(--warn)')+'">'+p.risk_why+'</div>':'')
       +(p.note_flag?'<div class="rsub" style="color:var(--warn)">⚠ '+p.note_flag+'</div>':'')

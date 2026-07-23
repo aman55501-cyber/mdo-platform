@@ -1760,13 +1760,25 @@ async def _live_positions() -> dict:
         # Live P&L % on cost (direction-correct: pnl already carries the qty sign).
         avg, qty = r.get("average_price") or 0, abs(r.get("quantity") or 0)
         ltp = r.get("last_price") or 0
-        cost = avg * qty
         if not _avg_plausible(r.get("kind"), avg, ltp):
-            # Bad cost basis — don't show a fake % or MTM. Flag for verification.
-            r["avg_suspect"] = True
-            r["pnl_pct"] = None
-            r["note_flag"] = f"avg {avg} vs live {ltp} looks off — verify cost basis (corp action / contract)"
+            # HDFC's cumulative-positions returns the per-unit unrealised P&L in the
+            # avg field for FUTURES (verified across the whole book: LTP − field lands
+            # on a believable cost every time). When the "avg" is a small fraction of
+            # the LTP, reconstruct the true cost basis: real_avg = LTP − field, so
+            # P&L = qty × field. Only futures; options legitimately trade far from LTP.
+            if r.get("kind") == "future" and avg > 0 and ltp > 0 and (avg / ltp) < 0.5:
+                real_avg = round(ltp - avg, 2)
+                r["average_price"] = real_avg
+                r["pnl"] = round((r.get("quantity") or 0) * avg, 2)  # signed qty × per-unit P&L
+                r["pnl_pct"] = round(avg / real_avg * 100, 2) if real_avg else None
+                r["avg_reconstructed"] = True
+            else:
+                # genuinely can't trust it (equity / odd ratio) — flag, don't fake.
+                r["avg_suspect"] = True
+                r["pnl_pct"] = None
+                r["note_flag"] = f"avg {avg} vs live {ltp} looks off — verify cost basis"
         else:
+            cost = avg * qty
             r["pnl_pct"] = round((r.get("pnl") or 0) / cost * 100, 2) if cost else None
         if r["kind"] in ("option", "future"):
             r["oi_change"], r["oi_change_pct"] = _oi_trend(r.get("_atok"), r.get("oi"))
@@ -3470,6 +3482,24 @@ async def reconcile_live_endpoint(request: Request, token: str | None = Query(de
         broker_orders.extend(r.get("orders") or [])
         if r.get("error"):
             order_errors.append({"account": r.get("label") or r["key"], "error": r["error"]})
+
+    # A resting GTT rule protects a position just like a trigger order does. Fold the
+    # Angel GTT book in as pseudo-orders so a GTT-protected leg isn't flagged naked.
+    # (GTT is Angel-only here — HDFC futures have no GTT in the system, so they stay
+    # flagged, which is correct: they genuinely have no automated stop.)
+    try:
+        from .brokers import angel_scrip
+        akey = next((k for k in get_accounts() if k.upper().startswith("ANGEL")), None)
+        gtts = await asyncio.to_thread(angel_scrip.gtt_list)
+        for g in gtts or []:
+            broker_orders.append({
+                "orderid": f"gtt:{g.get('id')}", "side": (g.get("side") or "").upper(),
+                "trigger": g.get("trigger") or 0, "status": "trigger pending",
+                "symbol": g.get("symbol"), "symboltoken": str(g.get("symboltoken") or ""),
+                "creds_key": akey, "is_gtt": True,
+            })
+    except Exception:
+        pass  # GTT unavailable shouldn't break reconciliation
 
     # 2) open positions across accounts (from the consolidated book)
     book = await _consolidated()
