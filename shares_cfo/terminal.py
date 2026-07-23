@@ -170,6 +170,14 @@ a{color:var(--a700);text-decoration:none}
         <select id="bal-cur"><option>INR</option><option>USD</option></select>
         <button class="segb" style="padding:9px 14px" onclick="saveBal()">Add</button>
       </div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Screener data</span><span class="lbl" id="scr-stat">—</span></div>
+      <div class="pb rsub" id="scr-detail" style="color:var(--n600)">checking…</div>
+      <div class="pb" style="border-top:1px solid var(--n200);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="scr-file" accept=".xlsx,.xls,.csv" style="flex:1;min-width:0;font-size:12px;color:var(--n500)">
+        <button class="segb" style="padding:9px 16px" onclick="uploadScreener()">Upload</button>
+      </div>
+      <div class="pb rsub" style="border-top:1px solid var(--n200);color:var(--n500)">screener.in → your screen or watchlist → <b style="color:var(--n700)">Export to Excel</b> → pick it here. Powers Ideas, deep-analysis fundamentals (P/E vs industry, ROE, ROCE) and market-cap buckets.</div>
+    </div>
     <div class="panel span2"><div class="ph"><span class="t">Data feeds</span></div><div class="pb" id="set-feeds"><div class="load">checking</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Trading</span></div><div class="pb" id="set-trade"><div class="sec" style="font-size:12px">Order execution is guarded (caps, allow-list, kill-switch). Master switch is set in the server env.</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Views</span></div><div class="pb" style="display:flex;flex-direction:column;gap:10px"><a id="set-biz" href="#" class="lbl" style="color:var(--a700)">Open Business OS →</a><a id="set-life" href="#" class="lbl" style="color:var(--a700)">Open Life OS →</a><a id="set-classic" href="#" class="lbl" style="color:var(--a700)">Open classic dashboard →</a></div></div>
@@ -687,7 +695,24 @@ async function loadSettings(){
   document.getElementById('set-classic').href='/classic?'+Q;
   const bz=document.getElementById('set-biz');if(bz)bz.href='/biz?'+Q;
   const lf=document.getElementById('set-life');if(lf)lf.href='/life?'+Q;
-  loadBalances();
+  loadBalances();loadScreener();
+}
+async function loadScreener(){
+  const r=await j('/fundamentals/screener/status?'+Q);if(!r.ok)return;const s=r.d;
+  const st=document.getElementById('scr-stat'),el=document.getElementById('scr-detail');
+  if(s.loaded){st.innerHTML='<span class="up">loaded</span>';
+    const nf=s.fields_detected?Object.keys(s.fields_detected).length:0,miss=(s.fields_missing||[]).length;
+    el.innerHTML=(s.companies||0)+' companies · '+nf+' fields mapped'+(miss?(' · <span class="warn">'+miss+' missing</span>'):'')+' · <span class="muted">'+(s.active_file||'')+'</span>';}
+  else{st.innerHTML='<span class="down">none</span>';el.textContent=s.reason||'No Screener export uploaded yet.';}
+}
+async function uploadScreener(){
+  const f=document.getElementById('scr-file').files[0],el=document.getElementById('scr-detail');
+  if(!f){el.textContent='Pick a .xlsx or .csv first.';return;}
+  el.textContent='Uploading '+f.name+'…';const fd=new FormData();fd.append('file',f);
+  try{const r=await fetch('/fundamentals/screener/upload?'+Q,{method:'POST',body:fd});const d=await r.json().catch(()=>({}));
+    if(r.ok){el.innerHTML='<span class="up">✅ uploaded — '+((d.status&&d.status.companies)||0)+' companies</span>';loadScreener();}
+    else el.innerHTML='<span class="down">'+(d.detail||'upload failed')+'</span>';
+  }catch(e){el.innerHTML='<span class="down">network error</span>';}
 }
 async function loadBalances(){
   const [b,w]=await Promise.all([j('/balances?'+Q),j('/wealth?'+Q)]);
