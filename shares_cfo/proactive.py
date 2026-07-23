@@ -211,6 +211,33 @@ async def _alert_conflicts() -> None:
                          "Re-check the thesis — tighten the stop, hedge, or cut.", tab="positions")
 
 
+_ORDER_SEEN: dict = {}  # orderid -> last status, to fire once on each transition
+
+
+async def _alert_order_status() -> None:
+    """Push a fill / rejection the moment an order's broker status changes."""
+    try:
+        from .brokers import angel_scrip
+        orders = await asyncio.to_thread(angel_scrip.order_book)
+    except Exception:
+        return
+    for o in orders or []:
+        oid, st = o.get("orderid"), (o.get("status") or "").lower()
+        if not oid or not st:
+            continue
+        prev = _ORDER_SEEN.get(oid)
+        _ORDER_SEEN[oid] = st
+        if prev is None or st == prev:  # first sighting this session, or unchanged
+            continue
+        sym = o.get("symbol", "order")
+        line = f"{o.get('side', '')} {o.get('qty', '')} {o.get('type', '')}".strip()
+        if "complete" in st or "filled" in st:
+            await _alert("🟢", sym, "order FILLED", f"{line}.", "Position updated.", tab="positions")
+        elif "reject" in st:
+            await _alert("🔴", sym, "order REJECTED", f"{line}: {(o.get('reason') or '')[:80]}",
+                         "Re-check the order and re-place.", tab="positions")
+
+
 async def _alert_health() -> None:
     """Self-watch: if a core module that should auto-report goes dark in market hours,
     say so — the terminal must never rot silently. Only the headless modules are checked
@@ -323,6 +350,7 @@ def start(get_book) -> None:
                     await _alert_drawdown()          # live F&O leg losses (tightened cadence)
                     await _alert_fno_moves()         # live F&O OI/price shifts on open legs
                     await _alert_conflicts()         # position vs deep-analysis conflicts (~40 min)
+                    await _alert_order_status()      # fills / rejections the moment they change
                     await _alert_health()            # self-watch: warn if a core module goes dark
                     if cycle % 10 == 0:              # heavy scan ~every 30 min
                         await _alert_ideas()

@@ -3369,6 +3369,67 @@ async def orders_modify(request: Request, payload: dict = Body(...),
     return res
 
 
+# --- GTT: Good-Till-Triggered resting orders (persist at the broker) ------------
+@app.get("/gtt/list")
+async def gtt_list(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Active GTT rules. Read-only."""
+    _check_token(request, token)
+    from .brokers import angel_scrip
+    try:
+        rules = await asyncio.to_thread(angel_scrip.gtt_list)
+    except Exception as exc:
+        return {"gtt": [], "error": str(exc)[:200]}
+    return {"gtt": rules, "count": len(rules)}
+
+
+@app.post("/gtt/create")
+async def gtt_create(request: Request, payload: dict = Body(...),
+                     token: str | None = Query(default=None)) -> dict:
+    """Create a GTT rule (master-switch gated + a light cap check)."""
+    _check_token(request, token)
+    _trading_on()
+    need = ("tradingsymbol", "symboltoken", "exchange", "side", "price", "qty", "trigger")
+    if any(not payload.get(k) for k in need):
+        raise HTTPException(status_code=400, detail=f"GTT needs: {', '.join(need)}.")
+    # Reuse the order caps so a fat-finger GTT is blocked the same way a live order is.
+    from .config import get_trading_config
+    cfg = get_trading_config()
+    qty, price = int(payload["qty"]), float(payload["price"])
+    if cfg.max_qty_per_order and qty > cfg.max_qty_per_order:
+        raise HTTPException(status_code=403, detail=f"Qty {qty} over cap {cfg.max_qty_per_order}.")
+    if cfg.max_value_per_order and qty * price > cfg.max_value_per_order:
+        raise HTTPException(status_code=403, detail=f"Value over cap ₹{cfg.max_value_per_order:,.0f}.")
+    from .brokers import angel_scrip
+    try:
+        res = await asyncio.to_thread(
+            angel_scrip.gtt_create, payload["tradingsymbol"], str(payload["symboltoken"]),
+            payload["exchange"], payload["side"], payload.get("product", "CNC"),
+            price, qty, float(payload["trigger"]), int(payload.get("timeperiod", 365)))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200])
+    from .execution import engine
+    engine._audit("GTT_CREATE", {"payload": {k: payload.get(k) for k in need}, "result": res})
+    return res
+
+
+@app.post("/gtt/cancel")
+async def gtt_cancel(request: Request, payload: dict = Body(...),
+                     token: str | None = Query(default=None)) -> dict:
+    """Cancel a GTT rule (master-switch gated)."""
+    _check_token(request, token)
+    _trading_on()
+    if not payload.get("id"):
+        raise HTTPException(status_code=400, detail="GTT id required.")
+    from .brokers import angel_scrip
+    try:
+        res = await asyncio.to_thread(angel_scrip.gtt_cancel, str(payload["id"]),
+                                      str(payload.get("symboltoken") or ""),
+                                      payload.get("exchange") or "NSE")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200])
+    return res
+
+
 def main() -> None:
     import os
     import uvicorn

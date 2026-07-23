@@ -652,6 +652,59 @@ def modify_order(orderid: str, variety: str, tradingsymbol: str, symboltoken: st
     return {"modified": orderid, "data": (j.get("data") if isinstance(j, dict) else None)}
 
 
+# --- GTT: Good-Till-Triggered resting orders (persist at the broker up to a year) ---
+GTT_CREATE = "/rest/secure/angelbroking/gtt/v1/createRule"
+GTT_LIST = "/rest/secure/angelbroking/gtt/v1/ruleList"
+GTT_CANCEL = "/rest/secure/angelbroking/gtt/v1/cancelRule"
+
+
+def gtt_create(tradingsymbol: str, symboltoken: str, exchange: str, side: str,
+               product: str, price: float, qty: int, trigger: float,
+               timeperiod: int = 365) -> dict:
+    """Create a single-trigger GTT. Guard + master switch enforced upstream."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    body = {"tradingsymbol": tradingsymbol, "symboltoken": str(symboltoken),
+            "exchange": (exchange or "NSE").upper(),
+            "producttype": _PRODUCT.get(product, "DELIVERY"),
+            "transactiontype": (side or "BUY").upper(), "price": str(price),
+            "qty": str(int(qty)), "disclosedqty": "0", "triggerprice": str(trigger),
+            "timeperiod": str(min(max(int(timeperiod), 1), 365))}
+    r = httpx.post(acc.base_url + GTT_CREATE, headers=_headers(acc, jwt), json=body, timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code >= 400 or (isinstance(j, dict) and j.get("status") is False):
+        raise RuntimeError(f"Angel GTT create rejected [{r.status_code}]: {r.text[:200]}")
+    return {"id": (j.get("data") or {}).get("id") if isinstance(j, dict) else None}
+
+
+def gtt_list() -> list[dict]:
+    """Active GTT rules. Read-only."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    body = {"status": ["NEW", "ACTIVE", "SENTTOEXCHANGE", "FORALL"], "page": 1, "count": 50}
+    r = httpx.post(acc.base_url + GTT_LIST, headers=_headers(acc, jwt), json=body, timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    rows = (j.get("data") or []) if isinstance(j, dict) else []
+    return [{"id": g.get("id"), "symbol": g.get("tradingsymbol"),
+             "side": g.get("transactiontype"), "qty": _int(g.get("qty")),
+             "price": _flt(g.get("price")), "trigger": _flt(g.get("triggerprice")),
+             "status": (g.get("status") or "").lower(), "exchange": g.get("exchange"),
+             "symboltoken": g.get("symboltoken"), "product": g.get("producttype")}
+            for g in (rows or [])]
+
+
+def gtt_cancel(rule_id: str, symboltoken: str, exchange: str) -> dict:
+    """Cancel a GTT rule. Guard enforced upstream."""
+    from .angel import _headers
+    key, acc, jwt = _session()
+    body = {"id": str(rule_id), "symboltoken": str(symboltoken), "exchange": (exchange or "NSE").upper()}
+    r = httpx.post(acc.base_url + GTT_CANCEL, headers=_headers(acc, jwt), json=body, timeout=20.0)
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code >= 400 or (isinstance(j, dict) and j.get("status") is False):
+        raise RuntimeError(f"Angel GTT cancel rejected [{r.status_code}]: {r.text[:200]}")
+    return {"cancelled": rule_id}
+
+
 def _int(v):
     try:
         return int(float(v))

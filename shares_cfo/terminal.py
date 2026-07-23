@@ -226,6 +226,7 @@ a{color:var(--a700);text-decoration:none}
       <div id="deep-list"><div class="pb"><button class="segb" style="padding:11px 16px" onclick="loadDeep(1)">Run deep analysis →</button>
         <div class="rsub" style="margin-top:8px">Fuses fundamentals, technicals, current news and market regime per F&amp;O underlying, and flags any that conflict with how you're positioned. Cached ~20 min.</div></div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl" id="ob-meta">broker · live</span></div><div id="ob-list"><div class="load">—</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">GTT · resting orders</span><span class="lbl" id="gtt-meta">good till triggered</span></div><div id="gtt-list"><div class="load">—</div></div></div>
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
@@ -261,8 +262,11 @@ a{color:var(--a700);text-decoration:none}
   <div class="rsub mono" id="tk-funds" style="margin-top:7px;color:var(--n500)"></div>
   <div class="ssub">Stop-loss (required)</div><input id="tk-stop" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px">
   <div id="tk-guard" class="fg" style="margin-top:14px;border:1px solid var(--n300);display:none"></div>
-  <button class="segb" id="tk-go" onclick="tkReview()" style="width:100%;padding:14px 0;margin-top:14px;font-size:13px">Review order</button>
-  <div class="rsub" style="margin-top:8px;color:var(--n500)">Guarded: propose → confirm. Nothing places unless the master switch is on.</div>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button class="segb" id="tk-go" onclick="tkReview()" style="flex:1;padding:14px 0;font-size:13px">Review order</button>
+    <button class="segb" onclick="setGtt()" style="flex:0 0 auto;padding:14px 16px;font-size:13px" title="Good Till Triggered — a resting order at the broker">Set GTT</button>
+  </div>
+  <div class="rsub" style="margin-top:8px;color:var(--n500)">Guarded: propose → confirm. Nothing places unless the master switch is on. GTT rests at the broker up to a year.</div>
 </div>
 
 <div class="tabs" id="tabs">
@@ -564,6 +568,7 @@ function obStatusCls(s){if(/complete|filled/.test(s))return 'up';if(/reject|canc
 async function loadOrderBook(){const box=document.getElementById('ob-list'),meta=document.getElementById('ob-meta');if(!box)return;
   const r=await j('/orders/book?'+Q);
   if(r.ok&&r.d.orders){const os=r.d.orders;meta.textContent='broker · '+(r.d.open||0)+' open';
+    OBMAP={};os.forEach(o=>{OBMAP[o.orderid]=o;});
     if(!os.length){box.innerHTML='<div class="load">No orders today.</div>';return;}
     box.innerHTML=os.slice(0,30).map(o=>{const cancellable=/open|pending|trigger/.test(o.status||'');
       return '<div class="row" style="flex-direction:column;align-items:stretch;gap:4px">'
@@ -573,7 +578,7 @@ async function loadOrderBook(){const box=document.getElementById('ob-list'),meta
         +'<span class="'+obStatusCls(o.status||'')+'" style="margin-left:auto;font-family:var(--fh);text-transform:uppercase;font-size:10px;letter-spacing:.05em">'+(o.status||'')+'</span></div>'
         +'<div class="rsub mono" style="color:var(--n600)">Qty '+o.qty+(o.filled?' ('+o.filled+' filled)':'')+' · '+(o.type==='MARKET'?'MKT':(o.price||'—'))+(o.trigger?' · trig '+o.trigger:'')+'</div>'
         +(o.reason&&/reject/.test(o.status||'')?'<div class="rsub down">'+o.reason+'</div>':'')
-        +(cancellable?'<div><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelOrder(\''+o.orderid+'\',\''+(o.variety||'NORMAL')+'\')">Cancel</button></div>':'')
+        +(cancellable?'<div style="display:flex;gap:6px"><button class="segb" style="padding:6px 12px;font-size:11px" onclick="modifyOrder(\''+o.orderid+'\')">Modify</button><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelOrder(\''+o.orderid+'\',\''+(o.variety||'NORMAL')+'\')">Cancel</button></div>':'')
         +'</div>';}).join('');return;}
   // fallback to the app's audit log if the broker book is unavailable
   meta.textContent='audit log';const a=await j('/execution/log?'+Q);const ev=(a.ok&&a.d.events)||[];
@@ -583,6 +588,36 @@ async function loadOrderBook(){const box=document.getElementById('ob-list'),meta
 async function cancelOrder(oid,variety){if(!confirm('Cancel this order?'))return;
   const r=await j2('/orders/cancel?'+Q,'POST',{orderid:oid,variety:variety});
   if(r.ok){loadOrderBook();}else alert(r.d.detail||'cancel failed');}
+let OBMAP={};
+async function modifyOrder(oid){const o=OBMAP[oid];if(!o)return;
+  const np=prompt('New limit price (blank = keep '+o.price+'):',o.price);if(np===null)return;
+  const nq=prompt('New quantity (blank = keep '+o.qty+'):',o.qty);if(nq===null)return;
+  const body={orderid:o.orderid,variety:o.variety||'NORMAL',tradingsymbol:o.symbol,symboltoken:o.symboltoken||'',exchange:o.exchange||'NSE',order_type:o.type||'LIMIT',quantity:+nq||o.qty,price:+np||o.price,trigger_price:o.trigger||0,product:o.product||'CNC'};
+  const r=await j2('/orders/modify?'+Q,'POST',body);
+  if(r.ok){loadOrderBook();}else alert(r.d.detail||'modify failed');}
+/* ---- GTT: good-till-triggered resting orders ---- */
+async function loadGtt(){const box=document.getElementById('gtt-list'),meta=document.getElementById('gtt-meta');if(!box)return;
+  const r=await j('/gtt/list?'+Q);
+  if(!r.ok||r.d.error){box.innerHTML='<div class="load">'+((r.d&&r.d.error)?('GTT: '+r.d.error):'could not load')+'</div>';return;}
+  const gs=r.d.gtt||[];meta.textContent=gs.length+' active';
+  if(!gs.length){box.innerHTML='<div class="load">No GTT rules. Set one from any order ticket.</div>';return;}
+  box.innerHTML=gs.map(g=>'<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+(g.symbol||'—')+' <span class="rsub '+(g.side==='BUY'?'up':'down')+'">'+(g.side||'')+'</span></div>'
+    +'<div class="rsub mono">Qty '+g.qty+' @ '+g.price+' · trigger '+g.trigger+' · '+(g.status||'')+'</div></div>'
+    +'<div class="rr"><button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="cancelGtt(\''+g.id+'\',\''+(g.symboltoken||'')+'\',\''+(g.exchange||'NSE')+'\')">Cancel</button></div></div>').join('');}
+async function cancelGtt(id,tok,exch){if(!confirm('Cancel this GTT?'))return;
+  const r=await j2('/gtt/cancel?'+Q,'POST',{id:id,symboltoken:tok,exchange:exch});
+  if(r.ok)loadGtt();else alert(r.d.detail||'cancel failed');}
+async function setGtt(){
+  const tok=(TK.seg==='FUT'&&TK.fut)?TK.fut.token:TK.token;
+  if(!tok){alert('No instrument token for this symbol — open it from Holdings to set a GTT.');return;}
+  const price=+document.getElementById('tk-price').value||TK.ltp;
+  let trig=+document.getElementById('tk-trig').value||0;
+  if(!trig){const p=prompt('GTT trigger price (fires when LTP crosses this):',price);trig=+p||0;}
+  if(!trig){return;}
+  const sym=(TK.seg==='FUT'&&TK.fut)?TK.fut.tradingsymbol:(/-EQ$/.test(TK.sym)?TK.sym:TK.sym+'-EQ');
+  if(!confirm('GTT · '+TK.side+' '+tkUnits()+' '+sym+' when LTP hits '+trig+' (limit '+price+'). Set it?'))return;
+  const r=await j2('/gtt/create?'+Q,'POST',{tradingsymbol:sym,symboltoken:tok,exchange:TK.exch,side:TK.side,product:TK.product,price:price,qty:tkUnits(),trigger:trig});
+  if(r.ok){alert('GTT set ✓');closeTicket();}else alert(r.d.detail||'GTT failed');}
 /* Holdings are shown grouped (market-cap or sector), each group drilling into its
    stocks, then into the enriched share page. Data from /holdings/grouped. */
 let GROUPED=null,GVIEW='cap',POSMAP={};
@@ -796,7 +831,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
-  if(t==='positions'){loadPositions();loadOrderBook();}
+  if(t==='positions'){loadPositions();loadOrderBook();loadGtt();}
   if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='chart'){if(!chartLoaded){chartLoaded=1;chartChips();}loadChart();}
