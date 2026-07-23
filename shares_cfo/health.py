@@ -12,10 +12,9 @@ from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# The modules the status page tracks (ids match the dashboard's array).
+# The trading-console modules the status page tracks (ids match the dashboard's array).
 MODULES = ("sector_map", "holdings", "share_page", "positions", "deep", "income",
-           "charts", "execution", "agent", "import_kpis", "ops_agents",
-           "shared_board", "nudges")
+           "charts", "execution", "agent")
 
 _HB: dict[str, dict] = {}
 

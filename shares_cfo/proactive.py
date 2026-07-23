@@ -211,6 +211,32 @@ async def _alert_conflicts() -> None:
                          "Re-check the thesis — tighten the stop, hedge, or cut.", tab="positions")
 
 
+async def _alert_health() -> None:
+    """Self-watch: if a core module that should auto-report goes dark in market hours,
+    say so — the terminal must never rot silently. Only the headless modules are checked
+    (the ones the agents/feeds keep warm without you opening a tab)."""
+    from . import health
+    from datetime import datetime
+    snap = health.snapshot()
+    core = {"holdings": "book / net worth", "positions": "live F&O feed",
+            "sector_map": "holdings map"}
+    stale = []
+    for mid, label in core.items():
+        last = (snap["modules"].get(mid) or {}).get("last")
+        if not last:
+            continue  # never seen this session — don't alarm on a cold start
+        try:
+            age_min = (_now() - datetime.fromisoformat(last)).total_seconds() / 60
+        except ValueError:
+            continue
+        if age_min > 25:
+            stale.append(f"{label} ({int(age_min)}m)")
+    if stale and _fresh("selfhealth", 2 * 3600):
+        await _alert("🔴", "CONSOLE", "a data module went dark",
+                     "Not refreshing during market hours: " + "; ".join(stale) + ".",
+                     "Check the feed / broker login — open /status for the full board.", tab="")
+
+
 async def _alert_ideas() -> None:
     """A fresh high-conviction setup appeared."""
     try:
@@ -297,6 +323,7 @@ def start(get_book) -> None:
                     await _alert_drawdown()          # live F&O leg losses (tightened cadence)
                     await _alert_fno_moves()         # live F&O OI/price shifts on open legs
                     await _alert_conflicts()         # position vs deep-analysis conflicts (~40 min)
+                    await _alert_health()            # self-watch: warn if a core module goes dark
                     if cycle % 10 == 0:              # heavy scan ~every 30 min
                         await _alert_ideas()
                     delay = 180                      # 3 min while the market is open (was 5)

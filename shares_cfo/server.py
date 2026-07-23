@@ -32,7 +32,7 @@ from . import token_store
 from .brokers import make_adapter
 from .brokers.hdfc import HdfcAdapter, utc_now_iso
 from .config import (ACCOUNT_LABELS, DEFAULT_CLIENT_CODES, get_accounts,
-                     get_api_token, get_share_token, load_account)
+                     get_api_token, load_account)
 from .exceptions import SharesCFOError, TokenExpiredError
 from .models import AccountBook, FundInfo, Holding, Position
 from .normalise import normalise
@@ -923,23 +923,6 @@ def _check_token(request: Request, token: str | None) -> None:
         raise HTTPException(status_code=401, detail="Missing or invalid CFO token.")
 
 
-def _life_scope(request: Request, token: str | None) -> str:
-    """Return the caller's Life OS scope: 'full' (owner) or 'share' (partner).
-
-    The owner token unlocks everything; the partner token unlocks only shared life
-    items and light edits. The partner token is NEVER accepted anywhere except the
-    /life endpoints, so it can't reach the trading or business book.
-    """
-    supplied = request.headers.get("X-CFO-Token") or token
-    owner = get_api_token()
-    share = get_share_token()
-    if not owner:  # unauthenticated local mode — full access
-        return "full"
-    if supplied == owner:
-        return "full"
-    if share and supplied == share:
-        return "share"
-    raise HTTPException(status_code=401, detail="Missing or invalid token.")
 
 
 async def _fetch_account(creds_key: str, sectors: SectorMap) -> AccountBook:
@@ -1134,76 +1117,6 @@ async def classic() -> str:
     return DASHBOARD_HTML
 
 
-@app.get("/biz", response_class=HTMLResponse)
-async def biz_console() -> str:
-    from .biz import BIZ_HTML
-    return BIZ_HTML
-
-
-@app.get("/life", response_class=HTMLResponse)
-async def life_console() -> str:
-    from .life_console import LIFE_HTML
-    return LIFE_HTML
-
-
-# --- Life OS: shared household cockpit (owner full, partner sees only `shared`) --
-@app.get("/life/items")
-async def life_items(request: Request, token: str | None = Query(default=None)) -> dict:
-    scope = _life_scope(request, token)
-    from . import life
-    return life.list_items(scope)
-
-
-@app.post("/life/items")
-async def life_add(request: Request, item: dict = Body(...),
-                   token: str | None = Query(default=None)) -> dict:
-    scope = _life_scope(request, token)  # partner adds land in the shared space
-    from . import life
-    try:
-        return life.add(item, scope=scope)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@app.patch("/life/items/{item_id}")
-async def life_update(request: Request, item_id: str, patch: dict = Body(...),
-                      token: str | None = Query(default=None)) -> dict:
-    scope = _life_scope(request, token)
-    from . import life
-    try:
-        return life.update(item_id, patch, scope)
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="You can only edit shared items.")
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Item not found.")
-
-
-@app.get("/life/share-link")
-async def life_share_link(request: Request, token: str | None = Query(default=None)) -> dict:
-    """Owner-only: the link to hand Jahnavi. Carries the share token (its whole purpose),
-    which unlocks ONLY shared life items — never the trading/business book."""
-    scope = _life_scope(request, token)
-    if scope != "full":
-        raise HTTPException(status_code=403, detail="Owner-only.")
-    share = get_share_token()
-    if not share:
-        return {"configured": False,
-                "hint": "Set CFO_SHARE_TOKEN in backend/.env, then restart, to enable Jahnavi's link."}
-    base = os.environ.get("CFO_APP_URL", "").rstrip("/")
-    path = f"/life?token={share}"
-    return {"configured": True, "url": (base + path) if base else path}
-
-
-@app.delete("/life/items/{item_id}")
-async def life_delete(request: Request, item_id: str,
-                      token: str | None = Query(default=None)) -> dict:
-    scope = _life_scope(request, token)
-    from . import life
-    try:
-        return {"deleted": life.delete(item_id, scope)}
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="You can only delete shared items.")
-
 
 # --- PWA: installable full-screen on Android/Z Fold, cached app shell -----------
 from fastapi.responses import JSONResponse, Response  # noqa: E402
@@ -1261,58 +1174,6 @@ self.addEventListener('fetch',e=>{
     return Response(sw, media_type="application/javascript")
 
 
-# --- Business OS: import Excel/CSV, query datasets + KPIs -----------------------
-@app.post("/business/import/{dataset}")
-async def business_import(request: Request, dataset: str, file: UploadFile = File(...),
-                          token: str | None = Query(default=None)) -> dict:
-    """Import a sheet (.xlsx/.xls/.csv) into a business dataset (replaces it)."""
-    _check_token(request, token)
-    from . import business
-    import os as _os
-    import tempfile
-    suffix = _os.path.splitext(file.filename or "")[1].lower() or ".xlsx"
-    tmp = Path(tempfile.gettempdir()) / f"biz_upload{suffix}"
-    tmp.write_bytes(await file.read())
-    try:
-        rows = business._rows_from_file(tmp)
-    finally:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-    if not rows:
-        raise HTTPException(status_code=400, detail="No rows parsed — is it a valid .xlsx/.csv with a header row?")
-    return {"imported": True, **business.save(dataset, rows)}
-
-
-@app.get("/business/summary")
-async def business_summary(request: Request, token: str | None = Query(default=None)) -> dict:
-    _check_token(request, token)
-    from . import business
-    return business.summary()
-
-
-@app.get("/business/datasets")
-async def business_datasets(request: Request, token: str | None = Query(default=None)) -> dict:
-    _check_token(request, token)
-    from . import business
-    return {"datasets": business.datasets()}
-
-
-@app.get("/business/{dataset}")
-async def business_get(request: Request, dataset: str, limit: int = 200,
-                       token: str | None = Query(default=None)) -> dict:
-    """Rows of a dataset + its computed KPI block (aging / pipeline / hotel / generic)."""
-    _check_token(request, token)
-    from . import business
-    d = business.load(dataset)
-    kpi = {"receivables": business.receivables_aging, "tenders": business.tender_pipeline,
-           "hotel": business.hotel_kpis}.get(dataset.lower())
-    return {"dataset": dataset, "count": d["count"], "columns": d["columns"],
-            "imported_at": d.get("imported_at"), "rows": d["rows"][:max(1, min(limit, 1000))],
-            "kpi": kpi() if kpi else business.generic_summary(dataset)}
-
-
 # --- External balances (US stocks / crypto / bank / trading cash) -> Total Wealth ---
 @app.get("/balances")
 async def balances_list(request: Request, token: str | None = Query(default=None)) -> dict:
@@ -1368,6 +1229,13 @@ async def healthz() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/status", response_class=HTMLResponse)
+async def status_page() -> str:
+    """Live proof-of-life dashboard (reads /health.json, same origin). No token needed."""
+    from .status_page import STATUS_HTML
+    return STATUS_HTML
+
+
 @app.get("/health.json")
 async def health_feed() -> Response:
     """Proof-of-life feed for the status dashboard: per-module heartbeats + session
@@ -1388,9 +1256,6 @@ _HEALTH_PATHS = [
     ("/chart/", ("charts",)),
     ("/fundamentals/", ("share_page",)),
     ("/execution/", ("execution",)),
-    ("/business/summary", ("import_kpis",)),
-    ("/business/", ("import_kpis",)),
-    ("/life/items", ("shared_board",)),
 ]
 
 
@@ -1455,12 +1320,6 @@ async def _start_proactive() -> None:
     except Exception as exc:  # never block startup on the agent
         import logging
         logging.getLogger("shares_cfo").warning("proactive agent not started: %s", exc)
-    try:
-        from . import agents
-        agents.start(_consolidated)
-    except Exception as exc:
-        import logging
-        logging.getLogger("shares_cfo").warning("business agents not started: %s", exc)
     try:
         asyncio.get_event_loop().create_task(_tick_loop())  # warm live-quote cache (REST fallback)
     except Exception as exc:
@@ -2310,10 +2169,8 @@ async def login_hub(request: Request, token: str | None = Query(default=None)) -
         f"<div style='background:#161b22;border:1px solid #2a3038;border-radius:14px;margin-top:12px'>{rows}</div>"
         f"{missing_block}"
         f"{add_form}"
-        f"<p style='margin-top:16px;display:flex;gap:18px;flex-wrap:wrap'>"
-        f"<a href='/?token={t}' style='color:#58a6ff'>→ Dashboard</a>"
-        f"<a href='/biz?token={t}' style='color:#58a6ff'>→ Business OS</a>"
-        f"<a href='/life?token={t}' style='color:#58a6ff'>→ Life OS</a></p></div>"
+        f"<p style='margin-top:16px'>"
+        f"<a href='/?token={t}' style='color:#58a6ff'>→ Dashboard</a></p></div>"
     )
 
 

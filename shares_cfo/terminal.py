@@ -180,7 +180,7 @@ a{color:var(--a700);text-decoration:none}
     </div>
     <div class="panel span2"><div class="ph"><span class="t">Data feeds</span></div><div class="pb" id="set-feeds"><div class="load">checking</div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Trading</span></div><div class="pb" id="set-trade"><div class="sec" style="font-size:12px">Order execution is guarded (caps, allow-list, kill-switch). Master switch is set in the server env.</div></div></div>
-    <div class="panel span2"><div class="ph"><span class="t">Views</span></div><div class="pb" style="display:flex;flex-direction:column;gap:10px"><a id="set-biz" href="#" class="lbl" style="color:var(--a700)">Open Business OS →</a><a id="set-life" href="#" class="lbl" style="color:var(--a700)">Open Life OS →</a><a id="set-classic" href="#" class="lbl" style="color:var(--a700)">Open classic dashboard →</a></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Views</span></div><div class="pb" style="display:flex;flex-direction:column;gap:10px"><a id="set-status" href="#" class="lbl" style="color:var(--a700)">Open system status →</a><a id="set-classic" href="#" class="lbl" style="color:var(--a700)">Open classic dashboard →</a></div></div>
   </div></section>
 
   <section id="s-portfolio" class="on"><div class="wrap" id="markets-wrap">
@@ -711,8 +711,7 @@ async function loadSettings(){
     +'<div class="rsub" style="margin-top:6px">Angel candles / quotes / OI: wired</div>'
     +'<div class="rsub" style="margin-top:6px">News: Google RSS</div>';
   document.getElementById('set-classic').href='/classic?'+Q;
-  const bz=document.getElementById('set-biz');if(bz)bz.href='/biz?'+Q;
-  const lf=document.getElementById('set-life');if(lf)lf.href='/life?'+Q;
+  const ss=document.getElementById('set-status');if(ss)ss.href='/status';
   loadBalances();loadScreener();
 }
 async function loadScreener(){
