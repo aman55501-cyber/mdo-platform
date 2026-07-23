@@ -346,7 +346,15 @@ function sectorMap(p){const m={};(p.accounts||[]).forEach(a=>(a.holdings||[]).fo
   const s=(h.sector||'UNKNOWN').toUpperCase();const o=m[s]||(m[s]={v:0,d:0});o.v+=h.market_value||0;o.d+=h.day_change||0;}));return m;}
 function heatColor(pct){const cap=1.8,f=Math.max(-1,Math.min(1,pct/cap)),a=Math.abs(f)*0.38;
   const c=f>=0?'46,189,133':'240,84,76';return 'linear-gradient(0deg,rgba('+c+','+a.toFixed(2)+'),rgba('+c+','+a.toFixed(2)+')),var(--panel)';}
-function renderHeat(p){const m=sectorMap(p);
+function renderHeat(p){
+  // Prefer the grouped-by-sector data (themed + drillable); fall back to a quick client map.
+  if(GROUPED&&GROUPED.by_sector&&GROUPED.by_sector.length){
+    const arr=GROUPED.by_sector.filter(g=>g.value>=5000).slice(0,12);
+    document.getElementById('heat').innerHTML=arr.map(g=>'<div class="hc" style="cursor:pointer;background:'+heatColor(g.day_pct)+'" onclick="drillSector(\''+encodeURIComponent(g.name)+'\')"><div class="hn">'+g.name+'</div><div class="hp '+cl(g.day_pct)+'">'+sp(g.day_pct)+'</div></div>').join('')
+      ||'<div class="hc"><div class="hn muted">no sectors</div></div>';
+    return;
+  }
+  const m=sectorMap(p);
   const arr=Object.entries(m).map(([s,o])=>{const prev=o.v-o.d;return {s,pct:prev?o.d/prev*100:0,v:o.v};})
     .filter(x=>x.v>=5000).sort((a,b)=>b.v-a.v).slice(0,12);
   document.getElementById('heat').innerHTML=arr.map(x=>'<div class="hc" style="background:'+heatColor(x.pct)+'"><div class="hn">'+x.s+'</div><div class="hp '+cl(x.pct)+'">'+sp(x.pct)+'</div></div>').join('')
@@ -570,18 +578,23 @@ function renderGrouped(){
   let extra='';
   if(GROUPED.screener_loaded===false&&GVIEW==='cap')extra='<div class="rsub" style="padding:10px 13px;color:var(--warn)">Cap buckets need a Screener export — upload one to classify large/mid/small/micro. Sector view works without it.</div>';
   box.innerHTML=tog+rows+extra;
+  if(PORT)renderHeat(PORT);   // now that grouped sectors are in, make the sector map drillable
 }
-function drillGroup(i){
-  const groups=(GVIEW==='cap'?GROUPED.by_cap:GROUPED.by_sector)||[];const g=groups[i];if(!g)return;
+function drillGroup(i){const groups=(GVIEW==='cap'?GROUPED.by_cap:GROUPED.by_sector)||[];if(groups[i])showGroup(groups[i]);}
+function drillSector(enc){const name=decodeURIComponent(enc);const g=((GROUPED&&GROUPED.by_sector)||[]).find(x=>x.name===name);if(g)showGroup(g);}
+function showGroup(g){
+  const pnl0=g.unrealised>=0;
   document.getElementById('sh-sym').textContent=g.name;
-  document.getElementById('sh-px').innerHTML=inr(g.value)+' · <span class="'+cl(g.day_pct)+'">'+sp(g.day_pct)+'</span> · '+g.count+' stocks';
-  document.getElementById('sh-body').innerHTML=(g.stocks||[]).map(s=>{const pnl=s.unrealised>=0;
-    return '<div class="row" onclick="openShare(\''+s.symbol+'\')" style="cursor:pointer"><div style="flex:1;min-width:0">'
-      +'<div class="rn">'+s.symbol+' <span class="rsub">'+s.qty+' × '+inr(s.last_price)+'</span></div>'
-      +'<div class="rsub">'+(s.holders||[]).join(', ')+(GVIEW==='sector'&&s.cap?' · '+s.cap:'')+' · '+s.weight+'%</div></div>'
-      +'<div class="rr"><div class="p">'+inr(s.value)+'</div><div class="c '+cl(s.day_pct)+'">'+sp(s.day_pct)+'</div>'
-      +'<div class="rsub '+(pnl?'up':'down')+'">'+(pnl?'+':'')+inr(s.unrealised)+' ('+(pnl?'+':'')+s.unrealised_pct+'%)</div></div></div>';}).join('')
-      ||'<div class="load">no stocks</div>';
+  document.getElementById('sh-px').innerHTML=inr(g.value)+' · <span class="'+cl(g.day_pct)+'">'+sp(g.day_pct)+'</span> · <span class="'+(pnl0?'up':'down')+'">'+(pnl0?'+':'')+inr(g.unrealised)+'</span>';
+  document.getElementById('sh-body').innerHTML='<div class="rsub" style="margin-bottom:6px;color:var(--n500)">'+g.count+' stocks · '+g.weight+'% of book · tap a name for full detail</div>'
+    +(g.stocks||[]).map(s=>{const pnl=s.unrealised>=0;
+    return '<div class="row" onclick="openShare(\''+s.symbol+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:3px">'
+      +'<div style="display:flex;align-items:baseline;gap:8px"><span class="rn">'+s.symbol+'</span>'
+      +'<span class="rsub">'+(s.cap||'')+' · '+(s.holders||[]).join(', ')+' · '+s.weight+'%</span>'
+      +'<span class="p" style="margin-left:auto;font-family:var(--fm)">'+inr(s.value)+' <span class="'+cl(s.day_pct)+'" style="font-size:11px">'+sp(s.day_pct)+'</span></span></div>'
+      +'<div class="rsub mono" style="color:var(--n600)">Qty '+s.qty+' · Avg '+(s.avg_price!=null?s.avg_price:'—')+' · LTP '+(s.last_price!=null?s.last_price:'—')+' · Inv '+inr(s.invested)+'</div>'
+      +'<div class="rsub"><span class="'+(pnl?'up':'down')+'">Unrealised '+(pnl?'+':'')+inr(s.unrealised)+' ('+(pnl?'+':'')+s.unrealised_pct+'%)</span></div>'
+      +'</div>';}).join('')||'<div class="load">no stocks</div>';
   document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on');
 }
 function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
@@ -667,20 +680,25 @@ let newsLoaded=0,setLoaded=0,ideasLoaded=0;
 async function loadIdeas(){
   const box=document.getElementById('ideas-list');const r=await j('/ideas/high-conviction?'+Q);
   if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}
-  if(r.d.error){box.innerHTML='<div class="load">'+r.d.error+'</div>';return;}
-  const ii=r.d.ideas||[];
-  if(!ii.length){box.innerHTML='<div class="load">No high-conviction setups right now — the bar is intentionally high.</div>';return;}
-  box.innerHTML=ii.map(i=>{
-    const flag=(i.flags&&i.flags.length)?(i.flags[0].text||i.flags[0]):'';
-    return '<div class="row" onclick="openShare(\''+i.symbol+'\')" style="flex-direction:column;align-items:stretch;gap:8px;cursor:pointer">'
+  if(r.d.error){box.innerHTML='<div class="pb"><div class="rn">Ideas need data</div><div class="rsub" style="margin-top:6px;color:var(--warn)">'+r.d.error+'</div></div>';return;}
+  const ii=r.d.ideas||[];const cand=r.d.candidates||[];const dg=r.d.diag||{};
+  const ideaCard=(i,dim)=>{const flag=(i.flags&&i.flags.length)?(i.flags[0].text||i.flags[0]):'';
+    return '<div class="row" onclick="openShare(\''+i.symbol+'\')" style="flex-direction:column;align-items:stretch;gap:8px;cursor:pointer'+(dim?';opacity:.9':'')+'">'
       +'<div style="display:flex;align-items:baseline"><span class="rn" style="font-size:16px;font-weight:600">'+i.symbol+'</span>'
-      +'<span class="rsub" style="margin-left:9px;border:1px solid var(--n400);padding:1px 6px">'+i.horizon+'</span>'
+      +'<span class="rsub" style="margin-left:9px;border:1px solid var(--n400);padding:1px 6px">'+(i.horizon||'—')+'</span>'
+      +(dim&&i.action&&i.action!=='BUY'?'<span class="rsub" style="margin-left:6px;color:var(--warn)">'+i.action+'</span>':'')
       +'<span class="mono" style="margin-left:auto;font-weight:600;color:var(--a700)">CONV '+i.conviction+'</span></div>'
-      +'<div class="mono" style="display:flex;gap:16px;font-size:13px;flex-wrap:wrap"><span class="sec">Entry <b style="color:var(--text)">'+i.entry+'</b></span><span class="down">SL '+i.stop_loss+'</span><span class="up">TGT '+i.target+'</span><span class="sec">R:R <b style="color:var(--text)">'+i.reward_risk+'</b></span></div>'
+      +(i.entry!=null?'<div class="mono" style="display:flex;gap:16px;font-size:13px;flex-wrap:wrap"><span class="sec">Entry <b style="color:var(--text)">'+i.entry+'</b></span><span class="down">SL '+i.stop_loss+'</span><span class="up">TGT '+i.target+'</span><span class="sec">R:R <b style="color:var(--text)">'+i.reward_risk+'</b></span></div>':'')
       +(i.pattern?'<div class="rsub" style="color:var(--n600)">'+i.pattern.replace(/_/g,' ')+' · '+i.hit_rate+'% hit · avg '+(i.avg_return_pct>=0?'+':'')+i.avg_return_pct+'% over horizon</div>':'')
       +'<div class="rsub">F '+i.fundamental_score+' · T '+(i.technical_score!=null?i.technical_score:'—')+(flag?' · <span class="down">⚠ '+flag+'</span>':'')+'</div>'
-      +'</div>';
-  }).join('')+'<div class="pb rsub" style="color:var(--n500)">'+(r.d.note||'')+'</div>';
+      +'</div>';};
+  if(ii.length){box.innerHTML=ii.map(i=>ideaCard(i,false)).join('')+'<div class="pb rsub" style="color:var(--n500)">'+(r.d.note||'')+'</div>';return;}
+  // No high-conviction pass → explain + show closest candidates so it's never empty.
+  let h='<div class="pb"><div class="rn">No high-conviction setups</div><div class="rsub" style="margin-top:6px;color:var(--warn)">'+(dg.reason||'The bar is intentionally high.')+'</div>';
+  if(dg.universe!=null)h+='<div class="rsub" style="margin-top:6px;color:var(--n600)">Universe '+dg.universe+' · fundamentally strong '+(dg.fundamentally_strong||0)+' · analysed '+(dg.analysed||0)+'</div>';
+  h+='</div>';
+  if(cand.length)h+='<div class="ssub" style="padding:0 13px">Closest candidates</div>'+cand.map(i=>ideaCard(i,true)).join('');
+  box.innerHTML=h;
 }
 async function loadSettings(){
   const r=await j('/accounts?'+Q),box=document.getElementById('set-accs');

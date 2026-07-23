@@ -2801,7 +2801,8 @@ def _high_conviction(min_conviction: float = 62.0) -> dict:
 
     universe = fun.load_universe()
     if not universe:
-        return {"error": "No Screener export loaded — upload one to power ideas.", "ideas": []}
+        return {"error": "No Screener export loaded — upload one in Settings → Screener data to power ideas.",
+                "ideas": [], "candidates": []}
     rule = scoring.load_rule()
     scored = []
     for item in universe:
@@ -2810,10 +2811,11 @@ def _high_conviction(min_conviction: float = 62.0) -> dict:
             scored.append({"symbol": item["symbol"], "name": item.get("name"),
                            "fundamental_score": f["score"], "fields": item["fields"]})
     scored.sort(key=lambda x: x["fundamental_score"], reverse=True)
-    ideas = []
+    analysed, priced_ok = [], 0
     for row in scored[:25]:  # only deep-analyse the fundamentally strongest
         try:
             data = get_ohlcv(row["symbol"])
+            priced_ok += 1
             t = tech_mod.analyze(data["closes"], data["volumes"])
             blended = scoring.combine(row["symbol"], row["fields"], t, rule)
             fired = pat.detect(data)
@@ -2822,19 +2824,16 @@ def _high_conviction(min_conviction: float = 62.0) -> dict:
             conviction = round(0.5 * (row["fundamental_score"] or 0)
                                + 0.3 * (blended["technical_score"] or 0)
                                + 0.2 * (best["hit_rate"] if best else 0), 1)
-            if conviction < min_conviction:
-                continue
             last = t.get("last_price") or 0.0
             sig = strategy.signal(row["symbol"], t, last, risk_budget=10000.0)
-            if sig.get("action") != "BUY":
-                continue
-            ideas.append({
+            analysed.append({
                 "symbol": row["symbol"], "name": row.get("name"), "conviction": conviction,
                 "fundamental_score": row["fundamental_score"],
                 "technical_score": blended["technical_score"], "verdict": blended["verdict"],
                 "horizon": _horizon(best.get("horizon") if best else None),
-                "entry": sig["entry"], "stop_loss": sig["stop_loss"], "target": sig["target"],
-                "reward_risk": sig["reward_risk"], "last_price": last,
+                "action": sig.get("action"),
+                "entry": sig.get("entry"), "stop_loss": sig.get("stop_loss"), "target": sig.get("target"),
+                "reward_risk": sig.get("reward_risk"), "last_price": last,
                 "pattern": best.get("pattern") if best else None,
                 "hit_rate": best.get("hit_rate") if best else None,
                 "avg_return_pct": best.get("avg_return_pct") if best else None,
@@ -2842,8 +2841,21 @@ def _high_conviction(min_conviction: float = 62.0) -> dict:
             })
         except (PriceDataUnavailable, Exception):
             continue
-    ideas.sort(key=lambda x: x["conviction"], reverse=True)
-    data = {"ideas": ideas[:10], "min_conviction": min_conviction,
+    analysed.sort(key=lambda x: x["conviction"], reverse=True)
+    ideas = [r for r in analysed if r["conviction"] >= min_conviction and r["action"] == "BUY"]
+    # Near-misses so the tab is never a dead end: strong names that just missed the bar.
+    candidates = [r for r in analysed if r not in ideas][:6]
+    diag = {"universe": len(universe), "fundamentally_strong": len(scored),
+            "analysed": len(analysed), "priced": priced_ok}
+    if not ideas:
+        if priced_ok == 0 and scored:
+            diag["reason"] = "Price data unavailable for the scan — log in to Angel / check the feed."
+        elif analysed:
+            diag["reason"] = "Nothing cleared the high-conviction bar today — see the closest candidates below."
+        else:
+            diag["reason"] = "No fundamentally strong names in the current export."
+    data = {"ideas": ideas[:10], "candidates": candidates, "diag": diag,
+            "min_conviction": min_conviction,
             "note": "High-conviction only: strong fundamentals + a backtested pattern edge + a "
                     "defined-risk entry. Advisory — verify before acting."}
     _HC_CACHE.update(ts=time.time(), data=data)

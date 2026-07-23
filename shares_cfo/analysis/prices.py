@@ -12,11 +12,21 @@ class PriceDataUnavailable(Exception):
     """Raised when the price provider (or its deps) can't return data."""
 
 
+# Friendly index display names -> the caret symbols the providers resolve.
+_INDEX_ALIASES = {
+    "NIFTY": "^NSEI", "NIFTY 50": "^NSEI", "NIFTY50": "^NSEI", "NIFTY-50": "^NSEI",
+    "BANKNIFTY": "^NSEBANK", "BANK NIFTY": "^NSEBANK", "NIFTY BANK": "^NSEBANK",
+    "INDIA VIX": "^INDIAVIX", "INDIAVIX": "^INDIAVIX", "INDIA_VIX": "^INDIAVIX",
+    "SENSEX": "^BSESN", "NIFTY MIDCAP": "^CNXMIDCAP", "NIFTY SMALLCAP": "^CNXSC",
+}
+
+
 def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     """Return {'closes': [...], 'volumes': [...], 'source': 'yfinance', 'confidence': ...}.
 
     `symbol` is a clean NSE symbol (e.g. 'COALINDIA'). yfinance wants a suffix.
     """
+    symbol = _INDEX_ALIASES.get(symbol.strip().upper(), symbol)  # 'NIFTY 50' -> '^NSEI'
     # Provider chain: EODHD (great for indices), then Angel (NSE stocks — EODHD
     # doesn't license NSE equity data), then yfinance as a last resort.
     tried: list[str] = []  # why each source was skipped/failed, for an actionable error
