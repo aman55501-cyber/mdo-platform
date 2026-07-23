@@ -1366,6 +1366,28 @@ async def healthz() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/auth/status")
+async def auth_status() -> dict:
+    """Whether the app should show a password screen (no secrets returned)."""
+    from .config import get_password
+    return {"password_required": bool(get_password())}
+
+
+@app.post("/auth/login")
+async def auth_login(payload: dict = Body(...)) -> dict:
+    """Exchange the app password for the API token. Constant-time compare; the password
+    and token are never logged."""
+    import hmac
+    from .config import get_password
+    pw = get_password()
+    if not pw:
+        raise HTTPException(status_code=400, detail="Password login is not enabled.")
+    supplied = str(payload.get("password") or "")
+    if not hmac.compare_digest(supplied, pw):
+        raise HTTPException(status_code=401, detail="Wrong password.")
+    return {"token": get_api_token()}
+
+
 @app.on_event("startup")
 async def _start_proactive() -> None:
     """Launch the market-hours proactive agent (pushes alerts to the phone)."""

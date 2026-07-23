@@ -137,6 +137,14 @@ a{color:var(--a700);text-decoration:none}
 .fg .v{font-family:var(--fm);font-size:15px;font-weight:600;margin-top:4px}
 .ssub{font-family:var(--fh);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--n600);margin:16px 0 2px;font-weight:600}
 </style></head><body>
+<div id="gate" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--canvas);flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <div style="font-family:var(--fh);font-weight:600;letter-spacing:.14em;font-size:15px;margin-bottom:4px">MARKET<b style="color:var(--acc)">·</b>CONSOLE</div>
+  <div class="lbl" style="margin-bottom:18px">enter password</div>
+  <input id="gate-pw" type="password" inputmode="text" autocomplete="current-password" placeholder="Password"
+    style="width:100%;max-width:300px;background:var(--panel);border:1px solid var(--n300);color:var(--text);font-family:var(--fb);font-size:16px;padding:13px 14px;text-align:center">
+  <button class="btn" onclick="unlock()" style="width:100%;max-width:300px;margin-top:12px;background:var(--acc);color:#fff;border:0;font-family:var(--fh);letter-spacing:.06em;font-size:13px;padding:13px 0;text-transform:uppercase;cursor:pointer">Unlock</button>
+  <div class="rsub" id="gate-msg" style="margin-top:10px;min-height:16px;color:var(--down)"></div>
+</div>
 <div class="app">
   <div class="hdr">
     <div><div class="hti">MARKET<b>·</b>CONSOLE</div>
@@ -260,7 +268,7 @@ a{color:var(--a700);text-decoration:none}
 <script>
 let token=new URLSearchParams(location.search).get('token')||'';
 try{token=token||localStorage.getItem('cfo_token')||'';if(token)localStorage.setItem('cfo_token',token);}catch(e){}
-const Q='token='+encodeURIComponent(token);
+let Q='token='+encodeURIComponent(token);
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}
 const _fails={};function _failbar(){let b=document.getElementById('failbar');if(!b){b=document.createElement('div');b.id='failbar';b.style.cssText='position:sticky;top:0;z-index:99;background:#3a1113;color:#f0a0a0;font:500 12px IBM Plex Mono,monospace;padding:6px 12px;border-bottom:1px solid #7a2a2a;display:none';document.body.prepend(b);}const k=Object.keys(_fails);if(k.length){b.style.display='block';b.textContent='DATA FEED ERROR: '+k.map(u=>u.split('?')[0]+' ('+_fails[u]+')').join(' · ')+' — retrying automatically';}else{b.style.display='none';}return b;}
 async function j(u){const c=new AbortController();const to=setTimeout(()=>c.abort(),30000);
@@ -736,9 +744,35 @@ async function heartbeat(){
   }catch(e){}
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
-heartbeat();setInterval(heartbeat,30000);
-/* Positions tab refreshes every 5s while open DURING MARKET HOURS — the server serves
-   P&L from a warm ~3s tick cache, so this is cheap and feels real-time. Still after close. */
-setInterval(()=>{try{const on=document.querySelector('section.on');
-  if(MKT_OPEN&&on&&on.id==='s-positions')loadPositions();}catch(e){}},5000);
+let BOOTED=false;
+function boot(){
+  if(BOOTED)return;BOOTED=true;
+  heartbeat();setInterval(heartbeat,30000);
+  /* Positions refresh every 5s in market hours — served from the warm ~3s tick cache. */
+  setInterval(()=>{try{const on=document.querySelector('section.on');
+    if(MKT_OPEN&&on&&on.id==='s-positions')loadPositions();}catch(e){}},5000);
+}
+/* Password gate: if there's no token yet and the server has a password set, show the
+   unlock screen; otherwise boot straight in. Unlock exchanges the password for the token. */
+async function unlock(){
+  const pw=document.getElementById('gate-pw').value,m=document.getElementById('gate-msg');
+  if(!pw){return;}m.textContent='';
+  try{
+    const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.token){token=d.token;Q='token='+encodeURIComponent(token);try{localStorage.setItem('cfo_token',token);}catch(e){}
+      document.getElementById('gate').style.display='none';boot();}
+    else{m.textContent=d.detail||'Wrong password.';}
+  }catch(e){m.textContent='Network error — try again.';}
+}
+async function initApp(){
+  if(token){boot();return;}
+  let need=false;
+  try{const r=await fetch('/auth/status');const d=await r.json();need=!!d.password_required;}catch(e){}
+  if(need){const g=document.getElementById('gate');g.style.display='flex';
+    const pw=document.getElementById('gate-pw');pw.focus();
+    pw.addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});}
+  else{boot();}   // no password configured + no token = local/open mode
+}
+initApp();
 </script></body></html>"""

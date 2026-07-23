@@ -196,6 +196,13 @@ def get_api_token() -> str:
     return os.environ.get("CFO_API_TOKEN", "").strip()
 
 
+def get_password() -> str:
+    """Optional password gate for the app. When set, the web app shows a password
+    screen and only hands out the API token after it matches — so the token isn't
+    carried in the URL. Unset = no password screen (link/token entry as before)."""
+    return os.environ.get("CFO_PASSWORD", "").strip()
+
+
 def get_share_token() -> str:
     """Partner (Jahnavi) token — a separate secret that authenticates ONLY the Life OS
     endpoints, and only for items flagged `shared`. Never grants the trading/business book.
