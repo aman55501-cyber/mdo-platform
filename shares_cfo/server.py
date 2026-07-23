@@ -1201,6 +1201,55 @@ async def balances_delete(request: Request, entry_id: str,
     return {"deleted": balances.delete(entry_id)}
 
 
+# --- Calls / tips channels (Bantu Mausaji, Anil Singhvi, ...) --------------------
+@app.get("/tips")
+async def tips_list(request: Request, token: str | None = Query(default=None)) -> dict:
+    """All logged calls, enriched with live NSE price + a state read against each
+    call's levels, grouped by channel. Read-only; reports each run."""
+    _check_token(request, token)
+    from . import tips
+    from .brokers import angel_scrip
+    from . import health as _health
+    items = await asyncio.to_thread(tips.all_tips)
+    syms = sorted({t.get("symbol") for t in items if t.get("symbol")})
+    ltps = await asyncio.to_thread(angel_scrip.equity_ltps, syms) if syms else {}
+    toks = await asyncio.to_thread(lambda: {s: angel_scrip.token_for(s) for s in syms})
+    by_channel: dict = {}
+    actionable = 0
+    for t in items:
+        ltp = ltps.get(t.get("symbol"))
+        st = tips.state(t, ltp)
+        row = {**t, "ltp": ltp, "token": toks.get(t.get("symbol")), **st}
+        if st.get("actionable"):
+            actionable += 1
+        by_channel.setdefault(t.get("source", "Other"), []).append(row)
+    _health.beat("ideas")
+    return {"channels": [{"source": s, "tips": v} for s, v in sorted(by_channel.items())],
+            "count": len(items), "actionable": actionable,
+            "known_channels": list(tips.CHANNELS)}
+
+
+@app.post("/tips")
+async def tips_upsert(request: Request, entry: dict = Body(...),
+                      token: str | None = Query(default=None)) -> dict:
+    """Add or edit a call. A trade with no stop gets a default protective stop; an
+    investment idea with no levels gets a default accumulation ladder."""
+    _check_token(request, token)
+    from . import tips
+    try:
+        return await asyncio.to_thread(tips.upsert, entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/tips/{tip_id}")
+async def tips_delete(request: Request, tip_id: str,
+                      token: str | None = Query(default=None)) -> dict:
+    _check_token(request, token)
+    from . import tips
+    return {"deleted": await asyncio.to_thread(tips.delete, tip_id)}
+
+
 @app.get("/wealth")
 async def wealth(request: Request, token: str | None = Query(default=None)) -> dict:
     """Total Wealth = live demat net worth + external balances (kept separate from the

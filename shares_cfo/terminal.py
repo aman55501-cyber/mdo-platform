@@ -136,6 +136,7 @@ a{color:var(--a700);text-decoration:none}
 .fg .k{font-family:var(--fh);text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--n500)}
 .fg .v{font-family:var(--fm);font-size:15px;font-weight:600;margin-top:4px}
 .ssub{font-family:var(--fh);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--n600);margin:16px 0 2px;font-weight:600}
+.tpin{background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:10px;font-family:var(--fb);font-size:14px;width:100%}
 </style></head><body>
 <div id="gate" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--canvas);flex-direction:column;align-items:center;justify-content:center;padding:24px">
   <div style="font-family:var(--fh);font-weight:600;letter-spacing:.14em;font-size:15px;margin-bottom:4px">MARKET<b style="color:var(--acc)">·</b>CONSOLE</div>
@@ -235,8 +236,24 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
-    <div style="display:flex;gap:6px;margin-bottom:12px;grid-column:1/-1"><button class="segb on" id="ist-ideas" onclick="istTab('ideas')" style="flex:1;padding:10px 0">Ideas</button><button class="segb" id="ist-income" onclick="istTab('income')" style="flex:1;padding:10px 0">Income</button></div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;grid-column:1/-1"><button class="segb on" id="ist-ideas" onclick="istTab('ideas')" style="flex:1;padding:10px 0">Ideas</button><button class="segb" id="ist-calls" onclick="istTab('calls')" style="flex:1;padding:10px 0">Calls</button><button class="segb" id="ist-income" onclick="istTab('income')" style="flex:1;padding:10px 0">Income</button></div>
     <div class="panel span2" id="ideas-panel"><div class="ph"><span class="t">High-conviction ideas</span><span class="lbl">fundamental + technical + backtest</span></div><div id="ideas-list"><div class="load">scanning for setups</div></div></div>
+    <div class="panel span2" id="calls-panel" style="display:none"><div class="ph"><span class="t">Advisor calls</span><span class="lbl" id="calls-meta">Bantu Mausaji · Anil Singhvi</span></div>
+      <div style="padding:12px 14px;border-bottom:1px solid var(--n200)">
+        <div class="ssub">Log a call</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <select id="tp-src" class="tpin"><option>Bantu Mausaji</option><option>Anil Singhvi</option></select>
+          <input id="tp-sym" class="tpin" placeholder="Symbol e.g. RELIANCE">
+          <select id="tp-kind" class="tpin" onchange="tpKind()"><option value="trade">Trade (buy/target/stop)</option><option value="invest">Invest (accumulate)</option></select>
+          <input id="tp-buy" class="tpin" inputmode="decimal" placeholder="Buy price">
+          <input id="tp-tgt" class="tpin" inputmode="decimal" placeholder="Target / sell">
+          <input id="tp-stop" class="tpin" inputmode="decimal" placeholder="Stop (auto if blank)">
+        </div>
+        <input id="tp-note" class="tpin" style="width:100%;margin-top:6px" placeholder="note (optional)">
+        <button class="segb" style="width:100%;margin-top:8px;padding:11px 0" onclick="addTip()">＋ Add call</button>
+        <div id="tp-msg" class="rsub" style="margin-top:6px;min-height:14px"></div>
+      </div>
+      <div id="calls-list"><div class="load">No calls logged yet. Add one above.</div></div></div>
     <div class="panel span2" id="income-panel" style="display:none"><div class="ph"><span class="t">Income engine</span><span class="lbl" id="inc-sum">covered calls + cash puts</span></div><div id="income-list"><div class="load">—</div></div></div>
   </div></section>
 
@@ -746,10 +763,47 @@ function showGroup(g){
 function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
 /* ---- income engine (covered calls + cash puts, guarded one-tap) ---- */
 let INCOME_DATA={cc:[],cp:[]},incLoaded=0;
-function istTab(t){const ideas=t==='ideas';
-  document.getElementById('ist-ideas').classList.toggle('on',ideas);document.getElementById('ist-income').classList.toggle('on',!ideas);
-  document.getElementById('ideas-panel').style.display=ideas?'':'none';document.getElementById('income-panel').style.display=ideas?'none':'';
-  if(!ideas&&!incLoaded){incLoaded=1;loadIncomeT();}}
+function istTab(t){
+  ['ideas','calls','income'].forEach(x=>{const b=document.getElementById('ist-'+x);if(b)b.classList.toggle('on',x===t);
+    const p=document.getElementById(x+'-panel');if(p)p.style.display=(x===t)?'':'none';});
+  if(t==='income'&&!incLoaded){incLoaded=1;loadIncomeT();}
+  if(t==='calls'){loadCalls();}}
+function tpKind(){const inv=document.getElementById('tp-kind').value==='invest';
+  document.getElementById('tp-tgt').style.display=inv?'none':'';document.getElementById('tp-stop').style.display=inv?'none':'';}
+async function addTip(){const m=document.getElementById('tp-msg');
+  const body={source:document.getElementById('tp-src').value,symbol:document.getElementById('tp-sym').value,
+    kind:document.getElementById('tp-kind').value,buy:+document.getElementById('tp-buy').value||null,
+    target:+document.getElementById('tp-tgt').value||null,stop:+document.getElementById('tp-stop').value||null,
+    note:document.getElementById('tp-note').value};
+  if(!body.symbol){m.textContent='Enter a symbol.';m.style.color='var(--down)';return;}
+  const r=await j2('/tips?'+Q,'POST',body);
+  if(r.ok){m.textContent='Added.';m.style.color='var(--up)';['tp-sym','tp-buy','tp-tgt','tp-stop','tp-note'].forEach(id=>document.getElementById(id).value='');loadCalls();}
+  else{m.textContent=r.d.detail||'could not add';m.style.color='var(--down)';}}
+async function delTip(id){if(!confirm('Delete this call?'))return;const r=await j2('/tips/'+id+'?'+Q,'DELETE',{});if(r.ok)loadCalls();}
+function tradeTip(sym,buy,stop){istRun&&clearTimeout(istRun);openTicket(sym,buy||0,'BUY');
+  const lmt=[...document.querySelectorAll('.tk-ot')].find(b=>b.textContent.trim()==='LMT');if(lmt&&buy)tkOt('LIMIT',lmt);
+  if(buy)document.getElementById('tk-price').value=buy;if(stop)document.getElementById('tk-stop').value=stop;tkVal&&tkVal();}
+let istRun=null;
+async function loadCalls(){const box=document.getElementById('calls-list'),meta=document.getElementById('calls-meta');if(!box)return;
+  const r=await j('/tips?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not load calls')+'</div>';return;}
+  const chs=r.d.channels||[];meta.textContent=(r.d.count||0)+' calls · '+(r.d.actionable||0)+' actionable';
+  if(!chs.length){box.innerHTML='<div class="load">No calls logged yet. Add one above.</div>';return;}
+  box.innerHTML=chs.map(ch=>'<div class="ssub" style="padding:10px 14px 2px">'+ch.source+'</div>'+ch.tips.map(t=>tipCard(t)).join('')).join('');}
+function tipCard(t){const ltp=t.ltp,act=t.actionable,alert=t.alert;
+  const badge='<span class="rchip '+(alert?'dgr':(act?'':'')) +'" style="'+(alert?'':(act?'color:var(--up);border-color:var(--up)':'color:var(--n500)'))+'">'+(t.state||'')+'</span>';
+  const px=(v)=>v?(+v).toFixed(1):'—';
+  let levels='';
+  if(t.kind==='invest'){const lv=t.levels||[];levels='<div class="rsub mono" style="color:var(--n600)">Ladder: '+lv.map(x=>'<span style="'+(ltp&&ltp<=x?'color:var(--up)':'')+'">'+(+x).toFixed(1)+'</span>').join(' · ')+'</div>';}
+  else{levels='<div class="rsub mono" style="color:var(--n600)">Buy '+px(t.buy)+' · Target '+px(t.target)+' · Stop <span class="down">'+px(t.stop)+'</span></div>';}
+  const actions='<div style="display:flex;gap:6px;margin-top:2px">'
+    +(t.kind==='trade'?'<button class="segb" style="padding:6px 12px;font-size:11px;color:var(--up);border-color:#1f5c46" onclick="tradeTip(\''+t.symbol+'\','+(t.buy||0)+','+(t.stop||0)+')">Trade →</button>':'')
+    +'<button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="delTip(\''+t.id+'\')">Delete</button></div>';
+  return '<div class="row" style="flex-direction:column;align-items:stretch;gap:5px">'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="rn">'+t.symbol+'</span>'
+    +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+t.kind+'</span>'
+    +badge+'<span class="mono" style="margin-left:auto">'+(ltp?('LTP '+ltp.toFixed(1)):'—')+'</span></div>'
+    +levels+(t.note?'<div class="rsub" style="color:var(--n500)">'+t.note+'</div>':'')+actions+'</div>';}
 async function loadIncomeT(){
   const box=document.getElementById('income-list');const r=await j('/income/ideas?'+Q);
   if(!r.ok){box.innerHTML='<div class="load">could not load</div>';return;}

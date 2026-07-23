@@ -113,6 +113,39 @@ def nearest_expiry(underlying: str) -> str | None:
     return min(fut)[1] if fut else None
 
 
+def equity_ltps(symbols: list[str]) -> dict:
+    """{SYMBOL: ltp} for a batch of NSE equity symbols via ONE Angel LTP quote.
+
+    Resolves each name to its NSE token from the scrip master, then a single quote
+    call — used to price the calls/tips channel live without one request per tip.
+    """
+    from .angel import _headers
+    tok_map = {}  # token -> SYMBOL
+    for s in symbols:
+        t = token_for(s)
+        if t:
+            tok_map[str(t)] = s.strip().upper()
+    if not tok_map:
+        return {}
+    try:
+        key, acc, jwt = _session()
+    except Exception:
+        return {}
+    body = {"mode": "LTP", "exchangeTokens": {"NSE": list(tok_map.keys())}}
+    try:
+        r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=15.0)
+        fetched = (((r.json() or {}).get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
+    except Exception:
+        return {}
+    out = {}
+    for f in fetched:
+        t = str(f.get("symbolToken") or f.get("symboltoken") or "")
+        ltp = f.get("ltp")
+        if t in tok_map and ltp not in (None, "NA", ""):
+            out[tok_map[t]] = float(ltp)
+    return out
+
+
 def option_ltps(underlying: str, expiry: str, strikes: list[int]) -> dict:
     """{(strike, 'CE'|'PE'): ltp} for the given strikes/expiry via Angel's quote API."""
     from ..config import get_accounts, load_account
