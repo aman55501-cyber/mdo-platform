@@ -1238,14 +1238,20 @@ async def service_worker() -> Response:
     # Network-first for data (always fresh), cache-first fallback for the shell so the
     # app opens instantly and survives a brief server/network blip.
     sw = """
-const CACHE='mc-v1';
+const CACHE='mc-v3';
 self.addEventListener('install',e=>{self.skipWaiting();});
-self.addEventListener('activate',e=>{e.waitUntil(clients.claim());});
+self.addEventListener('activate',e=>{e.waitUntil((async()=>{
+  // Purge every old cache bucket so a deploy always wins over a stale shell.
+  const ks=await caches.keys();await Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)));
+  await clients.claim();
+})());});
 self.addEventListener('fetch',e=>{
   const u=new URL(e.request.url);
   if(e.request.method!=='GET'){return;}
+  // The HTML shell is ALWAYS network-first: fetch fresh, cache only as an offline
+  // fallback. So new layouts show on the next load instead of being pinned.
   if(u.pathname==='/'||u.pathname==='/manifest.json'||u.pathname==='/icon.svg'){
-    e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return r;})
+    e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>{const c=r.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return r;})
       .catch(()=>caches.match(e.request)));
   }
 });
