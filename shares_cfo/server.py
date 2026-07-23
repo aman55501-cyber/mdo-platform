@@ -1738,25 +1738,23 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
     return await _live_positions()
 
 
+# Separate caches for the plain and the AI-narrated report (narration is opt-in).
 _DEEP_CACHE: dict = {"ts": 0.0, "data": None}
+_DEEP_CACHE_AI: dict = {"ts": 0.0, "data": None}
 
 
-@app.get("/positions/deep")
-async def positions_deep(request: Request, refresh: int = 0,
-                         token: str | None = Query(default=None)) -> dict:
-    """Deep analysis for every F&O underlying you hold: fundamental + technical + news
-    + sector/macro fused into a stance, and whether it agrees with your position.
-    Heavy (prices + news per name), so cached ~20 min; pass refresh=1 to force."""
-    _check_token(request, token)
+async def _deep_report(refresh: bool = False, narrate: bool = False) -> dict:
+    """Deep analysis for every F&O underlying held — the reusable core behind the
+    /positions/deep endpoint AND the proactive conflict agent. Cached ~20 min."""
     import time
-    if not refresh and _DEEP_CACHE["data"] and (time.time() - _DEEP_CACHE["ts"]) < 1200:
-        return _DEEP_CACHE["data"]
+    cache = _DEEP_CACHE_AI if narrate else _DEEP_CACHE
+    if not refresh and cache["data"] and (time.time() - cache["ts"]) < 1200:
+        return cache["data"]
 
     from . import deep, themes
     from .analysis import market
 
     live = await _live_positions()
-    # unique F&O underlyings + net directional bias across their legs
     by_sym: dict = {}
     for p in live.get("positions", []):
         if p.get("kind") not in ("option", "future"):
@@ -1767,9 +1765,9 @@ async def positions_deep(request: Request, refresh: int = 0,
         s = by_sym.setdefault(u, {"bias": 0, "sector": themes.theme_of(u, None)})
         s["bias"] += p.get("bias") or 0
     if not by_sym:
-        data = {"as_of": live.get("as_of"), "reports": [],
+        data = {"as_of": live.get("as_of"), "reports": [], "conflicts": 0,
                 "note": "No F&O positions to analyse."}
-        _DEEP_CACHE.update(ts=time.time(), data=data)
+        cache.update(ts=time.time(), data=data)
         return data
 
     macro = {"regime": await asyncio.to_thread(market.regime),
@@ -1786,16 +1784,37 @@ async def positions_deep(request: Request, refresh: int = 0,
             rep["alignment"] = "neutral"
         return rep
 
-    reports = await asyncio.gather(*[_one(s, m) for s, m in by_sym.items()])
-    # Conflicts first (they need attention), then by |score|.
+    reports = list(await asyncio.gather(*[_one(s, m) for s, m in by_sym.items()]))
+
+    # Optional LLM narration on top of the structured brief (graceful no-op without a key).
+    if narrate:
+        from . import llm
+        if llm.enabled():
+            async def _nar(rep: dict) -> None:
+                txt = await asyncio.to_thread(llm.narrate, rep)
+                if txt:
+                    rep["narrative"] = txt
+            await asyncio.gather(*[_nar(r) for r in reports])
+
     _ar = {"conflicts": 0, "neutral": 1, "supports": 2}
     reports = sorted(reports, key=lambda r: (_ar.get(r["alignment"], 1), -abs(r["score"])))
     data = {"as_of": live.get("as_of"), "regime": macro["regime"].get("regime"),
             "conflicts": sum(1 for r in reports if r["alignment"] == "conflicts"),
-            "reports": reports,
+            "narrated": narrate, "reports": reports,
             "note": "Advisory synthesis from your own data — verify before acting."}
-    _DEEP_CACHE.update(ts=time.time(), data=data)
+    cache.update(ts=time.time(), data=data)
     return data
+
+
+@app.get("/positions/deep")
+async def positions_deep(request: Request, refresh: int = 0, narrate: int = 0,
+                         token: str | None = Query(default=None)) -> dict:
+    """Deep analysis for every F&O underlying you hold: fundamental + technical + news
+    + sector/macro fused into a stance, and whether it agrees with your position.
+    Heavy (prices + news per name), so cached ~20 min; refresh=1 forces, narrate=1 adds
+    an AI-written paragraph per underlying (needs ANTHROPIC_API_KEY, else silently skipped)."""
+    _check_token(request, token)
+    return await _deep_report(refresh=bool(refresh), narrate=bool(narrate))
 
 
 @app.get("/debug/hdfc-positions")

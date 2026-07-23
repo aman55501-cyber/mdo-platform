@@ -385,15 +385,18 @@ async function loadPositions(){
   }).join('');
 }
 /* ---- deep analysis per F&O underlying (fundamental+technical+news+macro) ---- */
-async function loadDeep(refresh){
+async function loadDeep(refresh,ai){
   const box=document.getElementById('deep-list');
-  box.innerHTML='<div class="load">analysing your F&amp;O book — fundamentals, charts, news, macro…</div>';
-  const r=await j('/positions/deep?'+(refresh?'refresh=1&':'')+Q);
+  box.innerHTML='<div class="load">analysing your F&amp;O book — fundamentals, charts, news, macro'+(ai?', AI narrative':'')+'…</div>';
+  const r=await j('/positions/deep?'+(refresh?'refresh=1&':'')+(ai?'narrate=1&':'')+Q);
   if(!r.ok){box.innerHTML='<div class="pb"><button class="segb" style="padding:11px 16px" onclick="loadDeep(1)">Retry →</button> <span class="rsub">'+((r.d&&r.d.detail)||'could not run')+'</span></div>';return;}
   const reps=r.d.reports||[];
   document.getElementById('deep-meta').innerHTML='regime '+(r.d.regime||'—')+(r.d.conflicts?' · <span class="down">'+r.d.conflicts+' conflict'+(r.d.conflicts>1?'s':'')+'</span>':'');
   if(!reps.length){box.innerHTML='<div class="load">'+(r.d.note||'No F&amp;O positions to analyse.')+'</div>';return;}
-  box.innerHTML=reps.map(deepCard).join('')+'<div class="pb"><button class="segb" style="padding:9px 14px" onclick="loadDeep(1)">↻ Refresh analysis</button></div>';
+  const aiNote=(ai&&!reps.some(x=>x.narrative))?'<div class="rsub" style="padding:0 14px 6px;color:var(--warn)">AI narrative needs ANTHROPIC_API_KEY set on the server — showing the structured read.</div>':'';
+  box.innerHTML=reps.map(deepCard).join('')+aiNote
+    +'<div class="pb" style="display:flex;gap:8px"><button class="segb" style="padding:9px 14px" onclick="loadDeep(1)">↻ Refresh</button>'
+    +'<button class="segb" style="padding:9px 14px" onclick="loadDeep(1,1)">✨ AI narrative</button></div>';
 }
 function stChip(s){const c=s==='bullish'?'up':(s==='bearish'?'down':'muted');return '<span class="'+c+'" style="font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.06em">'+s+'</span>';}
 function deepFac(arr,color,mk){return (arr||[]).map(t=>'<div class="rsub" style="color:'+color+';margin-top:2px">'+mk+' '+t+'</div>').join('');}
@@ -408,6 +411,7 @@ function deepCard(x){
     +stChip(x.stance)+alignChip
     +'<span class="mono" style="margin-left:auto">'+(px.last!=null?px.last:'')+(px.day_change_pct!=null?' <span class="'+cl(px.day_change_pct)+'">'+sp(px.day_change_pct)+'</span>':'')+'</span></div>'
     +'<div class="rsub" style="margin-top:4px;color:var(--n600)">'+(x.sector||'')+' · composite score '+x.score+'</div>'
+    +(x.narrative?'<div style="margin-top:8px;padding:9px 11px;border-left:2px solid var(--acc);background:var(--n100);font-size:13px;line-height:1.5">'+x.narrative+'</div>':'')
     +deepFac(x.bull,'var(--up)','✓')+deepFac(x.bear,'var(--down)','✗')
     +'<div class="rsub" style="margin-top:8px;color:var(--n500)">Technical: '+(t.verdict||'—')+' · RSI '+(t.rsi14!=null?t.rsi14:'—')+(t.support?' · S '+t.support:'')+(t.resistance?' / R '+t.resistance:'')+'</div>'
     +'<div class="rsub" style="color:var(--n500)">Fundamental: '+(f.have_data?f.verdict:'no Screener data — upload export')+' · Macro: '+(m.regime||'—')+'</div>'

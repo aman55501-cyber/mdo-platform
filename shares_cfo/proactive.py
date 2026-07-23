@@ -189,6 +189,28 @@ async def _alert_fno_moves() -> None:
                              body, "Live leg moving — check the chain/OI and your stop.", tab="positions")
 
 
+async def _alert_conflicts() -> None:
+    """~Every 40 min in market hours: flag any F&O position where the deep analysis
+    (fundamental + technical + news + macro) conflicts with how you're positioned."""
+    if not _fresh("deepconflictscan", 40 * 60):  # heavy report — throttle hard
+        return
+    try:
+        from .server import _deep_report
+        rep = await _deep_report()  # plain (no LLM) — cached ~20 min
+    except Exception:
+        return
+    day = _now().strftime("%Y-%m-%d")
+    for r in rep.get("reports", []):
+        if r.get("alignment") != "conflicts":
+            continue
+        sym = r.get("symbol", "position")
+        if _fresh(f"conflict:{day}:{sym}", 20 * 3600):
+            bear = "; ".join((r.get("bear") or [])[:2]) or "the evidence leans the other way"
+            await _alert("🔴", sym, f"analysis conflicts with your {r.get('position_bias', '')} position",
+                         f"Deep read is {r.get('stance', 'neutral')}. {bear}.",
+                         "Re-check the thesis — tighten the stop, hedge, or cut.", tab="positions")
+
+
 async def _alert_ideas() -> None:
     """A fresh high-conviction setup appeared."""
     try:
@@ -272,6 +294,7 @@ def start(get_book) -> None:
                     await _alert_regime()
                     await _alert_drawdown()          # live F&O leg losses (tightened cadence)
                     await _alert_fno_moves()         # live F&O OI/price shifts on open legs
+                    await _alert_conflicts()         # position vs deep-analysis conflicts (~40 min)
                     if cycle % 10 == 0:              # heavy scan ~every 30 min
                         await _alert_ideas()
                     delay = 180                      # 3 min while the market is open (was 5)
