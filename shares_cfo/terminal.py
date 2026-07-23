@@ -229,6 +229,9 @@ a{color:var(--a700);text-decoration:none}
     <div class="panel span2"><div class="ph"><span class="t">GTT · resting orders</span><span class="lbl" id="gtt-meta">good till triggered</span></div><div id="gtt-list"><div class="load">—</div></div></div>
     <div class="panel span2" id="basket-panel" style="display:none"><div class="ph"><span class="t">Basket</span><span class="lbl" id="basket-meta"></span></div><div id="basket-list"></div>
       <div class="pb" style="display:flex;gap:8px;border-top:1px solid var(--n200)"><button class="segb" style="flex:1;padding:11px 0" onclick="placeBasket()">Place basket</button><button class="segb" style="flex:0 0 auto;padding:11px 16px" onclick="clearBasket()">Clear</button></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Reconcile · all accounts</span><span class="lbl" id="recon-meta">tap to run</span></div>
+      <div id="recon-list"><div class="load">Cross-checks orders we sent vs the broker book, protective stops that landed, and open positions with no stop.</div></div>
+      <div class="pb" style="border-top:1px solid var(--n200)"><button class="segb" style="flex:1;padding:11px 0" onclick="loadRecon()">⚖ Run reconciliation</button></div></div>
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
@@ -625,6 +628,23 @@ async function loadOrderBook(){const box=document.getElementById('ob-list'),meta
 async function cancelOrder(oid,variety,broker){if(!confirm('Cancel this order?'))return;
   const r=await j2('/orders/cancel?'+Q,'POST',{orderid:oid,variety:variety,broker:broker||'angel'});
   if(r.ok){loadOrderBook();}else alert(r.d.detail||'cancel failed');}
+async function loadRecon(){const box=document.getElementById('recon-list'),meta=document.getElementById('recon-meta');if(!box)return;
+  box.innerHTML='<div class="load">reconciling every account — orders, stops, positions…</div>';
+  const r=await j('/reconcile/live?'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not run reconciliation')+'</div>';return;}
+  const s=r.d.summary||{},c=s.counts||{},o=r.d.orders||{};
+  meta.innerHTML=s.clean?'<span class="up">✓ clean</span>':'<span class="down">'+s.flags+' flag'+(s.flags>1?'s':'')+'</span>';
+  const sec=(title,items,cls,render)=>{if(!items||!items.length)return '';return '<div class="ssub">'+title+' ('+items.length+')</div>'+items.map(x=>'<div class="rsub '+cls+'" style="padding:2px 0">'+render(x)+'</div>').join('');};
+  let h='';
+  h+=sec('⛔ Naked positions — NO protective stop',r.d.naked_positions,'down',x=>(x.symbol||'—')+' · '+x.side+' '+Math.abs(x.quantity)+' · '+x.account+' · needs '+x.needs);
+  h+=sec('Stop-loss issues',o.sl_issues,'down',x=>(x.symbol||'')+' · '+x.issue+(x.detail?' — '+x.detail:''));
+  h+=sec('Rejected orders',o.rejected,'down',x=>(x.symbol||'')+' · '+(x.reason||x.status||''));
+  h+=sec('Unaccounted sends',o.unaccounted,'',x=>(x.symbol||'')+' · '+x.why);
+  h+=sec('⚠ Suspect cost basis',r.d.suspect_cost_basis,'',x=>(x.symbol||'')+' · avg '+x.avg+' vs ltp '+x.ltp);
+  h+=sec('Account read errors',r.d.account_read_errors,'down',x=>x.account+' · '+x.error);
+  const head='<div class="rsub" style="color:var(--n500);padding-bottom:6px">'+(r.d.accounts_checked||[]).length+' accounts · '+(c.orders_matched||0)+' orders matched</div>';
+  if(!h)h='<div class="load"><span class="up">✓ All clean — '+(c.orders_matched||0)+' orders matched the broker book, every open position has a protective stop, no flags.</span></div>';
+  box.innerHTML=head+h;}
 let OBMAP={};
 async function modifyOrder(oid){const o=OBMAP[oid];if(!o)return;
   const np=prompt('New limit price (blank = keep '+o.price+'):',o.price);if(np===null)return;

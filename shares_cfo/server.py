@@ -3451,6 +3451,69 @@ async def orders_book(request: Request, token: str | None = Query(default=None))
     }
 
 
+@app.get("/reconcile/live")
+async def reconcile_live_endpoint(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Reconcile execution + risk across EVERY connected account.
+
+    Not 'console vs broker' (same source, always agrees) but integrity between what
+    we did and what the broker holds: orders we recorded sending vs the live order
+    book, protective stops that actually landed, and open positions with no stop."""
+    _check_token(request, token)
+    from . import reconcile_live as R
+    from .execution import engine
+
+    # 1) live order book across all accounts (reuse the aggregator helper)
+    obooks = list(await asyncio.gather(*[_account_orders(k) for k in get_accounts()]))
+    broker_orders: list[dict] = []
+    order_errors: list[dict] = []
+    for r in obooks:
+        broker_orders.extend(r.get("orders") or [])
+        if r.get("error"):
+            order_errors.append({"account": r.get("label") or r["key"], "error": r["error"]})
+
+    # 2) open positions across accounts (from the consolidated book)
+    book = await _consolidated()
+    positions: list[dict] = []
+    for a in book.get("accounts", []):
+        if a.get("ok") is False:
+            continue
+        for p in a.get("positions", []):
+            positions.append({
+                "creds_key": a.get("creds_key"),
+                "account": a.get("label") or a.get("creds_key"),
+                "ticker": p.get("ticker"), "token": p.get("token"),
+                "quantity": p.get("quantity") or 0,
+                "kind": _parse_contract(p.get("ticker", "")).get("kind"),
+            })
+
+    # 3) suspect cost-basis legs from the live (MTM-enriched) view
+    try:
+        live = await _live_positions()
+        suspect = [{"account": r.get("holder"), "symbol": r.get("label"),
+                    "avg": r.get("average_price"), "ltp": r.get("last_price")}
+                   for r in live.get("positions", []) if r.get("avg_suspect")]
+    except Exception:
+        suspect = []
+
+    # 4) match recorded sends against the broker book
+    sent = [e for e in engine.recent(300) if e.get("event") == "SENT"]
+    orders = R.match_orders(sent, broker_orders)
+    naked = R.naked_positions(positions, broker_orders)
+    summary = R.summarize(orders, naked, suspect, order_errors)
+
+    from . import mprofit
+    return {
+        "summary": summary,
+        "orders": orders,
+        "naked_positions": naked,
+        "suspect_cost_basis": suspect,
+        "account_read_errors": order_errors,
+        "accounts_checked": [r.get("label") or r["key"] for r in obooks],
+        "mprofit": mprofit.status(),  # holdings-vs-book reconciliation availability
+        "as_of": book.get("as_of"),
+    }
+
+
 def _trading_on() -> None:
     """Master switch guard for live broker writes (cancel/modify)."""
     from .config import get_trading_config
