@@ -206,6 +206,9 @@ a{color:var(--a700);text-decoration:none}
       </div>
     </div></div>
     <div class="panel span2"><div class="ph"><span class="t">Live positions</span><span class="lbl">HDFC + Angel · OI/vol</span></div><div id="pos-list"><div class="load">loading positions</div></div></div>
+    <div class="panel span2"><div class="ph"><span class="t">Deep analysis</span><span class="lbl" id="deep-meta">fundamental · technical · news · macro</span></div>
+      <div id="deep-list"><div class="pb"><button class="segb" style="padding:11px 16px" onclick="loadDeep(1)">Run deep analysis →</button>
+        <div class="rsub" style="margin-top:8px">Fuses fundamentals, technicals, current news and market regime per F&amp;O underlying, and flags any that conflict with how you're positioned. Cached ~20 min.</div></div></div></div>
     <div class="panel span2"><div class="ph"><span class="t">Order book</span><span class="lbl">audit log</span></div><div id="ob-list"><div class="load">—</div></div></div>
   </div></section>
 
@@ -380,6 +383,36 @@ async function loadPositions(){
       +(p.risk_why?'<div class="rsub" style="color:'+(danger?'var(--down)':'var(--warn)')+'">'+p.risk_why+'</div>':'')
       +'</div>';
   }).join('');
+}
+/* ---- deep analysis per F&O underlying (fundamental+technical+news+macro) ---- */
+async function loadDeep(refresh){
+  const box=document.getElementById('deep-list');
+  box.innerHTML='<div class="load">analysing your F&amp;O book — fundamentals, charts, news, macro…</div>';
+  const r=await j('/positions/deep?'+(refresh?'refresh=1&':'')+Q);
+  if(!r.ok){box.innerHTML='<div class="pb"><button class="segb" style="padding:11px 16px" onclick="loadDeep(1)">Retry →</button> <span class="rsub">'+((r.d&&r.d.detail)||'could not run')+'</span></div>';return;}
+  const reps=r.d.reports||[];
+  document.getElementById('deep-meta').innerHTML='regime '+(r.d.regime||'—')+(r.d.conflicts?' · <span class="down">'+r.d.conflicts+' conflict'+(r.d.conflicts>1?'s':'')+'</span>':'');
+  if(!reps.length){box.innerHTML='<div class="load">'+(r.d.note||'No F&amp;O positions to analyse.')+'</div>';return;}
+  box.innerHTML=reps.map(deepCard).join('')+'<div class="pb"><button class="segb" style="padding:9px 14px" onclick="loadDeep(1)">↻ Refresh analysis</button></div>';
+}
+function stChip(s){const c=s==='bullish'?'up':(s==='bearish'?'down':'muted');return '<span class="'+c+'" style="font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.06em">'+s+'</span>';}
+function deepFac(arr,color,mk){return (arr||[]).map(t=>'<div class="rsub" style="color:'+color+';margin-top:2px">'+mk+' '+t+'</div>').join('');}
+function deepCard(x){
+  const a=x.alignment;
+  const alignChip=a==='conflicts'?'<span class="rchip dgr">⚠ conflicts with your '+x.position_bias+'</span>'
+    :(a==='supports'?'<span class="rchip" style="color:var(--up);border-color:var(--up)">supports your '+x.position_bias+'</span>':'');
+  const px=x.price||{},t=x.technical||{},f=x.fundamental||{},m=x.macro||{};
+  const news=(x.news||[]).slice(0,3).map(n=>'<a class="rsub" href="'+n.link+'" target="_blank" style="display:block;color:var(--a700);margin-top:3px">• '+n.title+(n.when?' <span class="muted">· '+n.when+'</span>':'')+'</a>').join('');
+  return '<div style="padding:13px 14px;border-top:1px solid var(--n200)">'
+    +'<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="rn" style="font-size:15px">'+x.symbol+'</span>'
+    +stChip(x.stance)+alignChip
+    +'<span class="mono" style="margin-left:auto">'+(px.last!=null?px.last:'')+(px.day_change_pct!=null?' <span class="'+cl(px.day_change_pct)+'">'+sp(px.day_change_pct)+'</span>':'')+'</span></div>'
+    +'<div class="rsub" style="margin-top:4px;color:var(--n600)">'+(x.sector||'')+' · composite score '+x.score+'</div>'
+    +deepFac(x.bull,'var(--up)','✓')+deepFac(x.bear,'var(--down)','✗')
+    +'<div class="rsub" style="margin-top:8px;color:var(--n500)">Technical: '+(t.verdict||'—')+' · RSI '+(t.rsi14!=null?t.rsi14:'—')+(t.support?' · S '+t.support:'')+(t.resistance?' / R '+t.resistance:'')+'</div>'
+    +'<div class="rsub" style="color:var(--n500)">Fundamental: '+(f.have_data?f.verdict:'no Screener data — upload export')+' · Macro: '+(m.regime||'—')+'</div>'
+    +(news?'<div style="margin-top:8px"><div class="rsub" style="color:var(--n500);text-transform:uppercase;letter-spacing:.06em">News</div>'+news+'</div>':'')
+    +'</div>';
 }
 /* ---- share detail: Screener Premium + price/volume on tap ---- */
 async function openShare(sym){

@@ -1738,6 +1738,66 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
     return await _live_positions()
 
 
+_DEEP_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+@app.get("/positions/deep")
+async def positions_deep(request: Request, refresh: int = 0,
+                         token: str | None = Query(default=None)) -> dict:
+    """Deep analysis for every F&O underlying you hold: fundamental + technical + news
+    + sector/macro fused into a stance, and whether it agrees with your position.
+    Heavy (prices + news per name), so cached ~20 min; pass refresh=1 to force."""
+    _check_token(request, token)
+    import time
+    if not refresh and _DEEP_CACHE["data"] and (time.time() - _DEEP_CACHE["ts"]) < 1200:
+        return _DEEP_CACHE["data"]
+
+    from . import deep, themes
+    from .analysis import market
+
+    live = await _live_positions()
+    # unique F&O underlyings + net directional bias across their legs
+    by_sym: dict = {}
+    for p in live.get("positions", []):
+        if p.get("kind") not in ("option", "future"):
+            continue
+        u = (p.get("underlying") or "").upper()
+        if not u:
+            continue
+        s = by_sym.setdefault(u, {"bias": 0, "sector": themes.theme_of(u, None)})
+        s["bias"] += p.get("bias") or 0
+    if not by_sym:
+        data = {"as_of": live.get("as_of"), "reports": [],
+                "note": "No F&O positions to analyse."}
+        _DEEP_CACHE.update(ts=time.time(), data=data)
+        return data
+
+    macro = {"regime": await asyncio.to_thread(market.regime),
+             "global": await asyncio.to_thread(market.global_backdrop)}
+
+    async def _one(sym: str, meta: dict) -> dict:
+        rep = await asyncio.to_thread(deep.analyze_underlying, sym, meta["sector"], macro)
+        bias = 1 if meta["bias"] > 0 else -1 if meta["bias"] < 0 else 0
+        st = {"bullish": 1, "bearish": -1, "neutral": 0}.get(rep["stance"], 0)
+        rep["position_bias"] = "bullish" if bias > 0 else "bearish" if bias < 0 else "neutral"
+        if bias and st:
+            rep["alignment"] = "supports" if bias == st else "conflicts"
+        else:
+            rep["alignment"] = "neutral"
+        return rep
+
+    reports = await asyncio.gather(*[_one(s, m) for s, m in by_sym.items()])
+    # Conflicts first (they need attention), then by |score|.
+    _ar = {"conflicts": 0, "neutral": 1, "supports": 2}
+    reports = sorted(reports, key=lambda r: (_ar.get(r["alignment"], 1), -abs(r["score"])))
+    data = {"as_of": live.get("as_of"), "regime": macro["regime"].get("regime"),
+            "conflicts": sum(1 for r in reports if r["alignment"] == "conflicts"),
+            "reports": reports,
+            "note": "Advisory synthesis from your own data — verify before acting."}
+    _DEEP_CACHE.update(ts=time.time(), data=data)
+    return data
+
+
 @app.get("/debug/hdfc-positions")
 async def debug_hdfc_positions(request: Request, token: str | None = Query(default=None)) -> dict:
     """Raw position labels per account — to refine F&O contract parsing/OI mapping."""
