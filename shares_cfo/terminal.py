@@ -112,7 +112,7 @@ body{background:var(--canvas);color:var(--text);font-family:var(--fb);font-size:
 .mv .s{font-weight:500}.mv .c{font-family:var(--fm)}
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;max-width:520px;margin:0 auto;background:var(--panel);border-top:1px solid var(--n300);
-  display:grid;grid-template-columns:repeat(7,1fr);padding-bottom:env(safe-area-inset-bottom)}
+  display:grid;grid-template-columns:repeat(6,1fr);padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{background:0;border:0;border-top:2px solid transparent;color:var(--n500);font-family:var(--fh);
   letter-spacing:.01em;font-size:9.5px;font-weight:600;text-transform:uppercase;padding:14px 1px 13px;cursor:pointer;min-height:50px;white-space:nowrap}
 .tabs button.on{color:var(--a700);border-top-color:var(--acc)}
@@ -257,6 +257,7 @@ a{color:var(--a700);text-decoration:none}
   <div id="tk-price-wrap" style="display:none"><div class="ssub">Limit price</div><input id="tk-price" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px"></div>
   <div class="ssub" id="tk-qtylbl">Quantity (shares)</div>
   <div style="display:flex;align-items:center;gap:12px"><button class="segb" onclick="tkQty(-1)" style="width:48px;padding:12px 0;font-size:16px">−</button><span class="mono" id="tk-qty" style="font-size:22px;min-width:64px;text-align:center">1</span><button class="segb" onclick="tkQty(1)" style="width:48px;padding:12px 0;font-size:16px">+</button><span class="rsub mono" id="tk-val" style="margin-left:auto"></span></div>
+  <div class="rsub mono" id="tk-funds" style="margin-top:7px;color:var(--n500)"></div>
   <div class="ssub">Stop-loss (required)</div><input id="tk-stop" inputmode="decimal" style="width:100%;background:var(--n100);border:1px solid var(--n400);color:var(--text);padding:11px;font-family:var(--fm);font-size:15px">
   <div id="tk-guard" class="fg" style="margin-top:14px;border:1px solid var(--n300);display:none"></div>
   <button class="segb" id="tk-go" onclick="tkReview()" style="width:100%;padding:14px 0;margin-top:14px;font-size:13px">Review order</button>
@@ -270,7 +271,6 @@ a{color:var(--a700);text-decoration:none}
   <button data-t="ideas">Ideas</button>
   <button data-t="chart">Chart</button>
   <button data-t="news">News</button>
-  <button data-t="login">Login</button>
 </div>
 
 <script>
@@ -528,7 +528,13 @@ function tkProd(el){TK.product=el.textContent.trim();tkReset();[...el.parentElem
 function tkOt(v,el){TK.ot=v;tkReset();[...el.parentElement.children].forEach(b=>b.classList.toggle('on',b===el));document.getElementById('tk-price-wrap').style.display=v==='LIMIT'?'block':'none';tkVal();}
 function tkQty(d){TK.qty=Math.max(1,TK.qty+d);document.getElementById('tk-qty').textContent=TK.qty;tkReset();tkVal();}
 function tkUnits(){return TK.qty*(TK.seg==='FUT'?TK.lot:1);}
-function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;document.getElementById('tk-val').textContent=px?inr(tkUnits()*px):'';}
+function tkVal(){const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
+  const val=px?tkUnits()*px:0;document.getElementById('tk-val').textContent=val?inr(val):'';
+  // Kite/Angel-style affordability: show available cash and flag a delivery buy you can't fund.
+  const f=document.getElementById('tk-funds');if(!f)return;const cash=(PORT&&PORT.cash)||0;
+  if(!val){f.textContent='';return;}
+  const overCnc=TK.side==='BUY'&&TK.product==='CNC'&&val>cash;
+  f.innerHTML='Order '+inr(val)+' · Available cash '+inr(cash)+(overCnc?' · <span class="down">exceeds cash</span>':'');}
 async function tkReview(){
   if(TK.pid){return tkConfirm();}
   const px=TK.ot==='LIMIT'?(+document.getElementById('tk-price').value||TK.ltp):TK.ltp;
