@@ -269,12 +269,15 @@ const cl=v=>v>=0?'up':'down';
 const clean=t=>(t||'').toUpperCase().replace(/-(EQ|BE|BZ|BL|SM|ST|IQ)$/,'').split('-')[0];
 
 /* market status from IST (Asia/Kolkata), never device tz */
+let MKT_OPEN=false;
 function mktStatus(){
   const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
   const g=t=>p.find(x=>x.type===t).value;const wd=g('weekday'),hm=+g('hour')*60+ +g('minute');
   const open=['Mon','Tue','Wed','Thu','Fri'].includes(wd)&&hm>=555&&hm<=930;
+  MKT_OPEN=open;
   document.getElementById('sd').className='sd'+(open?' open':'');
   document.getElementById('mstat').textContent=open?'MARKET OPEN':'MARKET CLOSED';
+  return open;
 }
 
 async function loadTicker(){
@@ -352,7 +355,9 @@ async function loadPositions(){
   document.getElementById('pos-day').innerHTML='<span class="'+cl(d.day_pnl)+'">'+inr(d.day_pnl)+'</span>';
   document.getElementById('pos-real').innerHTML='<span class="'+cl(d.realized_pnl)+'">'+inr(d.realized_pnl)+'</span>';
   document.getElementById('pos-n').innerHTML=(d.fno_count||0)+(d.at_risk?' · <span class="down">'+d.at_risk+' at risk</span>':'');
-  try{const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());document.getElementById('pos-updated').textContent='updated '+t;}catch(e){}
+  try{const dot=document.getElementById('pos-live');if(dot)dot.style.display=MKT_OPEN?'inline-block':'none';
+    const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
+    document.getElementById('pos-updated').textContent=(MKT_OPEN?'updated ':'at close · ')+t;}catch(e){}
   if(!ps.length){box.innerHTML='<div class="load">No open positions in HDFC1 / HDFC2. F&amp;O legs appear here live.</div>';return;}
   box.innerHTML=ps.map(p=>{
     const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;
@@ -678,19 +683,25 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
 /* single 30s heartbeat — refreshes header/portfolio/ticker + the active tab.
    Fetches are error-tolerant (keep last data on failure), so a server blip never
    blanks the screen; the next tick recovers automatically. */
+let LOADED=false;
 async function heartbeat(){
-  try{mktStatus();}catch(e){}
+  try{mktStatus();}catch(e){}   // clock/status is local — always update
+  // After market close nothing moves, so fetch ONCE (first load) then freeze — no
+  // wasteful polling. During market hours, refresh normally.
+  if(LOADED && !MKT_OPEN) return;
+  LOADED=true;
   try{await loadTicker();}catch(e){}
   try{await loadHome();}catch(e){}
   try{const on=document.querySelector('section.on');
     if(on&&on.id==='s-positions'){loadPositions();}
-    else if(on&&on.id==='s-ideas'){loadIdeas();}         // Ideas now stays live while you watch it
-    else if(on&&on.id==='s-settings'){loadBalances();}   // keep Total Wealth live in the hub
+    else if(on&&on.id==='s-ideas'){loadIdeas();}
+    else if(on&&on.id==='s-settings'){loadBalances();}
   }catch(e){}
 }
 document.getElementById('tk-price').addEventListener('input',tkVal);
 heartbeat();setInterval(heartbeat,30000);
-/* Positions tab refreshes faster (~12s) while open in market hours — real-time P&L. */
+/* Positions tab refreshes every 15s while open DURING MARKET HOURS only — real-time
+   P&L when it matters, and completely still after close (nothing moves). */
 setInterval(()=>{try{const on=document.querySelector('section.on');
-  if(on&&on.id==='s-positions'&&document.getElementById('mstat').textContent==='MARKET OPEN')loadPositions();}catch(e){}},12000);
+  if(MKT_OPEN&&on&&on.id==='s-positions')loadPositions();}catch(e){}},15000);
 </script></body></html>"""
