@@ -446,6 +446,7 @@ def _login(acc) -> tuple[str | None, str]:
         jwt = data.get("jwtToken") or data.get("jwt_token")
         if jwt:
             token_store.set_token(acc.creds_key, jwt)
+            token_store.set_feed(acc.creds_key, data.get("feedToken") or "")  # for the live WS
             return jwt, "logged in"
         return None, f"login {r.status_code}: {r.text[:120]}"
     except Exception as exc:

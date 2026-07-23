@@ -118,6 +118,7 @@ class AngelAdapter:
         if not jwt:
             raise AuthenticationError(f"Angel login: no jwtToken. Body: {resp.text[:300]}")
         token_store.set_token(self._acct.creds_key, jwt)
+        token_store.set_feed(self._acct.creds_key, data.get("feedToken") or "")  # for the live WS
         return jwt
 
     async def _get(self, path: str, _retried: bool = False) -> dict:

@@ -368,7 +368,8 @@ async function loadPositions(){
   document.getElementById('pos-n').innerHTML=(d.fno_count||0)+(d.at_risk?' · <span class="down">'+d.at_risk+' at risk</span>':'');
   try{const dot=document.getElementById('pos-live');if(dot)dot.style.display=MKT_OPEN?'inline-block':'none';
     const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
-    document.getElementById('pos-updated').textContent=(MKT_OPEN?'updated ':'at close · ')+t;}catch(e){}
+    const stream=d.feed==='websocket';
+    document.getElementById('pos-updated').innerHTML=(!MKT_OPEN?'at close · '+t:(stream?'<span class="up">● streaming live</span> · '+t:'updated '+t));}catch(e){}
   if(!ps.length){box.innerHTML='<div class="load">No open positions in HDFC1 / HDFC2. F&amp;O legs appear here live.</div>';return;}
   box.innerHTML=ps.map(p=>{
     const mtm=p.pnl||0,tag=p.product||'',ch=p.change_pct;

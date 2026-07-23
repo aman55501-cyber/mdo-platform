@@ -14,6 +14,7 @@ from pathlib import Path
 
 _FILE = Path(__file__).resolve().parent / "data" / "state" / "tokens.json"
 _TOKENS: dict[str, str] = {}
+_FEEDS: dict[str, str] = {}          # Angel feed tokens (for the live WebSocket), same-day
 _PENDING: dict[str, str] = {"key": "HDFC1"}
 
 
@@ -30,6 +31,9 @@ def _load() -> None:
                 toks = data.get("tokens")
                 if isinstance(toks, dict):
                     _TOKENS.update({k: v for k, v in toks.items() if v})
+                feeds = data.get("feeds")
+                if isinstance(feeds, dict):
+                    _FEEDS.update({k: v for k, v in feeds.items() if v})
     except (OSError, ValueError):
         pass
 
@@ -37,9 +41,20 @@ def _load() -> None:
 def _save() -> None:
     try:
         _FILE.parent.mkdir(parents=True, exist_ok=True)
-        _FILE.write_text(json.dumps({"date": _today(), "tokens": _TOKENS}), encoding="utf-8")
+        _FILE.write_text(json.dumps({"date": _today(), "tokens": _TOKENS, "feeds": _FEEDS}),
+                         encoding="utf-8")
     except OSError:
         pass
+
+
+def set_feed(creds_key: str, feed_token: str) -> None:
+    if feed_token:
+        _FEEDS[creds_key.upper()] = feed_token
+        _save()
+
+
+def get_feed(creds_key: str) -> str | None:
+    return _FEEDS.get(creds_key.upper())
 
 
 def set_pending(creds_key: str) -> None:

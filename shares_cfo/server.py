@@ -1404,10 +1404,16 @@ async def _start_proactive() -> None:
         import logging
         logging.getLogger("shares_cfo").warning("business agents not started: %s", exc)
     try:
-        asyncio.get_event_loop().create_task(_tick_loop())  # warm live-quote cache
+        asyncio.get_event_loop().create_task(_tick_loop())  # warm live-quote cache (REST fallback)
     except Exception as exc:
         import logging
         logging.getLogger("shares_cfo").warning("tick loop not started: %s", exc)
+    try:
+        from . import angel_ws
+        angel_ws.start(_LIVE_TICKS, _STREAM_TOKENS)  # true real-time tick stream
+    except Exception as exc:
+        import logging
+        logging.getLogger("shares_cfo").warning("angel ws not started: %s", exc)
 
 
 @app.post("/proactive/test")
@@ -1736,14 +1742,15 @@ async def _tick_loop() -> None:
     while True:
         try:
             toks = list(_STREAM_TOKENS)
-            if toks and _mkt_open_ist():
+            ws_fresh = (time.time() - _LIVE_TICKS["ts"]) < 6  # WS is handling it
+            if toks and _mkt_open_ist() and not ws_fresh:
                 q = await asyncio.to_thread(angel_scrip.option_full, toks)
                 if q:
                     _LIVE_TICKS["q"].update(q)
                     _LIVE_TICKS["ts"] = time.time()
                 await asyncio.sleep(3)
             else:
-                await asyncio.sleep(20)
+                await asyncio.sleep(5 if ws_fresh else 20)
         except Exception as exc:
             log.warning("tick loop: %s", exc)
             await asyncio.sleep(10)
@@ -1828,8 +1835,12 @@ async def _live_positions() -> dict:
     _rank = {"danger": 0, "watch": 1, "ok": 2}
     rows.sort(key=lambda r: (_rank.get(r.get("risk"), 3), -abs(r.get("pnl") or 0)))
     fno = [r for r in rows if r["kind"] in ("option", "future")]
+    from . import angel_ws
+    import time as _t
+    ws_live = angel_ws.STATE.get("connected") and (_t.time() - angel_ws.STATE.get("last_tick", 0)) < 10
     return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
             "at_risk": sum(1 for r in rows if r.get("risk") == "danger"),
+            "feed": "websocket" if ws_live else "polling",
             "day_pnl": round(sum((r["day_pnl"] or 0) for r in rows), 2),
             "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
             "note": "MTM + today's move from Angel live price; OI trend vs session base; "
@@ -1841,6 +1852,19 @@ async def positions_live(request: Request, token: str | None = Query(default=Non
     """Live F&O positions across accounts, enriched with Angel LTP / OI / volume."""
     _check_token(request, token)
     return await _live_positions()
+
+
+@app.get("/debug/ws")
+async def debug_ws(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Live WebSocket feed status — is the real-time stream connected + ticking?"""
+    _check_token(request, token)
+    from . import angel_ws
+    import time as _t
+    s = dict(angel_ws.STATE)
+    s["streaming_tokens"] = len(_STREAM_TOKENS)
+    s["cached_quotes"] = len(_LIVE_TICKS.get("q", {}))
+    s["last_tick_age_s"] = round(_t.time() - s.get("last_tick", 0), 1) if s.get("last_tick") else None
+    return s
 
 
 # Separate caches for the plain and the AI-narrated report (narration is opt-in).
