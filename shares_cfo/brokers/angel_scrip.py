@@ -134,9 +134,13 @@ def equity_ltps(symbols: list[str]) -> dict:
     body = {"mode": "LTP", "exchangeTokens": {"NSE": list(tok_map.keys())}}
     try:
         r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=15.0)
-        fetched = (((r.json() or {}).get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
+        j = r.json() or {}
     except Exception:
         return {}
+    if _auth_failed(r.status_code, j):
+        _clear_token(acc)  # self-heal: next call re-logs in instead of staying priceless
+        return {}
+    fetched = ((j.get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
     out = {}
     for f in fetched:
         t = str(f.get("symbolToken") or f.get("symboltoken") or "")
@@ -648,6 +652,21 @@ def place_order(order) -> dict:
     return result
 
 
+def _auth_failed(status_code: int, body) -> bool:
+    """True if an Angel response signals a dead/expired JWT — HTTP 401, or the 200+AG8001
+    'Invalid Token' body Angel returns for a flushed session. The overnight/intraday
+    session reset lands here."""
+    return status_code == 401 or (isinstance(body, dict) and
+                                  (body.get("errorcode") or body.get("errorCode")) == "AG8001")
+
+
+def _clear_token(acc) -> None:
+    """Drop the cached JWT so the NEXT call re-logs in — instead of reusing a dead one and
+    silently returning no data (which downstream reads as a false integrity alarm)."""
+    from .. import token_store
+    token_store.set_token(acc.creds_key, "")
+
+
 def order_book() -> list[dict]:
     """Live broker order book — real status (open / complete / rejected / cancelled /
     trigger pending) for today's orders. Read-only."""
@@ -655,6 +674,12 @@ def order_book() -> list[dict]:
     key, acc, jwt = _session()
     r = httpx.get(acc.base_url + ORDER_BOOK, headers=_headers(acc, jwt), timeout=20.0)
     j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    # A dead JWT here returns an empty 'data' — which reconciliation would read as
+    # "no orders" and raise a FALSE naked/missing-order alarm. Clear the token and raise
+    # so the caller surfaces "session expired", not a phantom integrity failure.
+    if _auth_failed(r.status_code, j):
+        _clear_token(acc)
+        raise RuntimeError("Angel session expired (re-authenticating) — retry the order book.")
     rows = (j.get("data") or []) if isinstance(j, dict) else []
     out = []
     for o in rows or []:
@@ -736,6 +761,11 @@ def gtt_list() -> list[dict]:
     body = {"status": ["NEW", "ACTIVE", "SENTTOEXCHANGE", "FORALL"], "page": 1, "count": 50}
     r = httpx.post(acc.base_url + GTT_LIST, headers=_headers(acc, jwt), json=body, timeout=20.0)
     j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    # A dead token here empties the GTT book, which would drop GTT protection from the
+    # naked-position check → false naked alarms. Clear + raise so it surfaces honestly.
+    if _auth_failed(r.status_code, j):
+        _clear_token(acc)
+        raise RuntimeError("Angel session expired (re-authenticating) — retry GTT list.")
     rows = (j.get("data") or []) if isinstance(j, dict) else []
     return [{"id": g.get("id"), "symbol": g.get("tradingsymbol"),
              "side": g.get("transactiontype"), "qty": _int(g.get("qty")),
@@ -782,7 +812,11 @@ def quote_full(symboltoken: str, exchange: str = "NFO") -> dict:
     key, acc, jwt = _session()
     body = {"mode": "FULL", "exchangeTokens": {(exchange or "NFO").upper(): [str(symboltoken)]}}
     r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=15.0)
-    fetched = (((r.json() or {}).get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
+    j = r.json() or {}
+    if _auth_failed(r.status_code, j):
+        _clear_token(acc)  # self-heal on a flushed token
+        return {}
+    fetched = ((j.get("data") or {}).get("fetched") or []) if r.status_code < 400 else []
     if not fetched:
         return {}
     f = fetched[0]

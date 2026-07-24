@@ -138,9 +138,14 @@ def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
     latest = _latest_file()
     if not latest:
         return None
+    sym = symbol.upper().strip()
     for row in _rows_from_file(latest):
+        code = (str(row.get("NSE Code") or row.get("Symbol") or row.get("Ticker") or "")).upper().strip()
         name = _row_name(row)
-        if symbol.upper() in name or (name and name in symbol.upper()):
+        # Exact NSE-code match is the strong signal; a name match must be the WHOLE
+        # symbol as the first token — so "IOC" never matches the "BIOCON LTD" row (the
+        # same bidirectional-substring bug fixed in reconciliation).
+        if (code and code == sym) or (name and (name == sym or name.split()[0] == sym)):
             fields = _map_row(row)
             if fields:
                 return {"fields": fields, "source": "screener", "confidence": "high"}
