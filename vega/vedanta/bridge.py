@@ -14,7 +14,7 @@ from typing import Any
 
 _DB_PATH = os.environ.get(
     "VEDANTA_DB_PATH",
-    # Primary: inside vega/data/ (deployed + Railway)
+    # Primary: inside vega/data/ (deployed on the VPS)
     os.path.join(os.path.dirname(__file__), "..", "data", "vedanta_crm.db"),
 )
 

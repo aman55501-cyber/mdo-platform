@@ -1,8 +1,8 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  // Cloud deployment (Railway) — full Next.js server mode
-  // images.unoptimized kept for Railway free tier (no image optimisation server needed)
+  // Cloud deployment (Hostinger VPS) — full Next.js server mode
+  // images.unoptimized avoids needing a separate image-optimisation server
   images: { unoptimized: true },
 }
 

@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements_server.txt
 
 COPY mdo_server.py ./
 
-# /data is mounted as a Railway persistent volume — SQLite lives here
+# /data holds the SQLite DBs — mount a persistent volume/disk here on the host
 ENV VEGA_DB_PATH=/data/vega_data.db
 ENV VEDANTA_DB_PATH=/data/vedanta_crm.db
 

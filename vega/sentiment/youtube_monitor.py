@@ -8,7 +8,7 @@ Dependencies (add to pyproject.toml):
   yt-dlp>=2024.1
   faster-whisper>=1.0
 
-NOTE: faster-whisper uses ~500 MB RAM. Railway Starter plan ($5/month) is recommended.
+NOTE: faster-whisper uses ~500 MB RAM. A VPS with >=1 GB RAM is recommended.
       The monitor degrades gracefully if dependencies are missing.
 """
 

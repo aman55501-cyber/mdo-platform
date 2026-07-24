@@ -20,7 +20,7 @@ import json as _json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# Load .env for local dev — Railway injects env vars directly, this is a no-op there
+# Load .env for local dev — the host injects env vars directly, this is a no-op there
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent / ".env")
@@ -36,7 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 BASE = Path(__file__).parent
 VEGA_DB    = os.environ.get("VEGA_DB_PATH",    str(BASE / "vega" / "data" / "vega_data.db"))
 VEDANTA_DB = os.environ.get("VEDANTA_DB_PATH", str(BASE / "vega" / "data" / "vedanta_crm.db"))
-# Railway injects PORT; fall back to MDO_PORT (local) then 8501
+# The host may inject PORT; fall back to MDO_PORT (local) then 8501
 PORT       = int(os.environ.get("PORT", os.environ.get("MDO_PORT", 8501)))
 
 # Aman's watchlist "" business-context stocks

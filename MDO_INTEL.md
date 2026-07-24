@@ -160,7 +160,7 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 | L2 | ❌ Not built | Google Sheets — live data capture |
 | L3 | ❌ Not built | Make.com automation — triggers |
 | L4 | ❌ Not built | Telegram bot — mobile control |
-| L5 | 🔄 Building | Railway.app — VEGA + Vedanta bridge |
+| L5 | 🔄 Building | Hostinger VPS — VEGA + Vedanta bridge |
 
 ### MDO Google Sheet (12 tabs)
 1. Dashboard (KPIs)
@@ -192,9 +192,9 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 
 | Parameter | Value |
 |-----------|-------|
-| Platform | Railway.app |
+| Platform | Hostinger VPS (`srv1641037.hstgr.cloud`) |
 | DB mount | `/data/vega_data.db` (persistent volume) |
-| Config | `Dockerfile` + `railway.toml` at project root |
+| Config | `Dockerfile` at project root (`railway.toml` kept as legacy) |
 | Entry | `python -m vega` |
 | Local entry | `cd misc/vega && python -m vega` |
 
@@ -239,7 +239,7 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 ## 13. UNFINISHED WORK (as of 2026-04-24)
 
 - [ ] HDFC `/testbroker` live test (auth + funds fetch)
-- [ ] Railway.app deployment and go-live
+- [ ] Hostinger VPS deployment and go-live
 - [ ] Vedanta bridge layer → VWLR Telegram commands
 - [ ] Real-time tender/auction/compliance Grok monitor
 - [ ] Hotel ANS ops module (placeholder in MDO)

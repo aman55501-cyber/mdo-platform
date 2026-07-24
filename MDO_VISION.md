@@ -144,7 +144,7 @@ Active on phone +91 7000512030:
 
 **Goal:** Birds-eye view of site operations, identify bottlenecks
 (weighbridge, gate, PC, operator, infrastructure).
-**Current status:** Not yet integrated (Chromium-based bridge failed on Railway free tier).
+**Current status:** Not yet integrated (Chromium-based bridge failed on the earlier free-tier host).
 
 ---
 
@@ -195,7 +195,7 @@ Active on phone +91 7000512030:
 | Decision flow | Calls extracted → user reviews → approves → executes via HDFC at 9:15 AM |
 
 **Risks:**
-- Railway free tier may lack RAM for Whisper
+- The VPS may lack RAM for Whisper
 - YouTube may block scrapers
 - Hindi transcription may mis-recognise ticker names
 
@@ -209,13 +209,13 @@ Active on phone +91 7000512030:
 | Frontend | Next.js 15 + TypeScript + Tailwind v4 + recharts + react-query |
 | Icons | lucide-react |
 | Backend | Python FastAPI + uvicorn + aiosqlite + python-dotenv |
-| Database | SQLite (single file, Railway volume mount) |
-| Hosting | Railway.app (cloud, 24/7) |
+| Database | SQLite (single file on the VPS persistent disk) |
+| Hosting | Hostinger VPS (cloud, 24/7) |
 | Repo | github.com/aman55501-cyber/mdo-platform (private) |
 
 ### Live URLs
-- **Frontend:** https://acceptable-patience-production-b669.up.railway.app
-- **Backend:** https://mdo-platform-production-f96f.up.railway.app
+- **Frontend:** https://<your-hostinger-frontend-url>  <!-- TODO: confirm the Hostinger URL -->
+- **Backend:** https://srv1641037.hstgr.cloud
 
 ### Local paths
 - Code root: `C:\Users\Owner\Desktop\MASTER\misc\vega\`
@@ -230,14 +230,14 @@ Active on phone +91 7000512030:
 | Field | Where stored |
 |---|---|
 | Client ID | local `.env` only — see local notes |
-| API Key | Railway env var `HDFC_API_KEY` |
-| API Secret | Railway env var `HDFC_API_SECRET` |
+| API Key | Hostinger env var `HDFC_API_KEY` |
+| API Secret | Hostinger env var `HDFC_API_SECRET` |
 | OAuth flow | Once-daily login + OTP |
 
 ### Grok (xAI)
 | Field | Where stored |
 |---|---|
-| API Key | Railway env var `GROK_API_KEY` |
+| API Key | Hostinger env var `GROK_API_KEY` |
 | Model | grok-3-mini |
 
 ### Telegram (legacy — being deprecated for in-app)
@@ -256,7 +256,7 @@ Active on phone +91 7000512030:
 | WhatsApp Business Account ID | *[EDIT — locate]* |
 
 > **Security note:** Actual credential values live only in `.env` (gitignored)
-> and Railway environment variables. Never commit them to this document.
+> and Hostinger (server) environment variables. Never commit them to this document.
 
 ### Pending
 - **Staah:** API token *[EDIT — pull from Staah dashboard]*
@@ -310,7 +310,7 @@ Active on phone +91 7000512030:
 ### PENDING / PARKED
 | Module | Status | Reason |
 |---|---|---|
-| WhatsApp Ops Bridge | ❌ Failed | Chromium too heavy for Railway free tier |
+| WhatsApp Ops Bridge | ❌ Failed | Chromium too heavy for the earlier free-tier host |
 | Block deals live | ❌ Pending | NSE session cookie handling |
 | FII/DII live | ❌ Pending | No source identified |
 | HDFC live trade execution | ⚠️ Auth wired, untested | OAuth flow needs user-side OTP test |
@@ -410,7 +410,7 @@ Every alert MUST include:
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Cloud deployment | ✅ DONE — both services live on Railway |
+| 1 | Cloud deployment | ✅ DONE — both services live on the Hostinger VPS |
 | 2 | Morning Setup page | ✅ DONE |
 | 3 | HDFC auth endpoints | ✅ DONE — needs Monday OTP test |
 | 4 | Singhvi YouTube extractor | ⚠️ BUILT — needs live test |
@@ -425,10 +425,10 @@ Every alert MUST include:
 
 ## §16 — KNOWN ISSUES / TECH DEBT
 
-1. **Railway free tier limits** — 512 MB RAM may not handle Whisper transcription
+1. **VPS resource limits** — available RAM may not handle Whisper transcription
 2. **WhatsApp bridge** — Chromium installs but crashes; need lighter approach (Tasker / mobile app forwarding / WhatsApp Business API direct)
-3. **Database persistence** — Volume mount option missing in Railway UI; data may reset on redeploy
-4. **HDFC OAuth callback URL** — currently `localhost`; needs Railway URL configured before live trading
+3. **Database persistence** — keep the SQLite files on persistent VPS disk, not an ephemeral container layer, so data survives redeploys
+4. **HDFC OAuth callback URL** — currently `localhost`; needs the Hostinger URL (`srv1641037.hstgr.cloud`) configured before live trading
 5. **Browser CORS** — frontend cannot directly hit cross-origin services; everything must proxy through backend
 6. **No tests yet** — all builds are smoke-tested manually
 
@@ -438,11 +438,11 @@ Every alert MUST include:
 
 | Date | Decision | Reasoning |
 |---|---|---|
-| 2026-04-25 | Move from local to Railway cloud | Mobile-only operation; can't be tied to PC |
+| 2026-04-25 | Move from local to cloud (now Hostinger VPS) | Mobile-only operation; can't be tied to PC |
 | 2026-04-25 | Drop Telegram for trade confirmation | In-app confirmation cleaner |
 | 2026-04-25 | Rename VEGA → Capital → MDO | MDO = Management Decision Office (more general) |
 | 2026-04-26 | Park WhatsApp bridge | Free tier Chromium crash; not blocker for Monday |
-| 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on Railway; manual is reliable |
+| 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on the server; manual is reliable |
 
 *[EDIT — append new decisions as you make them]*
 
@@ -450,8 +450,8 @@ Every alert MUST include:
 
 ## §18 — NEXT WEEK'S OPEN QUESTIONS
 
-1. **HDFC OAuth callback** — Railway URL needs to be registered with HDFC dev portal; how?
-2. **Whisper memory** — upgrade to Railway $5/mo Starter plan, or move Singhvi extraction to a stronger server?
+1. **HDFC OAuth callback** — the Hostinger URL needs to be registered with HDFC dev portal; how?
+2. **Whisper memory** — upgrade the VPS plan, or move Singhvi extraction to a stronger server?
 3. **WhatsApp alternative** — Tasker on Android forwarding to webhook, vs. proper Meta Business API setup, vs. Twilio?
 4. **Staah token** — when do you have time to fetch from Staah dashboard?
 5. **Banker / advocate / COO names** — populate Section 3 once you have time
@@ -466,7 +466,7 @@ Every alert MUST include:
 3. Classify every output 🔴 / 🟡 / 🟢
 4. Include What changed → Why it matters → Action in every report
 5. Never push to GitHub without user explicitly asking
-6. Never commit secrets to repo (.env stays local + Railway env vars)
+6. Never commit secrets to repo (.env stays local + Hostinger env vars)
 7. Prefer concrete code over abstract plans
 8. Default to manual fallback when automation is fragile
 9. When unsure about Aman's preference — ask, don't assume
