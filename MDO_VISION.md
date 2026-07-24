@@ -214,8 +214,8 @@ Active on phone +91 7000512030:
 | Repo | github.com/aman55501-cyber/mdo-platform (private) |
 
 ### Live URLs
-- **Frontend:** https://<your-hostinger-frontend-url>  <!-- TODO: confirm the Hostinger URL -->
-- **Backend:** https://srv1641037.hstgr.cloud
+- **Frontend:** https://srv1641037.hstgr.cloud
+- **Backend:** https://srv1641037.hstgr.cloud (same host; `/api/*` served by the FastAPI backend)
 
 ### Local paths
 - Code root: `C:\Users\Owner\Desktop\MASTER\misc\vega\`
