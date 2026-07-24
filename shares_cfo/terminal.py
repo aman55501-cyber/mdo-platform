@@ -935,8 +935,13 @@ async function loadIdeas(){
 }
 async function loadSettings(){
   const r=await j('/accounts?'+Q),box=document.getElementById('set-accs');
-  if(r.ok&&r.d.accounts){document.getElementById('set-acc-n').textContent=r.d.accounts.length+' configured';
-    box.innerHTML=r.d.accounts.map(a=>{const on=a.logged_in;return '<div class="row"><div style="flex:1"><div class="rn">'+(a.label||a.key)+' <span class="rsub">'+a.key+'</span></div><div class="rsub" style="margin-top:2px;color:'+(on?'var(--up)':'var(--down)')+'">'+(on?'● logged in':'● logged out')+'</div></div>'+(a.broker==='hdfc'&&!on?'<a class="lgn" href="/hdfc/login?key='+a.key+'&'+Q+'">Log in</a>':'')+'</div>';}).join('');}
+  if(r.ok&&r.d.accounts){const outn=r.d.accounts.filter(a=>!a.logged_in).length;
+    document.getElementById('set-acc-n').textContent=r.d.accounts.length+' configured'+(outn?' · '+outn+' logged out':'');
+    box.innerHTML='<div class="pb" style="padding:2px 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><a class="lgn" href="/login?'+Q+'" style="font-size:11px">＋ Login hub — connect all →</a>'+(outn?'<span class="rsub down">'+outn+' account'+(outn>1?'s':'')+' need re-login (tokens reset on restart)</span>':'')+'</div>'
+      +r.d.accounts.map(a=>{const on=a.logged_in,hd=a.broker==='hdfc';
+      return '<div class="row"><div style="flex:1"><div class="rn">'+(a.label||a.key)+' <span class="rsub">'+a.key+'</span></div><div class="rsub" style="margin-top:2px;color:'+(on?'var(--up)':'var(--down)')+'">'+(on?'● logged in':'● logged out')+(hd?'':' · self-arms')+'</div></div>'
+        +(hd?'<a class="lgn" href="/hdfc/login?key='+a.key+'&'+Q+'">'+(on?'Re-login':'Log in')+'</a>':'')+'</div>';}).join('');}
+  else{box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not load accounts')+'</div>';}
   else box.innerHTML='<div class="load">open Login tab</div>';
   const f=await j('/market/indices?'+Q),fb=document.getElementById('set-feeds');
   const n=(f.ok&&f.d.indices||[]).length;
@@ -999,7 +1004,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
   document.getElementById('s-'+t).classList.add('on');
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));window.scrollTo(0,0);
   if(t==='positions'){loadPositions();loadOrderBook();loadGtt();renderBasket();}
-  if(t==='settings'&&!setLoaded){setLoaded=1;loadSettings();}
+  if(t==='settings'){setLoaded=1;loadSettings();}   // always refresh so login state is live
   if(t==='ideas'&&!ideasLoaded){ideasLoaded=1;loadIdeas();}
   if(t==='chart'){if(!chartLoaded){chartLoaded=1;chartChips();}loadChart();}
   if(t==='news'&&!newsLoaded){newsLoaded=1;loadNews();}});
