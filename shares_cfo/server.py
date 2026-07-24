@@ -1677,20 +1677,57 @@ def _parse_contract(label: str) -> dict:
 
 # Session OI baseline per contract token, so "OI up/down" reflects today's build-up
 # (first value seen this session vs now), refreshed every time positions are polled.
-_OI_SNAP: dict = {}
+_OI_SNAP_FILE = Path(__file__).resolve().parent / "data" / "state" / "oi_positions.json"
+_OI_STORE: dict = {"loaded": False, "date": "", "oi": {}, "prev_oi": {}, "last_save": 0.0}
+
+
+def _oi_save() -> None:
+    import time
+    try:
+        _OI_SNAP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _OI_SNAP_FILE.write_text(json.dumps({"date": _OI_STORE["date"], "oi": _OI_STORE["oi"],
+                                             "prev_oi": _OI_STORE["prev_oi"]}), encoding="utf-8")
+        _OI_STORE["last_save"] = time.time()
+    except OSError:
+        pass
+
+
+def _oi_store() -> dict:
+    """Persisted per-token OI (today + yesterday) so the OI trend is DAY-OVER-DAY and
+    survives a restart. A session-only base reads 'Flat' for a whole cycle after every
+    autoheal restart — exactly when the overnight OI shift is the signal that matters."""
+    import time
+    st = _OI_STORE
+    day = time.strftime("%Y-%m-%d")
+    if not st["loaded"]:
+        try:
+            d = json.loads(_OI_SNAP_FILE.read_text(encoding="utf-8"))
+            st.update(date=d.get("date", ""), oi=d.get("oi", {}) or {}, prev_oi=d.get("prev_oi", {}) or {})
+        except (OSError, ValueError):
+            pass
+        st["loaded"] = True
+    if st["date"] != day:                     # new day: roll today's OI into the reference
+        st["prev_oi"] = st["oi"] or st["prev_oi"]
+        st["oi"] = {}
+        st["date"] = day
+        _oi_save()
+    return st
 
 
 def _oi_trend(token: str | None, oi) -> tuple:
-    """(oi_change, oi_change_pct) vs the first OI seen for this token today."""
+    """(oi_change, oi_change_pct) vs YESTERDAY's OI for this token when available, else
+    today's first reading — persisted, so a restart doesn't reset the base to 'Flat'."""
     if token is None or oi is None:
         return None, None
     import time
-    day = time.strftime("%Y-%m-%d")
-    snap = _OI_SNAP.get(token)
-    if not snap or snap.get("day") != day:
-        _OI_SNAP[token] = {"day": day, "base": oi}
-        return 0, 0.0
-    base = snap.get("base") or 0
+    st = _oi_store()
+    token, oi = str(token), int(oi)
+    base = st["prev_oi"].get(token)                       # true day-over-day reference
+    if base is None:
+        base = st["oi"].get(token, oi)                    # else today's first-seen (session base)
+    st["oi"][token] = oi                                  # keep latest for tomorrow's reference
+    if time.time() - st["last_save"] > 120:               # throttled persist
+        _oi_save()
     change = oi - base
     return change, (round(change / base * 100.0, 1) if base else 0.0)
 
@@ -1710,12 +1747,13 @@ def _leg_bias(r: dict) -> int:
     return 0
 
 
-def _buildup(change_pct, oi_change) -> str | None:
-    """Classic OI + price read (the core F&O tell)."""
-    if change_pct is None or oi_change is None:
+def _buildup(change_pct, oi_change_pct) -> str | None:
+    """Classic OI + price read (the core F&O tell), with a 1.5% dead-band on OI so a
+    single contract of drift can't flip the classification."""
+    if change_pct is None or oi_change_pct is None:
         return None
     pu, pd = change_pct > 0.05, change_pct < -0.05
-    ou, od = oi_change > 0, oi_change < 0
+    ou, od = oi_change_pct > 1.5, oi_change_pct < -1.5
     if pu and ou:
         return "Long buildup"
     if pd and ou:
@@ -1895,7 +1933,7 @@ async def _live_positions() -> dict:
             r["pnl_pct"] = round((r.get("pnl") or 0) / cost * 100, 2) if cost else None
         if r["kind"] in ("option", "future"):
             r["oi_change"], r["oi_change_pct"] = _oi_trend(r.get("_atok"), r.get("oi"))
-            r["buildup"] = _buildup(r.get("change_pct"), r.get("oi_change"))
+            r["buildup"] = _buildup(r.get("change_pct"), r.get("oi_change_pct"))
             r["bias"] = _leg_bias(r)
             r["risk"], r["risk_why"] = _leg_risk(r)
         r.pop("_atok", None)
