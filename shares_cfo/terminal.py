@@ -353,10 +353,14 @@ async function loadHome(){
   const dc=p.day_change>=0;
   document.getElementById('nwday').innerHTML='<span class="'+cl(p.day_change)+'">'+(dc?'▲':'▼')+' '+inr(Math.abs(p.day_change))+'  '+sp((p.day_change_pct||0)*100)+'</span>';
   const hd=document.getElementById('hday');hd.className='d '+cl(p.day_change);hd.textContent=sp((p.day_change_pct||0)*100);
-  const bh=p.book_health||{},bn=document.getElementById('banner');
-  if((bh.degraded||0)>0){const names=(bh.degraded_accounts||[]).map(x=>x.creds_key).join(', ');
-    bn.style.display='block';bn.href='/login?'+Q;bn.textContent='⚠ '+names+' logged out — net worth partial · tap to log in';}
-  else bn.style.display='none';
+  // Login prompt is driven by ACTUAL current auth (token store), NOT the book —
+  // which may be a frozen last-good snapshot after a restart and would report zero
+  // degraded even while HDFC is logged out right now, hiding the daily-login prompt.
+  const bn=document.getElementById('banner');
+  j('/accounts?'+Q).then(acc=>{const out=(acc.ok&&acc.d.accounts||[]).filter(a=>!a.logged_in);
+    if(out.length){bn.style.display='block';bn.href='/login?'+Q;
+      bn.textContent='⚠ '+out.map(a=>a.key).join(', ')+' logged out — tap for daily login';}
+    else bn.style.display='none';});
   document.getElementById('nwu').innerHTML='<span class="'+cl(p.unrealised_pnl)+'">'+inr(p.unrealised_pnl)+'</span>';
   document.getElementById('nwc').textContent=inr(p.cash);
   document.getElementById('nwi').textContent=inr(p.invested_value);
@@ -942,7 +946,6 @@ async function loadSettings(){
       return '<div class="row"><div style="flex:1"><div class="rn">'+(a.label||a.key)+' <span class="rsub">'+a.key+'</span></div><div class="rsub" style="margin-top:2px;color:'+(on?'var(--up)':'var(--down)')+'">'+(on?'● logged in':'● logged out')+(hd?'':' · self-arms')+'</div></div>'
         +(hd?'<a class="lgn" href="/hdfc/login?key='+a.key+'&'+Q+'">'+(on?'Re-login':'Log in')+'</a>':'')+'</div>';}).join('');}
   else{box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not load accounts')+'</div>';}
-  else box.innerHTML='<div class="load">open Login tab</div>';
   const f=await j('/market/indices?'+Q),fb=document.getElementById('set-feeds');
   const n=(f.ok&&f.d.indices||[]).length;
   fb.innerHTML='<div class="rsub">EODHD indices: <span class="'+(n?'up':'down')+'">'+(n?n+' live':'down')+'</span></div>'
