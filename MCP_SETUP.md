@@ -100,7 +100,8 @@ case `CFO_API_TOKEN` is not required (leave it unset on both sides).
 
 To lock the API down, set the **same** `CFO_API_TOKEN` value in **two** places:
 
-1. **On the backend** (e.g. the Railway service running `mdo_server.py`). When
+1. **On the backend** (the Hostinger VPS running `mdo_server.py` at
+   `srv1641037.hstgr.cloud`). When
    this env var is present, the server rejects any `/api/*` request without a
    matching `Authorization: Bearer <token>` (or `X-API-Token`) header. Returns
    `401` otherwise. `/api/health` and `/api/status` stay open for uptime checks.
