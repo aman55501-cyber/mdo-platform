@@ -268,6 +268,12 @@ a{color:var(--a700);text-decoration:none}
   <div id="sh-body"><div class="load">loading</div></div>
 </div>
 
+<div class="scrim" id="ascrim" onclick="closeAcct()"></div>
+<div class="sheet" id="asheet"><div class="sgrab"></div>
+  <div class="sh"><span class="ssym" id="ash-name">—</span><span class="mono" id="ash-val" style="margin-left:auto;font-size:16px"></span></div>
+  <div id="ash-body"><div class="load">loading</div></div>
+</div>
+
 <div class="scrim" id="tscrim" onclick="closeTicket()"></div>
 <div class="sheet" id="tsheet"><div class="sgrab"></div>
   <div class="sh"><span class="ssym" id="tk-sym">—</span><span class="mono muted" id="tk-ltp" style="margin-left:auto;font-size:15px"></span></div>
@@ -367,7 +373,7 @@ function renderAccounts(p){
   const mx=Math.max(1,...accs.map(x=>x.v)),nw=p.net_worth||1;
   document.getElementById('acc-n').textContent=accs.length+' linked';
   document.getElementById('accs').innerHTML=accs.map(x=>{const a=x.a,lbl=a.label||a.creds_key;
-    return '<div class="row"><div style="flex:1;min-width:0"><div class="rn">'+lbl+' <span class="rsub">'+a.creds_key+(x.ok?'':' · off')+'</span></div>'
+    return '<div class="row" onclick="openAcct(\''+a.creds_key+'\')" style="cursor:pointer"><div style="flex:1;min-width:0"><div class="rn">'+lbl+' <span class="rsub">'+a.creds_key+(x.ok?'':' · off')+'</span></div>'
       +'<div class="bar"><i style="width:'+(x.v/mx*100).toFixed(0)+'%;background:'+(x.ok?'var(--acc)':'var(--down)')+'"></i></div></div>'
       +'<div class="rr"><div class="p">'+inr(x.v)+'</div><div class="c muted">'+(x.v/nw*100).toFixed(0)+'%</div></div></div>';}).join('');
 }
@@ -521,6 +527,22 @@ async function openShare(sym){
   document.getElementById('sh-body').innerHTML=h;
 }
 function closeShare(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');}
+/* Account drill-down: tap any account -> its funds + holdings + positions (each row
+   opens the share page). Uses data already in PORT — no extra fetch. */
+function openAcct(key){const a=((PORT&&PORT.accounts)||[]).find(x=>x.creds_key===key);if(!a)return;
+  document.getElementById('ascrim').classList.add('on');document.getElementById('asheet').classList.add('on');
+  document.getElementById('ash-name').textContent=(a.label||a.creds_key);
+  document.getElementById('ash-val').textContent=inr(acctVal(a));
+  const H=(a.holdings||[]).slice().sort((x,y)=>(y.market_value||0)-(x.market_value||0)),P=a.positions||[],f=a.funds||{};
+  let h='';
+  if(a.ok===false||a.status==='degraded')h+='<div class="rsub down" style="padding:6px 0">⚠ '+(a.reason||'logged out')+' — showing last data</div>';
+  h+='<div class="ssub">Funds</div><div class="rsub mono" style="color:var(--n600)">Ledger '+inr(f.ledger_balance||0)+(f.available!=null?' · Available '+inr(f.available):'')+'</div>';
+  h+='<div class="ssub">Holdings ('+H.length+')</div>'+(H.length?H.map(x=>{const s=clean(x.ticker);
+    return '<div class="row" onclick="openShare(\''+s+'\')" style="cursor:pointer"><div style="flex:1;min-width:0"><div class="rn">'+s+'</div><div class="rsub">Qty '+x.quantity+' · Avg '+(x.average_price||0).toFixed(1)+'</div></div><div class="rr"><div class="p">'+inr(x.market_value||0)+'</div><div class="c '+cl(x.day_change)+'">'+(x.day_change!=null?sp((x.day_change/((x.market_value||1)-(x.day_change||0)))*100):'')+'</div></div></div>';}).join(''):'<div class="rsub" style="color:var(--n500)">none</div>');
+  h+='<div class="ssub">Positions ('+P.length+')</div>'+(P.length?P.map(x=>{const u=clean(x.ticker).split(' ')[0];
+    return '<div class="row" onclick="openShare(\''+u+'\')" style="cursor:pointer"><div style="flex:1;min-width:0"><div class="rn">'+clean(x.ticker)+'</div><div class="rsub">Qty '+x.quantity+' · Avg '+(x.average_price||0).toFixed(1)+'</div></div><div class="rr"><div class="p '+cl(x.pnl)+'">'+inr(x.pnl||0)+'</div></div></div>';}).join(''):'<div class="rsub" style="color:var(--n500)">none</div>');
+  document.getElementById('ash-body').innerHTML=h;}
+function closeAcct(){document.getElementById('ascrim').classList.remove('on');document.getElementById('asheet').classList.remove('on');}
 /* ---- order ticket (guarded: propose -> confirm) ---- */
 let TK={sym:'',ltp:0,side:'BUY',seg:'CASH',exch:'NSE',product:'CNC',ot:'MARKET',qty:1,lot:1,fut:null,pid:null,code:null};
 function fillTkAccts(sel){const s=document.getElementById('tk-acct');if(!s)return;const accs=(PORT&&PORT.accounts)||[];
@@ -811,7 +833,7 @@ function tipCard(t){const ltp=t.ltp,act=t.actionable,alert=t.alert;
     +(t.kind==='trade'?'<button class="segb" style="padding:6px 12px;font-size:11px" onclick="armTip(\''+t.symbol+'\',\''+(t.token||'')+'\','+(t.buy||0)+','+(t.stop||0)+','+(t.suggested_qty||0)+')">⚡ Arm GTT</button>':'')
     +'<button class="segb" style="padding:6px 12px;font-size:11px;color:var(--down);border-color:#5c2b2b" onclick="delTip(\''+t.id+'\')">Delete</button></div>';
   return '<div class="row" style="flex-direction:column;align-items:stretch;gap:5px">'
-    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="rn">'+t.symbol+'</span>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="rn" onclick="openShare(\''+t.symbol+'\')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--n400)">'+t.symbol+'</span>'
     +'<span class="rsub" style="border:1px solid var(--n400);padding:0 4px">'+t.kind+'</span>'
     +badge+'<span class="mono" style="margin-left:auto">'+(ltp?('LTP '+ltp.toFixed(1)):'—')+'</span></div>'
     +levels+(t.note?'<div class="rsub" style="color:var(--n500)">'+t.note+'</div>':'')+actions+'</div>';}
