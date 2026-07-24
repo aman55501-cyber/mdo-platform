@@ -371,12 +371,12 @@ LIFE_MAP_SEED_NODES = [
     ("core_grok_qa", "core", "Grok Q&A + Sentiment", "Ask-anything + live X sentiment", "live", "engine", "💬", "", 1),
     ("core_singhvi", "core", "Singhvi Extractor", "Transcript → structured trade calls", "building", "engine", "📡",
      "Built, untested on Railway.", 2),
-    ("agent_biz", "core", "Agent — Business Optimizer", "24/7: tenders, competitors, occupancy, bottlenecks", "planned", "agent", "🕵️",
-     "Scheduled cloud agent (Claude Routine / cron). Creative output: bid strategies, BD pitches, pricing moves.", 3),
-    ("agent_capital", "core", "Agent — Capital Optimizer", "24/7: portfolio drift, screens, position sizing", "planned", "agent", "💹",
-     "Runs QGLP/Graham screens, backtests Singhvi calls, flags drift vs pools.", 4),
-    ("agent_compliance", "core", "Agent — Compliance Sentinel", "24/7: filing calendar, notices, court dates", "planned", "agent", "🛡️",
-     "Watches MCA/GST due dates across 26 entities; escalates to CA.", 5),
+    ("agent_biz", "core", "Agent — Business Optimizer", "24/7: tenders, competitors, occupancy, bottlenecks", "live", "agent", "🕵️",
+     "LIVE — Claude Routine, nightly 01:30 IST, reports to branch claude/agent-reports + push/email notification.", 3),
+    ("agent_capital", "core", "Agent — Capital Optimizer", "24/7: portfolio drift, screens, position sizing", "live", "agent", "💹",
+     "LIVE — covered by nightly Routine (capital track). Screens, drift checks, watchlist thesis review.", 4),
+    ("agent_compliance", "core", "Agent — Compliance Sentinel", "24/7: filing calendar, notices, court dates", "live", "agent", "🛡️",
+     "LIVE — nightly Routine restates unresolved critical flags with days-elapsed pressure.", 5),
 
     # ── Skills ──
     ("skill_t1", "skills", "Tier 1 — Operator → Architect", "10 skills · unlocks COO hire", "building", "skill", "1️⃣",
@@ -395,8 +395,8 @@ LIFE_MAP_SEED_NODES = [
      "Live execution blocked on HDFC OTP test.", 2),
     ("surf_push", "surfaces", "WhatsApp / Push Alerts", "Critical alerts reach the phone unprompted", "planned", "surface", "🔔",
      "Meta WhatsApp Business API or push notifications.", 3),
-    ("surf_weekly", "surfaces", "Monday Master Brief", "Weekly synthesis of all agents' findings", "planned", "surface", "📅",
-     "Tier 5 skill output — the architect's cockpit.", 4),
+    ("surf_weekly", "surfaces", "Monday Master Brief", "Weekly synthesis of all agents' findings", "building", "surface", "📅",
+     "Routine live: Mondays 07:00 IST — synthesis of the week's agent reports.", 4),
 ]
 
 LIFE_MAP_SEED_EDGES = [
