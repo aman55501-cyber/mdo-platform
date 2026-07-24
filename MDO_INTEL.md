@@ -193,10 +193,12 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 | Parameter | Value |
 |-----------|-------|
 | Platform | Hostinger VPS (`srv1641037.hstgr.cloud`) |
-| DB mount | `/data/vega_data.db` (persistent volume) |
-| Config | `Dockerfile` at project root (`railway.toml` kept as legacy) |
-| Entry | `python -m vega` |
-| Local entry | `cd misc/vega && python -m vega` |
+| Deploy method | Run **directly** on the VPS (no Docker) |
+| MDO backend | `python mdo_server.py` |
+| Frontend | `cd mdo-app && npm run build && npm run start` |
+| DB path | `vega/data/vega_data.db` + `vega/data/vedanta_crm.db` (on VPS disk) |
+| Container (optional) | `Dockerfile` at project root — unused in the current direct setup |
+| VEGA agent entry | `python -m vega` |
 
 ---
 
