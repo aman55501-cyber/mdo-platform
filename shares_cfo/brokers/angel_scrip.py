@@ -430,17 +430,21 @@ def resolve_nfo_token(name: str, opt: str = "", strike: str = "", expiry: str = 
         strike_i = int(float(strike)) if strike not in ("", None) else None
     except (TypeError, ValueError):
         strike_i = None
+    # Honour the ACTUAL expiry held — enriching a next-month leg with the nearest
+    # expiry's quote gives it the wrong LTP/OI/MTM. Fall back to nearest only when the
+    # held expiry can't be matched.
+    want = _norm_expiry(expiry) if expiry else ""
     if opt in ("CE", "PE"):
         chain = _load_stock_options().get(name)
         if chain and strike_i is not None:
-            exp = _nearest_future_expiry(chain)
+            exp = want if (want and want in chain) else _nearest_future_expiry(chain)
             node = chain.get(exp, {}).get(str(strike_i), {}) if exp else {}
             if node.get(opt):
                 return str(node[opt])
         # index options (NIFTY/BANKNIFTY)
         idx = _load_options().get(name)
         if idx and strike_i is not None:
-            exp = nearest_expiry(name)
+            exp = want if (want and want in idx) else nearest_expiry(name)
             node = idx.get(exp, {}).get(str(strike_i), {}) if exp else {}
             if node.get(opt):
                 return str(node[opt])

@@ -3130,10 +3130,18 @@ def _build_order(d: dict):
 
 
 async def _day_pnl() -> float:
-    """Rough intraday P&L across the book, for the daily-loss halt."""
+    """TODAY's P&L across the book, for the daily-loss halt: equity's day move + the
+    F&O legs' today MTM. NOT all-time unrealised — that number is dominated by lifetime
+    gains and would make the loss-halt unreachable on the worst possible day."""
     try:
         book = await _consolidated()
-        return float(book.get("positions_pnl", 0.0)) + float(book.get("unrealised_pnl", 0.0))
+        equity_today = float(book.get("day_change", 0.0))
+        try:
+            live = await _live_positions()
+            fno_today = float(live.get("day_pnl", 0.0))
+        except Exception:
+            fno_today = 0.0
+        return equity_today + fno_today
     except Exception:
         return 0.0
 
@@ -3517,6 +3525,15 @@ async def execution_kill(request: Request, token: str | None = Query(default=Non
     _check_token(request, token)
     from .execution import engine
     return engine.engage_kill()
+
+
+@app.post("/execution/release")
+async def execution_release(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Deliberately disarm the kill-switch. Needed because the kill now persists across
+    restarts — a restart no longer silently clears it, so clearing it is an explicit act."""
+    _check_token(request, token)
+    from .execution import engine
+    return engine.release_kill()
 
 
 # --- Order lifecycle: multi-account order book + cancel + modify ----------------

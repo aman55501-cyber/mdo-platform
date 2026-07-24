@@ -261,10 +261,15 @@ class HdfcAdapter:
         container = data.get("data", data)
         rows: list[dict] = []
         if isinstance(container, dict):
-            for key in ("net", "day", "overall", "positions"):
+            # HDFC returns net[] (the true net position) and sometimes day[] for the
+            # SAME contract. Extending both double-counts qty + P&L, which then corrupts
+            # the drawdown alerts and the loss-halt input. Take the FIRST non-empty
+            # canonical array only — net first.
+            for key in ("net", "overall", "positions", "day"):
                 v = container.get(key)
-                if isinstance(v, list):
-                    rows.extend(v)
+                if isinstance(v, list) and v:
+                    rows = v
+                    break
             if not rows and any(k in container for k in ("net_qty", "security_id", "netQty")):
                 rows = [container]
         elif isinstance(container, list):
