@@ -34,6 +34,9 @@ def _kill_engaged() -> bool:
     return _KILL_FILE.exists()
 
 
+_PROPOSAL_TTL = 120  # seconds — a confirm older than this must re-propose, never fire stale
+
+
 def _audit(event: str, detail: dict) -> None:
     rec = {"ts": datetime.now(timezone.utc).isoformat(), "event": event, **detail}
     log.info("execution_audit %s", rec)
@@ -112,7 +115,8 @@ def propose(order: OrderRequest, day_pnl: float = 0.0) -> dict:
     guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _kill_engaged())
     pid = secrets.token_hex(8)
     confirm_code = secrets.token_hex(4)
-    _PROPOSALS[pid] = {"order": order, "confirm_code": confirm_code}
+    _PROPOSALS[pid] = {"order": order, "confirm_code": confirm_code,
+                       "ts": datetime.now(timezone.utc).timestamp()}
     _audit("PROPOSE", {"proposal_id": pid, "order": order.to_dict()})
     # F&O reads in lots (+ premium for an option buy); equity reads in units.
     if order.is_fno and order.lot_size:
@@ -163,6 +167,9 @@ def confirm(proposal_id: str, confirm_code: str, day_pnl: float = 0.0) -> dict:
     if confirm_code != prop["confirm_code"]:
         _PROPOSALS[proposal_id] = prop  # wrong code — restore so the real caller can retry
         raise guardrails.GuardrailError("Confirmation code does not match.")
+    if (datetime.now(timezone.utc).timestamp() - prop.get("ts", 0)) > _PROPOSAL_TTL:
+        raise guardrails.GuardrailError(
+            f"Proposal expired (older than {_PROPOSAL_TTL}s) — re-propose to confirm.")
     order: OrderRequest = prop["order"]
     cfg = get_trading_config()
     guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _kill_engaged())  # re-check at send time

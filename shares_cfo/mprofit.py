@@ -43,8 +43,9 @@ def _pick(row: dict, headers: list[str]):
 def _latest_file() -> Path | None:
     if not MPROFIT_DIR.exists():
         return None
-    files = sorted(p for p in MPROFIT_DIR.glob("*")
-                   if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
+    files = sorted((p for p in MPROFIT_DIR.glob("*")
+                    if p.suffix.lower() in (".csv", ".xlsx", ".xls")),
+                   key=lambda p: p.stat().st_mtime)  # NEWEST, not alphabetical
     return files[-1] if files else None
 
 

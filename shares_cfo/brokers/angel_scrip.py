@@ -389,6 +389,7 @@ def option_full(tokens: list[str]) -> dict:
     jwt, _ = _login(acc)
     if not jwt:
         return {}
+    from .. import token_store
     out: dict = {}
     # FULL quote caps at ~50 tokens/call; chunk to be safe.
     for i in range(0, len(tokens), 45):
@@ -396,9 +397,17 @@ def option_full(tokens: list[str]) -> dict:
         body = {"mode": "FULL", "exchangeTokens": {"NFO": chunk}}
         try:
             r = httpx.post(acc.base_url + QUOTE, headers=_headers(acc, jwt), json=body, timeout=20.0)
-            fetched = ((r.json() or {}).get("data") or {}).get("fetched") or []
+            j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
         except Exception:
             continue
+        # A flushed/expired JWT (the overnight token reset) returns 401 or AG8001 here.
+        # Clear the cached token so the NEXT call re-logs in — otherwise OI silently dies
+        # until a restart. This is exactly the 'silent death' the charter warns against.
+        if r.status_code == 401 or (isinstance(j, dict) and
+                                    (j.get("errorcode") or j.get("errorCode")) == "AG8001"):
+            token_store.set_token(acc.creds_key, "")
+            break
+        fetched = ((j or {}).get("data") or {}).get("fetched") or []
         for f in fetched:
             t = str(f.get("symbolToken") or f.get("symboltoken") or "")
             if not t:

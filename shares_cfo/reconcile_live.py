@@ -83,7 +83,13 @@ def _order_matches(o: dict, token, ticker: str) -> bool:
         return True  # exact token match — the strong signal
     base = _instrument_key(ticker)
     osym = (o.get("symbol") or "").upper()
-    return bool(base and osym and base in osym)
+    # NFO/EQ tradingsymbols START with the underlying (IOC28JUL26FUT, RELIANCE-EQ).
+    # A plain substring test wrongly matches "IOC" inside "BIOCON", so anchor at the
+    # start and require the next char to be a boundary (digit/-/end), not a letter.
+    if not (base and osym and osym.startswith(base)):
+        return False
+    rest = osym[len(base):]
+    return rest == "" or not rest[0].isalpha()
 
 
 _OPEN = ("open", "trigger", "pending", "modif")

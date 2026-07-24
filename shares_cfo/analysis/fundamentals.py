@@ -37,12 +37,15 @@ COLMAP = {
 #   roe, promoter_holding, pledge, dividend_yield -> PERCENT numbers (14.0 == 14%)
 # Providers disagree on units, so we normalise AT INGESTION to this one convention.
 
-def _norm_de(v) -> float | None:
-    """Debt-to-equity as a ratio. yfinance reports it as a percent (72.5 -> 0.725)."""
+def _norm_de(v, as_ratio: bool = False) -> float | None:
+    """Debt-to-equity as a ratio. Screener's 'Debt to equity' is ALREADY a ratio
+    (pass as_ratio=True); yfinance reports it as a percent (72.5 -> 0.725). The old
+    'divide by 100 if > 5' heuristic wrongly made genuinely leveraged names — banks,
+    NBFCs — look debt-free, so the SOURCE decides the unit now, not the magnitude."""
     f = to_float(v)
     if f is None:
         return None
-    return round(f / 100.0, 3) if f > 5 else round(f, 3)
+    return round(f, 3) if as_ratio else round(f / 100.0, 3)
 
 
 def _pct_number(v) -> float | None:
@@ -116,7 +119,7 @@ def _map_row(row: dict) -> dict:
             if hdr in row and row[hdr] not in ("", None):
                 val = to_float(row[hdr])
                 if val is not None:
-                    fields[canon] = _norm_de(val) if canon == "de" else val
+                    fields[canon] = _norm_de(val, as_ratio=True) if canon == "de" else val
                 break
     return fields
 
@@ -124,8 +127,9 @@ def _map_row(row: dict) -> dict:
 def _latest_file() -> Path | None:
     if not SCREENER_DIR.exists():
         return None
-    files = sorted(p for p in SCREENER_DIR.glob("*")
-                   if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
+    files = sorted((p for p in SCREENER_DIR.glob("*")
+                    if p.suffix.lower() in (".csv", ".xlsx", ".xls")),
+                   key=lambda p: p.stat().st_mtime)  # NEWEST, not alphabetical
     return files[-1] if files else None
 
 
@@ -190,12 +194,12 @@ def screener_status() -> dict:
     """
     if not SCREENER_DIR.exists():
         return {"loaded": False, "reason": "drop-zone folder missing"}
-    files = sorted(p for p in SCREENER_DIR.glob("*")
-                   if p.suffix.lower() in (".csv", ".xlsx", ".xls"))
-    if not files:
+    latest = _latest_file()   # same newest-by-mtime pick the readers use
+    if not latest:
         return {"loaded": False, "reason": "no Screener export dropped yet",
                 "drop_zone": str(SCREENER_DIR)}
-    latest = files[-1]
+    import time
+    age_days = round((time.time() - latest.stat().st_mtime) / 86400.0, 1)
     rows = _rows_from_file(latest)
     headers = list(rows[0].keys()) if rows else []
     mapped = {canon: next((h for h in cands if h in headers), None)
@@ -205,11 +209,12 @@ def screener_status() -> dict:
         "loaded": True,
         "active_file": latest.name,
         "format": latest.suffix.lower().lstrip("."),
+        "age_days": age_days,
+        "stale": age_days > 45,   # a months-old export silently powering "ideas" is a trap
         "companies": len(rows),
         "name_column": name_col,
         "fields_detected": {k: v for k, v in mapped.items() if v},
         "fields_missing": [k for k, v in mapped.items() if not v],
-        "other_files": [p.name for p in files[:-1]],
     }
 
 
