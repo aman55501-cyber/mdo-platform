@@ -16,7 +16,7 @@ class GuardrailError(Exception):
 
 
 def check(order: OrderRequest, cfg: TradingConfig, orders_today: int,
-          day_pnl: float, kill: bool) -> bool:
+          day_pnl: float | None, kill: bool) -> bool:
     if kill:
         raise GuardrailError("Kill-switch is ENGAGED — all trading is halted.")
     if not cfg.enabled:
@@ -54,10 +54,18 @@ def check(order: OrderRequest, cfg: TradingConfig, orders_today: int,
     if orders_today >= cfg.max_orders_per_day:
         raise GuardrailError(f"Daily order cap reached ({cfg.max_orders_per_day}).")
 
-    if cfg.daily_loss_halt and day_pnl <= -abs(cfg.daily_loss_halt):
-        raise GuardrailError(
-            f"Daily loss ₹{day_pnl:,.0f} has hit the halt limit ₹{-abs(cfg.daily_loss_halt):,.0f} — halted."
-        )
+    if cfg.daily_loss_halt:
+        if day_pnl is None:
+            # Fail CLOSED: if we can't compute today's P&L we can't prove we're under the
+            # halt, so refuse rather than trade blind on the day it matters most.
+            raise GuardrailError(
+                "Cannot verify today's P&L (book/positions unavailable) — refusing while a "
+                "daily-loss halt is set. Retry, or clear CFO_DAILY_LOSS_HALT to override."
+            )
+        if day_pnl <= -abs(cfg.daily_loss_halt):
+            raise GuardrailError(
+                f"Daily loss ₹{day_pnl:,.0f} has hit the halt limit ₹{-abs(cfg.daily_loss_halt):,.0f} — halted."
+            )
 
     return True
 

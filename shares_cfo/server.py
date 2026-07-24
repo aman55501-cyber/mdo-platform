@@ -3129,21 +3129,21 @@ def _build_order(d: dict):
     return o
 
 
-async def _day_pnl() -> float:
+async def _day_pnl() -> float | None:
     """TODAY's P&L across the book, for the daily-loss halt: equity's day move + the
-    F&O legs' today MTM. NOT all-time unrealised — that number is dominated by lifetime
-    gains and would make the loss-halt unreachable on the worst possible day."""
+    F&O legs' today MTM. NOT all-time unrealised (dominated by lifetime gains).
+
+    Returns None when it can't be computed, so the guardrail fails CLOSED (refuses)
+    rather than seeing 0 and letting the loss-halt sleep on the exact bad-connectivity
+    day you most need it."""
     try:
         book = await _consolidated()
         equity_today = float(book.get("day_change", 0.0))
-        try:
-            live = await _live_positions()
-            fno_today = float(live.get("day_pnl", 0.0))
-        except Exception:
-            fno_today = 0.0
+        live = await _live_positions()
+        fno_today = float(live.get("day_pnl", 0.0))
         return equity_today + fno_today
     except Exception:
-        return 0.0
+        return None
 
 
 @app.get("/debug/holdings-fields")
@@ -3750,15 +3750,28 @@ async def gtt_list(request: Request, token: str | None = Query(default=None)) ->
 @app.post("/gtt/create")
 async def gtt_create(request: Request, payload: dict = Body(...),
                      token: str | None = Query(default=None)) -> dict:
-    """Create a GTT rule (master-switch gated + a light cap check)."""
+    """Create a GTT rule (master-switch + kill-switch + allow-list + cap gated).
+
+    A GTT will fire a REAL order at the broker, so it is gated exactly like a live
+    order — the kill-switch and the allow-list must both pass, not just the caps."""
     _check_token(request, token)
     _trading_on()
+    from .execution import engine
+    if engine._kill_engaged():
+        raise HTTPException(status_code=403,
+                            detail="Kill-switch ENGAGED — no new orders or GTTs can be created.")
     need = ("tradingsymbol", "symboltoken", "exchange", "side", "price", "qty", "trigger")
     if any(not payload.get(k) for k in need):
         raise HTTPException(status_code=400, detail=f"GTT needs: {', '.join(need)}.")
-    # Reuse the order caps so a fat-finger GTT is blocked the same way a live order is.
+    # Reuse the order caps + allow-list so a GTT is gated the same way a live order is.
     from .config import get_trading_config
     cfg = get_trading_config()
+    base = (payload.get("underlying")
+            or str(payload.get("tradingsymbol") or "").split("-")[0]).upper()
+    allowed = set(cfg.allowed_underlyings) | set(cfg.fno_underlyings())
+    if allowed and base and base not in allowed:
+        raise HTTPException(status_code=403,
+                            detail=f"'{base}' is not on the trading allow-list — GTT refused.")
     qty, price = int(payload["qty"]), float(payload["price"])
     if cfg.max_qty_per_order and qty > cfg.max_qty_per_order:
         raise HTTPException(status_code=403, detail=f"Qty {qty} over cap {cfg.max_qty_per_order}.")

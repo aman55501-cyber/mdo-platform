@@ -93,9 +93,16 @@ def engage_kill() -> dict:
         _KILL_FILE.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     except OSError:
         pass
-    _audit("KILL_SWITCH", {"engaged": True})
-    return {"kill_switch": True,
-            "message": "Kill-switch ENGAGED. All trading halted (persists across restarts)."}
+    # Report the TRUTH — what _kill_engaged() (which everything else consults) will see.
+    # If the persist failed, say so loudly instead of claiming a halt we didn't achieve.
+    engaged = _kill_engaged()
+    _audit("KILL_SWITCH", {"engaged": engaged})
+    if engaged:
+        return {"kill_switch": True,
+                "message": "Kill-switch ENGAGED. All trading halted (persists across restarts)."}
+    return {"kill_switch": False,
+            "message": "FAILED to persist the kill-switch — trading is NOT halted. "
+                       "Disable CFO_TRADING_ENABLED in the env immediately."}
 
 
 def release_kill() -> dict:
