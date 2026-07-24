@@ -297,6 +297,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── optional API-token auth (opt-in) ─────────────────────────────────────────
+# Backward-compatible: when CFO_API_TOKEN is NOT set in the server environment,
+# the API stays fully open (no behaviour change). When it IS set, every /api
+# request must carry the matching token as `Authorization: Bearer <token>`
+# (or `X-API-Token: <token>`). This is what the CFO MCP server sends.
+# Health/status and the docs are always exempt so uptime checks keep working.
+CFO_API_TOKEN = os.environ.get("CFO_API_TOKEN", "").strip()
+_AUTH_EXEMPT = ("/api/health", "/api/status", "/docs", "/openapi.json", "/redoc")
+
+
+@app.middleware("http")
+async def _cfo_token_guard(request, call_next):
+    from fastapi.responses import JSONResponse
+    if CFO_API_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        if path.startswith("/api/") and not path.startswith(_AUTH_EXEMPT):
+            auth = request.headers.get("authorization", "")
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+            else:
+                token = request.headers.get("x-api-token", "").strip()
+            if token != CFO_API_TOKEN:
+                return JSONResponse(
+                    {"detail": "Invalid or missing API token"}, status_code=401
+                )
+    return await call_next(request)
+
 # _"__"_ status _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
 @app.get("/api/status")
 async def status():

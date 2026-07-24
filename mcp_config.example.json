@@ -1,0 +1,15 @@
+{
+  "//": "Copy the 'cfo' block into your MCP client config and edit the paths/token.",
+  "//claude_desktop": "macOS: ~/Library/Application Support/Claude/claude_desktop_config.json | Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
+  "//claude_code": "Or run: claude mcp add cfo -- python /ABSOLUTE/PATH/TO/cfo_mcp_server.py",
+  "mcpServers": {
+    "cfo": {
+      "command": "python",
+      "args": ["/ABSOLUTE/PATH/TO/mdo-platform/cfo_mcp_server.py"],
+      "env": {
+        "CFO_MCP_BASE_URL": "https://srv1641037.hstgr.cloud",
+        "CFO_API_TOKEN": "your-app-token-here"
+      }
+    }
+  }
+}
