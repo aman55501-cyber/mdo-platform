@@ -25,8 +25,34 @@ except ImportError as exc:  # pragma: no cover - surfaced at run time, not impor
 
 mcp = FastMCP("sharecfo")
 
-BASE = os.environ.get("CFO_MCP_BASE_URL", "http://localhost:8000").rstrip("/")
-TOKEN = os.environ.get("CFO_API_TOKEN", "").strip()
+
+def _from_env_file(key: str) -> str:
+    """Read one KEY=value from the app's .env, so the token/domain never have to be
+    pasted into a command or the MCP config — the MCP server reads what the app reads."""
+    candidates = [
+        os.environ.get("CFO_MCP_ENV_PATH", ""),
+        "/docker/sharecfo/.env",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    ]
+    for path in candidates:
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            for line in open(path, encoding="utf-8"):
+                s = line.strip()
+                if s.startswith(f"{key}=") and not s.startswith("#"):
+                    return s.split("=", 1)[1].strip().strip('"').strip("'")
+        except OSError:
+            pass
+    return ""
+
+
+TOKEN = os.environ.get("CFO_API_TOKEN", "").strip() or _from_env_file("CFO_API_TOKEN")
+# Base URL: explicit override → else the app's public domain (Caddy) → else localhost.
+# On the VPS host the app is only on the Docker network, so the DOMAIN is the reachable one.
+_DOMAIN = _from_env_file("DOMAIN")
+BASE = (os.environ.get("CFO_MCP_BASE_URL", "").strip()
+        or (f"https://{_DOMAIN}" if _DOMAIN else "http://localhost:8000")).rstrip("/")
 
 
 async def _get(path: str, params: dict | None = None) -> dict:
