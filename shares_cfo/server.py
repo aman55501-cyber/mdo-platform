@@ -1826,6 +1826,9 @@ async def _live_positions() -> dict:
             r["quantity"] += p.get("quantity") or 0
             r["pnl"] += p.get("pnl") or 0
             r["day_pnl"] += p.get("day_pnl") or 0
+    # Positions squared off TODAY come through with qty 0 but a realised day P&L — keep
+    # that P&L for the loss-halt total, but don't display or enrich the closed rows.
+    closed_day_pnl = round(sum((r.get("day_pnl") or 0) for r in byk.values() if not r["quantity"]), 2)
     rows = [r for r in byk.values() if r["quantity"]]
     # 2) resolve each F&O leg to an Angel token and enrich (OI, volume, live price)
     tokmap: dict = {}
@@ -1907,7 +1910,7 @@ async def _live_positions() -> dict:
     return {"as_of": book.get("as_of"), "positions": rows, "fno_count": len(fno),
             "at_risk": sum(1 for r in rows if r.get("risk") == "danger"),
             "feed": "websocket" if ws_live else "polling",
-            "day_pnl": round(sum((r["day_pnl"] or 0) for r in rows), 2),
+            "day_pnl": round(sum((r["day_pnl"] or 0) for r in rows) + closed_day_pnl, 2),
             "realized_pnl": round(sum((r["pnl"] or 0) for r in rows), 2),
             "note": "MTM + today's move from Angel live price; OI trend vs session base; "
                     "buildup = price×OI read; risk flags legs where losses may deepen."}
@@ -3510,8 +3513,11 @@ async def execution_confirm(request: Request, payload: dict = Body(...),
     from .execution import engine
     from .execution.guardrails import GuardrailError
     pid, code = payload.get("proposal_id", ""), payload.get("confirm_code", "")
+    day = await _day_pnl()
     try:
-        return engine.confirm(pid, code, await _day_pnl())
+        # engine.confirm does BLOCKING httpx broker calls — run off the event loop so a
+        # slow broker send never stalls every other request (including /health).
+        return await asyncio.to_thread(engine.confirm, pid, code, day)
     except GuardrailError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except NotImplementedError as exc:
@@ -3847,15 +3853,35 @@ async def margin_order(request: Request, payload: dict = Body(...),
         return {"error": str(exc)[:160]}
 
 
+_BASKET_PROPS: dict = {}  # server-issued basket confirm codes -> {legs, ts}
+
+
 @app.post("/basket/place")
 async def basket_place(request: Request, payload: dict = Body(...),
                        token: str | None = Query(default=None)) -> dict:
-    """Place a multi-leg basket — each leg through every guardrail + the master switch.
-    Partial failures are reported per leg; nothing is placed unless trading is ON."""
+    """Place a multi-leg basket, two-phase: the first call (no confirm_code) returns a
+    server-issued code + review; the second call with that code places. So the confirm
+    is proven server-side — a blind API POST can't fire a basket in one shot. Each leg
+    still runs through every guardrail + the master switch."""
     _check_token(request, token)
-    legs = payload.get("legs") or []
-    if not legs:
-        raise HTTPException(status_code=400, detail="Basket has no legs.")
+    import secrets as _secrets
+    import time as _time
+    code = payload.get("confirm_code")
+    if not code:
+        legs = payload.get("legs") or []
+        if not legs:
+            raise HTTPException(status_code=400, detail="Basket has no legs.")
+        c = _secrets.token_hex(4)
+        _BASKET_PROPS[c] = {"legs": legs, "ts": _time.time()}
+        return {"needs_confirm": True, "confirm_code": c, "count": len(legs),
+                "review": [f"{(l.get('side') or '')} {l.get('quantity')} {l.get('symbol')}"
+                           for l in legs]}
+    prop = _BASKET_PROPS.pop(code, None)
+    if not prop:
+        raise HTTPException(status_code=403, detail="Unknown or already-used basket code — prepare again.")
+    if _time.time() - prop["ts"] > 120:
+        raise HTTPException(status_code=403, detail="Basket confirmation expired — prepare again.")
+    legs = prop["legs"]
     from .execution import engine
     from .execution.guardrails import GuardrailError
     day = await _day_pnl()

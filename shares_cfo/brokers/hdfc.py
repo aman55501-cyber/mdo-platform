@@ -278,13 +278,7 @@ class HdfcAdapter:
         out = []
         for p in rows:
             net_qty = int(to_float(_first(p, "net_qty", "netQty", "t_day_net_qty", "tdayNetQty")) or 0)
-            if net_qty == 0:
-                continue  # squared-off / closed position — not an open holding
-            # average price on the side the net position sits
-            if net_qty > 0:
-                avg = _first(p, "average_buy_price", "tdayAverageBuyPrice", "average_sell_price")
-            else:
-                avg = _first(p, "average_sell_price", "t_day_avg_sell_price", "average_buy_price")
+            tday_realized = to_float(_first(p, "realised_pl_t_day_position", "realised_pl_t_day")) or 0.0
             # build a readable instrument label
             underlying = _first(p, "underlying_symbol", "security_id", default="")
             opt = str(_first(p, "option_type", default="") or "").upper()
@@ -296,6 +290,25 @@ class HdfcAdapter:
                 label = f"{underlying} FUT {expiry}".strip()
             else:
                 label = str(underlying)
+            if net_qty == 0:
+                # Squared-off today. It's not an open holding, but if it booked a
+                # realised P&L today, keep a closed marker (qty 0) carrying that P&L so
+                # the daily-loss halt SEES a loss taken and closed. The display filters
+                # qty-0 rows out; the halt input sums day_pnl over all of them.
+                if tday_realized:
+                    out.append({"ticker": label, "exchange": _first(p, "exchange", default="NSE"),
+                                "product_type": _first(p, "product", "productType", default="NRML"),
+                                "quantity": 0, "average_price": 0.0, "last_price": 0.0,
+                                "pnl": to_float(_first(p, "realised_pl_overall_position",
+                                                       "realised_pl", "pnl")) or 0.0,
+                                "day_pnl": tday_realized,
+                                "token": _digits(_first(p, "instrument_token", "security_id", default=""))})
+                continue
+            # average price on the side the net position sits
+            if net_qty > 0:
+                avg = _first(p, "average_buy_price", "tdayAverageBuyPrice", "average_sell_price")
+            else:
+                avg = _first(p, "average_sell_price", "t_day_avg_sell_price", "average_buy_price")
             out.append({
                 "ticker": label,
                 "exchange": _first(p, "exchange", "instrument_segment", "exch", default="NSE"),
@@ -304,7 +317,7 @@ class HdfcAdapter:
                 "average_price": to_float(avg) or 0.0,
                 "last_price": 0.0,  # cumulative-positions has no LTP; needs a quotes call (later)
                 "pnl": to_float(_first(p, "realised_pl_overall_position", "realised_pl", "pnl")) or 0.0,
-                "day_pnl": to_float(_first(p, "realised_pl_t_day_position", "realised_pl_t_day")) or 0.0,
+                "day_pnl": tday_realized,
                 "token": _digits(_first(p, "instrument_token", "security_id", default="")),
             })
         return out

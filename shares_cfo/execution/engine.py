@@ -36,6 +36,33 @@ def _kill_engaged() -> bool:
 
 _PROPOSAL_TTL = 120  # seconds — a confirm older than this must re-propose, never fire stale
 
+# The daily order count is persisted + date-stamped so a mid-day autoheal restart can't
+# reset it to 0 (bypassing the cap), and a process that lives past midnight rolls over
+# instead of starting the next day pre-blocked. UTC date == the Indian trading day (the
+# 05:30 IST rollover is well before the 09:15 open).
+_ORDERS_FILE = _AUDIT.parent / "orders_today.json"
+
+
+def _utc_date() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _orders_today() -> int:
+    try:
+        d = json.loads(_ORDERS_FILE.read_text(encoding="utf-8"))
+        return int(d.get("count", 0)) if d.get("date") == _utc_date() else 0
+    except (OSError, ValueError):
+        return 0
+
+
+def _bump_orders() -> None:
+    try:
+        _ORDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _ORDERS_FILE.write_text(json.dumps({"date": _utc_date(), "count": _orders_today() + 1}),
+                                encoding="utf-8")
+    except OSError:
+        pass
+
 
 def _audit(event: str, detail: dict) -> None:
     rec = {"ts": datetime.now(timezone.utc).isoformat(), "event": event, **detail}
@@ -75,7 +102,7 @@ def status(cfg: TradingConfig | None = None) -> dict:
     return {
         "trading_enabled": cfg.enabled,
         "kill_switch": _kill_engaged(),
-        "orders_today": _STATE["orders_today"],
+        "orders_today": _orders_today(),
         "caps": {
             "max_qty_per_order": cfg.max_qty_per_order,
             "max_value_per_order": cfg.max_value_per_order,
@@ -119,7 +146,7 @@ def propose(order: OrderRequest, day_pnl: float = 0.0) -> dict:
     """Validate an order against every guardrail and return a confirmation summary.
     Does NOT send anything."""
     cfg = get_trading_config()
-    guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _kill_engaged())
+    guardrails.check(order, cfg, _orders_today(), day_pnl, _kill_engaged())
     pid = secrets.token_hex(8)
     confirm_code = secrets.token_hex(4)
     _PROPOSALS[pid] = {"order": order, "confirm_code": confirm_code,
@@ -158,9 +185,9 @@ def place_now(order: OrderRequest, day_pnl: float = 0.0) -> dict:
     """Place a single order immediately, still through every guardrail + master switch.
     Used for basket legs where the whole basket is confirmed once at the UI level."""
     cfg = get_trading_config()
-    guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _kill_engaged())
+    guardrails.check(order, cfg, _orders_today(), day_pnl, _kill_engaged())
     result = _send_to_broker(order)
-    _STATE["orders_today"] += 1
+    _bump_orders()
     _audit("SENT", {"order": order.to_dict(), "result": result, "via": "basket"})
     return result
 
@@ -179,10 +206,10 @@ def confirm(proposal_id: str, confirm_code: str, day_pnl: float = 0.0) -> dict:
             f"Proposal expired (older than {_PROPOSAL_TTL}s) — re-propose to confirm.")
     order: OrderRequest = prop["order"]
     cfg = get_trading_config()
-    guardrails.check(order, cfg, _STATE["orders_today"], day_pnl, _kill_engaged())  # re-check at send time
+    guardrails.check(order, cfg, _orders_today(), day_pnl, _kill_engaged())  # re-check at send time
 
     result = _send_to_broker(order)  # <-- the only step that needs the Place Order docs
-    _STATE["orders_today"] += 1
+    _bump_orders()
     _PROPOSALS.pop(proposal_id, None)
     _audit("SENT", {"proposal_id": proposal_id, "order": order.to_dict(), "result": result})
     return {"placed": True, "order": order.to_dict(), "broker_result": result}

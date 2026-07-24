@@ -727,8 +727,12 @@ async function renderBasket(){const panel=document.getElementById('basket-panel'
     if(r.ok&&r.d&&r.d.total)meta.innerHTML='margin '+inr(r.d.total)+(r.d.benefit?' <span class="up">saved '+inr(r.d.benefit)+'</span>':'');else meta.textContent=BASKET.length+' legs';}
   else meta.textContent=BASKET.length+' legs';}
 async function placeBasket(){if(!BASKET.length)return;
-  if(!confirm('Place all '+BASKET.length+' legs? Each passes guardrails + the master switch.'))return;
-  const r=await j2('/basket/place?'+Q,'POST',{legs:BASKET});
+  // Phase 1: ask the server for a confirm code + review (proves the confirm server-side).
+  const prep=await j2('/basket/place?'+Q,'POST',{legs:BASKET});
+  if(!prep.ok||!prep.d.confirm_code){alert(prep.d.detail||'basket prepare failed');return;}
+  if(!confirm('Place '+prep.d.count+' legs?\n'+(prep.d.review||[]).join('\n')+'\n\nEach passes guardrails + the master switch.'))return;
+  // Phase 2: place with the server-issued code.
+  const r=await j2('/basket/place?'+Q,'POST',{confirm_code:prep.d.confirm_code});
   if(r.ok){const p=r.d.placed||0;alert('Placed '+p+'/'+r.d.total+' legs.'+(p<r.d.total?' Some failed — check the order book.':''));BASKET=[];renderBasket();loadOrderBook();}
   else alert(r.d.detail||'basket failed');}
 async function setGtt(){
