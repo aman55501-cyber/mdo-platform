@@ -182,6 +182,75 @@ def test_tips_defaults_and_state():
     assert st2.get("alert") is True                # below stop -> alert
 
 
+# --- screener LLM column mapper --------------------------------------------------
+_CANDS = {
+    "pe": ["Price to Earning", "P/E"],
+    "roe": ["Return on equity", "ROE %"],
+    "industry": ["Industry", "Sub-Industry"],
+}
+
+
+def test_screener_static_map_and_no_llm_when_complete():
+    from shares_cfo.analysis import screener_map as sm
+
+    def boom(prompt, timeout):
+        raise AssertionError("LLM must not be called when static maps everything")
+
+    headers = ["Name", "P/E", "Return on equity", "Industry"]
+    m = sm.resolve(headers, _CANDS, call_fn=boom)     # all present -> pure static, no call
+    assert m == {"pe": "P/E", "roe": "Return on equity", "industry": "Industry"}
+
+
+def test_screener_llm_fills_gap():
+    from shares_cfo.analysis import screener_map as sm
+    headers = ["Name", "P/E", "Return on Equity (%)"]  # roe header static can't match
+    calls = {"n": 0}
+
+    def fake(prompt, timeout):
+        calls["n"] += 1
+        assert "roe" in prompt and "Return on Equity (%)" in prompt  # only the gap is asked
+        return '{"roe": "Return on Equity (%)"}'
+
+    m = sm.resolve(headers, _CANDS, call_fn=fake)
+    assert m["pe"] == "P/E" and m["roe"] == "Return on Equity (%)" and calls["n"] == 1
+
+
+def test_screener_rejects_hallucinated_header():
+    from shares_cfo.analysis import screener_map as sm
+    headers = ["Name", "P/E"]
+
+    def liar(prompt, timeout):
+        return '{"roe": "Column That Does Not Exist", "industry": "Also Fake"}'
+
+    m = sm.resolve(headers, _CANDS, call_fn=liar)
+    assert m == {"pe": "P/E"}                          # invented headers dropped, not trusted
+
+
+def test_screener_mapping_cached(tmp_path=None):
+    from shares_cfo.analysis import screener_map as sm
+    d = Path(tmp_path or tempfile.mkdtemp())
+    headers = ["Name", "P/E", "Return on Equity (%)"]
+
+    m1 = sm.resolve(headers, _CANDS, cache_dir=d, call_fn=lambda p, t: '{"roe": "Return on Equity (%)"}')
+    assert m1["roe"] == "Return on Equity (%)"
+
+    def boom(prompt, timeout):
+        raise AssertionError("second resolve must hit the cache, not the LLM")
+
+    m2 = sm.resolve(headers, _CANDS, cache_dir=d, call_fn=boom)
+    assert m2 == m1
+
+
+def test_screener_text_field_passthrough():
+    from shares_cfo.analysis import fundamentals as fun
+    mapping = {"industry": "Industry", "pe": "P/E", "de": "Debt to equity"}
+    row = {"Industry": "Auto Ancillary", "P/E": "12.5", "Debt to equity": "0.8"}
+    fields = fun._map_row(row, mapping)
+    assert fields["industry"] == "Auto Ancillary"     # text passed through, not float-parsed
+    assert fields["pe"] == 12.5
+    assert fields["de"] == 0.8                         # screener D/E stays a ratio
+
+
 # --- order model segment awareness ----------------------------------------------
 def test_order_segment_awareness():
     o = _order(quantity=150)                        # 2 lots

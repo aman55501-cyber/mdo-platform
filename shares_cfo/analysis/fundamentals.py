@@ -29,7 +29,14 @@ COLMAP = {
     # Screener exports market cap in ₹ Crore — used to bucket holdings large/mid/small/micro.
     "market_cap": ["Market Capitalization", "Market Cap", "Market capitalization",
                    "Mar Cap Rs.Cr", "Mar Cap", "Market Cap Rs.Cr"],
+    # Text (name) fields — the sub-sector drill reads `industry`. Left un-mapped by most
+    # exports; the LLM mapper (screener_map) finds them when the header text varies.
+    "industry": ["Industry", "Sub-Industry", "Sub Industry", "Sub-sector", "Sub Sector"],
+    "sector": ["Sector", "Macro Sector", "Basic Industry"],
 }
+
+# Canonical fields that carry TEXT, not a number — passed through verbatim (never to_float).
+TEXT_FIELDS = {"industry", "sector"}
 
 
 # Canonical units for scoring (the single convention every threshold assumes):
@@ -111,16 +118,28 @@ def _row_name(row: dict) -> str:
     return (str(row.get("Name") or row.get("Symbol") or row.get("NSE Code") or "")).upper()
 
 
-def _map_row(row: dict) -> dict:
-    """Turn one export row into canonical {field: value} (de as a ratio, rest as-is)."""
+def resolve_mapping(headers: list[str]) -> dict:
+    """{canonical_field: exact_header} for this export's headers — static candidates first,
+    then the LLM mapper fills only what static missed (cached per header-set, off any hot
+    path). Degrades to the pure static map when the LLM is unavailable — never regresses."""
+    from . import screener_map
+    return screener_map.resolve(headers, COLMAP, cache_dir=SCREENER_DIR)
+
+
+def _map_row(row: dict, mapping: dict) -> dict:
+    """Turn one export row into canonical {field: value} using a resolved header mapping.
+    Numbers are parsed deterministically (de as a ratio); TEXT_FIELDS pass through as-is."""
     fields = {}
-    for canon, headers in COLMAP.items():
-        for hdr in headers:
-            if hdr in row and row[hdr] not in ("", None):
-                val = to_float(row[hdr])
-                if val is not None:
-                    fields[canon] = _norm_de(val, as_ratio=True) if canon == "de" else val
-                break
+    for canon, hdr in mapping.items():
+        raw = row.get(hdr)
+        if raw in ("", None):
+            continue
+        if canon in TEXT_FIELDS:
+            fields[canon] = str(raw).strip()
+            continue
+        val = to_float(raw)
+        if val is not None:
+            fields[canon] = _norm_de(val, as_ratio=True) if canon == "de" else val
     return fields
 
 
@@ -139,14 +158,16 @@ def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
     if not latest:
         return None
     sym = symbol.upper().strip()
-    for row in _rows_from_file(latest):
+    rows = _rows_from_file(latest)
+    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
+    for row in rows:
         code = (str(row.get("NSE Code") or row.get("Symbol") or row.get("Ticker") or "")).upper().strip()
         name = _row_name(row)
         # Exact NSE-code match is the strong signal; a name match must be the WHOLE
         # symbol as the first token — so "IOC" never matches the "BIOCON LTD" row (the
         # same bidirectional-substring bug fixed in reconciliation).
         if (code and code == sym) or (name and (name == sym or name.split()[0] == sym)):
-            fields = _map_row(row)
+            fields = _map_row(row, mapping)
             if fields:
                 return {"fields": fields, "source": "screener", "confidence": "high"}
     return None
@@ -157,12 +178,14 @@ def load_universe() -> list[dict]:
     latest = _latest_file()
     if not latest:
         return []
+    rows = _rows_from_file(latest)
+    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
     out = []
-    for row in _rows_from_file(latest):
+    for row in rows:
         name = _row_name(row)
         if not name:
             continue
-        fields = _map_row(row)
+        fields = _map_row(row, mapping)
         if fields:
             out.append({"symbol": name.split()[0], "name": name, "fields": fields})
     return out
@@ -177,9 +200,11 @@ def market_caps() -> dict:
     latest = _latest_file()
     if not latest:
         return {}
+    rows = _rows_from_file(latest)
+    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
     out: dict = {}
-    for row in _rows_from_file(latest):
-        mc = _map_row(row).get("market_cap")
+    for row in rows:
+        mc = _map_row(row, mapping).get("market_cap")
         if mc is None:
             continue
         code = str(row.get("NSE Code") or row.get("Symbol") or "").strip().upper()
@@ -204,11 +229,13 @@ def screener_status() -> dict:
         return {"loaded": False, "reason": "no Screener export dropped yet",
                 "drop_zone": str(SCREENER_DIR)}
     import time
+    from . import screener_map
     age_days = round((time.time() - latest.stat().st_mtime) / 86400.0, 1)
     rows = _rows_from_file(latest)
     headers = list(rows[0].keys()) if rows else []
-    mapped = {canon: next((h for h in cands if h in headers), None)
-              for canon, cands in COLMAP.items()}
+    static = screener_map._static_map(headers, COLMAP)
+    resolved = resolve_mapping(headers)   # static + LLM-filled, cached
+    llm_added = [k for k in resolved if k not in static]
     name_col = next((c for c in ("Name", "Symbol", "NSE Code") if c in headers), None)
     return {
         "loaded": True,
@@ -218,8 +245,11 @@ def screener_status() -> dict:
         "stale": age_days > 45,   # a months-old export silently powering "ideas" is a trap
         "companies": len(rows),
         "name_column": name_col,
-        "fields_detected": {k: v for k, v in mapped.items() if v},
-        "fields_missing": [k for k, v in mapped.items() if not v],
+        "fields_detected": resolved,                 # {canonical: actual header}
+        "fields_missing": [k for k in COLMAP if k not in resolved],
+        "mapper": "llm+static" if llm_added else "static",
+        "llm_mapped_fields": llm_added,              # which fields the LLM rescued
+        "llm_mapping_enabled": screener_map.enabled(),
     }
 
 

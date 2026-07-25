@@ -2725,7 +2725,7 @@ async def fundamentals(request: Request, ticker: str, token: str | None = Query(
     """Fundamentals for a symbol (yfinance free + Screener CSV if exported)."""
     _check_token(request, token)
     from .analysis import fundamentals as fun
-    return fun.get(ticker)
+    return await asyncio.to_thread(fun.get, ticker)  # may resolve headers (LLM) off the loop
 
 
 @app.get("/fundamentals/screener/status")
@@ -2733,7 +2733,7 @@ async def screener_status(request: Request, token: str | None = Query(default=No
     """What Screener Premium data is loaded (active file, company count, mapped fields)."""
     _check_token(request, token)
     from .analysis import fundamentals as fun
-    return fun.screener_status()
+    return await asyncio.to_thread(fun.screener_status)  # header resolve/warm, off the loop
 
 
 @app.post("/fundamentals/screener/upload")
@@ -2759,7 +2759,9 @@ async def screener_upload(request: Request, file: UploadFile = File(...),
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (15 MB max).")
     dest.write_bytes(data)
-    status = fun.screener_status()
+    # Resolve + warm the header mapping for the new export now (off the loop), so the
+    # first fundamentals read after an upload is instant and the status reflects it.
+    status = await asyncio.to_thread(fun.screener_status)
     return {"uploaded": dest.name, "bytes": len(data), "status": status}
 
 
