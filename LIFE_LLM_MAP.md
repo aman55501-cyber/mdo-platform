@@ -37,7 +37,7 @@ flying blind. The map makes those gaps visible.
 3. ✅ Seeded from MDO_VISION.md / MDO_INTEL.md
 
 ### Phase 2 — Close the connector gaps (highest leverage per hour)
-1. **HDFC OAuth callback** → register Railway URL, run the OTP test (unblocks live execution)
+1. **HDFC OAuth callback** → register the VPS/domain URL, run the OTP test (unblocks live execution)
 2. **Staah token** → hotel occupancy becomes a live feed instead of manual entry
 3. **MCP servers** → connect Gmail / Calendar / Drive / Notion to the agent runtime —
    zero scraping, instant coverage of the Legacy/personal domains
@@ -48,7 +48,7 @@ The key insight: **the agents must run in the cloud, on a schedule, and write th
 results into the MDO database** — so findings are waiting in the app/briefing when you
 wake up. Three ways to do it, cheapest first:
 
-1. **Scheduled jobs on Railway (already paid for).** Add cron-style loops inside
+1. **Scheduled jobs on the Hostinger VPS (already paid for).** Add cron-style loops inside
    `mdo_server.py` (asyncio task or APScheduler) that call Grok/Claude APIs nightly:
    - Business Optimizer: scan tender pipeline + competitor wins → draft bid strategies
    - Capital Optimizer: portfolio drift vs pools, screen runs, Singhvi backtest update
@@ -60,7 +60,7 @@ wake up. Three ways to do it, cheapest first:
    system itself* (write new skills, fix scrapers, refine this map). Good for the
    creative/open-ended work; pair with a fresh-session cron (e.g. nightly).
 3. **GitHub Actions cron.** Free tier, runs scripts on schedule, POSTs results to the
-   Railway backend. Good fallback if Railway RAM is tight.
+   VPS backend. Good fallback if the VPS is busy.
 
 Recommended: start with (1) for deterministic scans + (2) weekly for creative
 synthesis (Monday Master Brief).
@@ -80,5 +80,6 @@ unlocks the COO hire.
 - **Screener.in / Tijori API** — fundamentals for the QGLP screen
 - **NSE bhavcopy download** — free EOD data, no session cookies needed
 - **Supabase** — swap SQLite when multi-device writes become a problem
+- **Hostinger deployment**: see DEPLOY_HOSTINGER.md — VPS replaces Railway (persistent DB, Whisper RAM, Chromium)
 - **Notion MCP** — decision log + SOP library synced both ways
 - **Telegram bot revival** — cheapest push channel if Meta WA API drags
