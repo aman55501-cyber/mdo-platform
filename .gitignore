@@ -39,3 +39,8 @@ shares_cfo/data/execution_audit.jsonl
 
 # Generated state (snapshots + audit) — persisted via Docker volume
 shares_cfo/data/state/
+
+# Screener drop-zone: user's Premium exports + runtime caches (universe index,
+# header-map cache) — data, never source. Keep only the README.
+shares_cfo/data/screener/*
+!shares_cfo/data/screener/README.md
