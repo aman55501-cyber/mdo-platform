@@ -252,6 +252,26 @@ CREATE TABLE IF NOT EXISTS portfolio_news (
     read INTEGER DEFAULT 0,
     UNIQUE(ticker, headline)
 );
+CREATE TABLE IF NOT EXISTS life_map_nodes (
+    id TEXT PRIMARY KEY,
+    layer TEXT NOT NULL,
+    label TEXT NOT NULL,
+    detail TEXT DEFAULT '',
+    status TEXT DEFAULT 'planned',
+    kind TEXT DEFAULT '',
+    icon TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    sort INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS life_map_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_node TEXT NOT NULL,
+    to_node TEXT NOT NULL,
+    label TEXT DEFAULT '',
+    UNIQUE(from_node, to_node)
+);
 """)
     await db.commit()
     # Seed competitors if table is empty
@@ -269,6 +289,203 @@ CREATE TABLE IF NOT EXISTS portfolio_news (
             "INSERT OR IGNORE INTO vwlr_competitors (name) VALUES (?)", competitors
         )
         await db.commit()
+    # Seed Life LLM Map if empty
+    async with db.execute("SELECT COUNT(*) as n FROM life_map_nodes") as cur:
+        row = await cur.fetchone()
+    if row["n"] == 0:
+        await _seed_life_map(db)
+    # Seed build roadmap (shown as "Remaining Steps" on /lifemap + sidebar) if empty
+    async with db.execute("SELECT COUNT(*) as n FROM ops_tasks WHERE category='roadmap'") as cur:
+        row = await cur.fetchone()
+    if row["n"] == 0:
+        roadmap = [
+            # (title, description, entity=phase, priority)
+            ("Merge Life LLM Map branch to master",
+             "Railway auto-deploys — /lifemap and this checklist go live", "Phase 2 — Connectors", "critical"),
+            ("HDFC OAuth: register Railway callback + OTP test",
+             "Unlocks live trade execution from Morning Setup", "Phase 2 — Connectors", "critical"),
+            ("Fetch Staah API token",
+             "Hotel occupancy becomes a live feed instead of manual entry", "Phase 2 — Connectors", "high"),
+            ("Decide WhatsApp channel",
+             "Meta Business API vs Tasker webhook — unblocks ops feed + push alerts", "Phase 2 — Connectors", "high"),
+            ("Singhvi extractor live test",
+             "Whisper RAM on Railway free tier — else upgrade plan; manual entry stays the fallback", "Phase 2 — Connectors", "medium"),
+            ("Review first nightly agent report",
+             "Branch claude/agent-reports, runs 01:30 IST — tune the Routine prompt after reading", "Phase 3 — Agents", "high"),
+            ("Attach MCP connectors to Routines",
+             "Gmail/Notion via claude.ai Routines UI — gives agents inbox/docs reach", "Phase 3 — Agents", "medium"),
+            ("Write Tier 1 skill: escalation-routing",
+             "First of 10 playbooks in skills/ — the COO-handoff unlock", "Phase 4 — Skills", "high"),
+            ("Build 13-week cash flow rollup",
+             "Build priority #10 from MDO_VISION §15", "Phase 4 — Skills", "medium"),
+            ("Wire 🔴 alerts to phone push",
+             "WhatsApp/push for critical items — agents reach you unprompted", "Phase 5 — Surfaces", "medium"),
+            ("Monday Master Brief page in app",
+             "Render the weekly agent synthesis as an app module", "Phase 5 — Surfaces", "medium"),
+        ]
+        await db.executemany(
+            "INSERT INTO ops_tasks (title, description, entity, priority, category, assigned_to) "
+            "VALUES (?,?,?,?, 'roadmap', 'Aman')",
+            roadmap,
+        )
+        await db.commit()
+
+
+# ── Life LLM Map seed ───────────────────────────────────────────────────────
+# Layer order drives the left→right column layout on /lifemap.
+LIFE_MAP_LAYERS = [
+    {"key": "principal",  "label": "Principal",            "hint": "The person all of this serves"},
+    {"key": "domains",    "label": "Life & Business",      "hint": "Domains the system manages"},
+    {"key": "sources",    "label": "Data Sources",         "hint": "Raw signals from the real world"},
+    {"key": "connectors", "label": "APIs · MCP · Bridges", "hint": "How signals enter the system"},
+    {"key": "core",       "label": "LLM Core & Agents",    "hint": "Engines that think 24/7"},
+    {"key": "skills",     "label": "Skill Library",        "hint": "Codified playbooks (Tier 1–5)"},
+    {"key": "surfaces",   "label": "Surfaces & Outputs",   "hint": "Where decisions reach Aman"},
+]
+
+# Reconstructed from MDO_VISION.md / MDO_INTEL.md — NOT absolute data.
+# Refine freely from the /lifemap UI; this seed only runs on an empty table.
+LIFE_MAP_SEED_NODES = [
+    # (id, layer, label, detail, status, kind, icon, notes, sort)
+    ("principal", "principal", "Aman Agrawal", "Operator → Architect · 10x ANS in 3 years", "live", "person", "👑",
+     "First-gen industrialist, Raigarh CG. Bottleneck today; COO transition unlocked by Tier 1 skills.", 0),
+
+    # ── Domains ──
+    ("dom_vwlr", "domains", "VWLR — Coal Washery", "₹34.55 Cr tender pipeline · 50% commissioning", "live", "domain", "🏭",
+     "RCR, loading/unloading, rake handling. Tender247 + 15 competitors tracked.", 0),
+    ("dom_aditi", "domains", "Aditi Investments", "₹85.78L liquid → ₹100 Cr in 2 yrs", "live", "domain", "📈",
+     "HDFC Securities. Equities + F&O + US + crypto. Singhvi signal flow.", 1),
+    ("dom_hotel", "domains", "Hotel ANS", "88 rooms · 23% occupancy (focus area)", "live", "domain", "🏨",
+     "Staah inventory, Swiggy/Zomato. AOC-4/MGT-7 currency unknown.", 2),
+    ("dom_compliance", "domains", "Compliance & Legal", "26 entities · 2 critical §454(8) flags", "live", "domain", "⚖️",
+     "Ozone Steel (no ITR PDF) + Rashi Steel (CJM Bilaspur 3616/2026).", 3),
+    ("dom_wealth", "domains", "ANS Wealth OS", "Pools A–D: operating / liquid / illiquid / freedom", "planned", "domain", "💎",
+     "Pool sizes for C and D still TBD.", 4),
+    ("dom_legacy", "domains", "Family & Legacy", "Newborn corpus · HUF/trust · global citizen", "planned", "domain", "👨‍👩‍👦",
+     "Tier 4 skills: newborn-legacy-structure, family-financial-review.", 5),
+    ("dom_health", "domains", "Health & Personal OS", "Health protocol + personal discipline", "planned", "domain", "🫀",
+     "Tier 4: health-protocol.", 6),
+
+    # ── Data sources ──
+    ("src_tender247", "sources", "Tender247", "Tender listings — RCR / loading / rakes", "live", "source", "📋",
+     "Manual login each session. Watch WCL, SCCL, SECL categories.", 0),
+    ("src_whatsapp", "sources", "WhatsApp Ops Groups", "6 VWLR site groups on +91 7000512030", "parked", "source", "💬",
+     "Bridge failed on Railway free tier (Chromium RAM). Alternatives: Tasker webhook / Meta Business API.", 1),
+    ("src_zee", "sources", "Zee Business — Anil Singhvi", "Live 8:00–9:15 AM IST · ~70% claimed accuracy", "building", "source", "📺",
+     "yt-dlp → Whisper → Grok extraction. Manual entry is the reliable fallback.", 2),
+    ("src_hdfc", "sources", "HDFC Securities", "Positions, funds, orders via InvestRight", "building", "source", "🏦",
+     "OAuth + daily OTP. Callback URL still pointing at localhost.", 3),
+    ("src_yahoo", "sources", "Yahoo Finance RSS", "News for all 15 watchlist stocks", "live", "source", "📰", "", 4),
+    ("src_staah", "sources", "Staah · Swiggy · Zomato", "Room inventory + food delivery data", "planned", "source", "🍽️",
+     "Staah API token pending from dashboard.", 5),
+    ("src_mca", "sources", "MCA · GST · IT portals", "Filing status, due dates, notices", "planned", "source", "🏛️",
+     "Manual today. Candidate for scraping or CA-assisted feed.", 6),
+    ("src_nse", "sources", "NSE Block Deals · FII/DII", "Institutional flow signals", "parked", "source", "📊",
+     "Needs session-cookie handling or a paid data provider.", 7),
+    ("src_gsuite", "sources", "Gmail · Calendar · Drive", "Mail, meetings, documents", "planned", "source", "📧",
+     "Best reached via MCP connectors — no scraping needed.", 8),
+
+    # ── Connectors ──
+    ("con_backend", "connectors", "MDO Backend (FastAPI)", "Railway 24/7 · SQLite · proxy for all feeds", "live", "api", "⚙️",
+     "Everything proxies through here to avoid CORS.", 0),
+    ("con_grok", "connectors", "Grok API (xAI)", "grok-4 · x_search + web_search live tools", "live", "api", "🤖", "", 1),
+    ("con_hdfc_api", "connectors", "HDFC InvestRight API", "OAuth2 + OTP · order placement", "building", "api", "🔑",
+     "Auth wired, untested. Register Railway callback URL.", 2),
+    ("con_claude", "connectors", "Claude API / Claude Code", "Agent runtime — skills, routines, repo access", "building", "api", "✨",
+     "Runs in the cloud; this map itself was built by a Claude session.", 3),
+    ("con_mcp", "connectors", "MCP Servers", "Gmail · Calendar · Drive · Notion · Supabase · GitHub", "planned", "mcp", "🔌",
+     "Standard protocol — lets any LLM agent use your accounts as tools.", 4),
+    ("con_ytdlp", "connectors", "yt-dlp + Whisper", "Zee Business audio → transcript", "building", "bridge", "🎙️",
+     "512 MB Railway RAM is the risk; may need Starter plan.", 5),
+    ("con_wa_bridge", "connectors", "WhatsApp Bridge", "whatsapp-web.js — group message ingest", "parked", "bridge", "🌉",
+     "Chromium too heavy for free tier. Meta Business API is plan B.", 6),
+
+    # ── LLM core & agents ──
+    ("core_briefing", "core", "Daily Briefing Engine", "🔴🟡🟢 classified scan across all domains", "live", "engine", "🧠",
+     "What changed → Why it matters → Action. Runs on demand today; make it scheduled.", 0),
+    ("core_grok_qa", "core", "Grok Q&A + Sentiment", "Ask-anything + live X sentiment", "live", "engine", "💬", "", 1),
+    ("core_singhvi", "core", "Singhvi Extractor", "Transcript → structured trade calls", "building", "engine", "📡",
+     "Built, untested on Railway.", 2),
+    ("agent_biz", "core", "Agent — Business Optimizer", "24/7: tenders, competitors, occupancy, bottlenecks", "live", "agent", "🕵️",
+     "LIVE — Claude Routine, nightly 01:30 IST, reports to branch claude/agent-reports + push/email notification.", 3),
+    ("agent_capital", "core", "Agent — Capital Optimizer", "24/7: portfolio drift, screens, position sizing", "live", "agent", "💹",
+     "LIVE — covered by nightly Routine (capital track). Screens, drift checks, watchlist thesis review.", 4),
+    ("agent_compliance", "core", "Agent — Compliance Sentinel", "24/7: filing calendar, notices, court dates", "live", "agent", "🛡️",
+     "LIVE — nightly Routine restates unresolved critical flags with days-elapsed pressure.", 5),
+
+    # ── Skills ──
+    ("skill_t1", "skills", "Tier 1 — Operator → Architect", "10 skills · unlocks COO hire", "building", "skill", "1️⃣",
+     "vendor-evaluation, tender-go-no-go, escalation-routing (NEXT), weekly-operating-review…", 0),
+    ("skill_t2", "skills", "Tier 2 — 10x Growth Engine", "BD pitches, acquisition screens, capex framework", "planned", "skill", "2️⃣",
+     "bd-pitch-generator (JSW first), tender-document-parser, cash-flow-13-week.", 1),
+    ("skill_t3", "skills", "Tier 3 — Capital Discipline", "Screens, sizing, drift, backtesting", "planned", "skill", "3️⃣",
+     "qglp-graham-screen, fo-position-sizer, singhvi-backtester.", 2),
+    ("skill_t4", "skills", "Tier 4 — Legacy & Personal", "Newborn structure, health, legal tracker", "planned", "skill", "4️⃣", "", 3),
+    ("skill_t5", "skills", "Tier 5 — Meta", "monday-master-brief, decision-log, skill iteration", "planned", "skill", "5️⃣", "", 4),
+
+    # ── Surfaces ──
+    ("surf_app", "surfaces", "MDO Web App", "14 live modules · Railway · mobile-first", "live", "surface", "📱", "", 0),
+    ("surf_briefing", "surfaces", "Daily Briefing", "Morning scan — critical items first", "live", "surface", "🗞️", "", 1),
+    ("surf_morning", "surfaces", "Morning Setup → Execute", "Approve calls · execute 9:15 AM via HDFC", "live", "surface", "🌅",
+     "Live execution blocked on HDFC OTP test.", 2),
+    ("surf_push", "surfaces", "WhatsApp / Push Alerts", "Critical alerts reach the phone unprompted", "planned", "surface", "🔔",
+     "Meta WhatsApp Business API or push notifications.", 3),
+    ("surf_weekly", "surfaces", "Monday Master Brief", "Weekly synthesis of all agents' findings", "building", "surface", "📅",
+     "Routine live: Mondays 07:00 IST — synthesis of the week's agent reports.", 4),
+]
+
+LIFE_MAP_SEED_EDGES = [
+    # principal → domains
+    ("principal", "dom_vwlr", ""), ("principal", "dom_aditi", ""), ("principal", "dom_hotel", ""),
+    ("principal", "dom_compliance", ""), ("principal", "dom_wealth", ""), ("principal", "dom_legacy", ""),
+    ("principal", "dom_health", ""),
+    # domains → sources they emit/need
+    ("dom_vwlr", "src_tender247", "tenders"), ("dom_vwlr", "src_whatsapp", "site ops"),
+    ("dom_aditi", "src_zee", "signals"), ("dom_aditi", "src_hdfc", "broker"),
+    ("dom_aditi", "src_yahoo", "news"), ("dom_aditi", "src_nse", "flows"),
+    ("dom_hotel", "src_staah", "occupancy"),
+    ("dom_compliance", "src_mca", "filings"),
+    ("dom_legacy", "src_gsuite", "docs"), ("dom_wealth", "src_hdfc", "portfolio"),
+    # sources → connectors
+    ("src_tender247", "con_backend", ""), ("src_yahoo", "con_backend", ""),
+    ("src_staah", "con_backend", ""), ("src_mca", "con_backend", ""), ("src_nse", "con_backend", ""),
+    ("src_whatsapp", "con_wa_bridge", ""), ("src_zee", "con_ytdlp", ""),
+    ("src_hdfc", "con_hdfc_api", ""), ("src_gsuite", "con_mcp", ""),
+    # connectors → core
+    ("con_backend", "core_briefing", ""), ("con_grok", "core_grok_qa", ""),
+    ("con_grok", "core_singhvi", ""), ("con_ytdlp", "core_singhvi", ""),
+    ("con_wa_bridge", "core_briefing", ""),
+    ("con_claude", "agent_biz", ""), ("con_claude", "agent_capital", ""), ("con_claude", "agent_compliance", ""),
+    ("con_mcp", "agent_biz", ""), ("con_mcp", "agent_compliance", ""),
+    ("con_backend", "agent_biz", ""), ("con_backend", "agent_capital", ""),
+    ("con_hdfc_api", "agent_capital", ""),
+    # core → skills
+    ("agent_biz", "skill_t1", ""), ("agent_biz", "skill_t2", ""),
+    ("agent_capital", "skill_t3", ""), ("agent_compliance", "skill_t1", ""),
+    ("core_briefing", "skill_t5", ""), ("core_singhvi", "skill_t3", ""),
+    ("agent_biz", "skill_t4", ""),
+    # core/skills → surfaces
+    ("core_briefing", "surf_briefing", ""), ("core_singhvi", "surf_morning", ""),
+    ("core_grok_qa", "surf_app", ""),
+    ("skill_t1", "surf_app", ""), ("skill_t2", "surf_app", ""),
+    ("skill_t3", "surf_morning", ""), ("skill_t5", "surf_weekly", ""),
+    ("agent_compliance", "surf_push", ""), ("agent_biz", "surf_weekly", ""),
+    ("agent_capital", "surf_weekly", ""),
+]
+
+
+async def _seed_life_map(db):
+    await db.executemany(
+        """INSERT OR IGNORE INTO life_map_nodes
+           (id, layer, label, detail, status, kind, icon, notes, sort)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        LIFE_MAP_SEED_NODES,
+    )
+    await db.executemany(
+        "INSERT OR IGNORE INTO life_map_edges (from_node, to_node, label) VALUES (?,?,?)",
+        LIFE_MAP_SEED_EDGES,
+    )
+    await db.commit()
 
 def vedanta_conn() -> sqlite3.Connection:
     if not os.path.exists(VEDANTA_DB):
@@ -1725,6 +1942,98 @@ async def intelligence_briefing():
             "info_count": len(grouped["info"]),
         }
     }
+
+# ── Life LLM Map ────────────────────────────────────────────────────────────
+@app.get("/api/lifemap")
+async def lifemap():
+    """Full map: layer definitions + nodes + edges."""
+    db = await vdb()
+    async with db.execute("SELECT * FROM life_map_nodes ORDER BY sort, label") as cur:
+        nodes = [dict(r) for r in await cur.fetchall()]
+    async with db.execute("SELECT * FROM life_map_edges") as cur:
+        edges = [dict(r) for r in await cur.fetchall()]
+    return {"layers": LIFE_MAP_LAYERS, "nodes": nodes, "edges": edges}
+
+@app.post("/api/lifemap/nodes")
+async def lifemap_add_node(body: dict):
+    db = await vdb()
+    label = (body.get("label") or "").strip()
+    layer = (body.get("layer") or "").strip()
+    if not label or layer not in {l["key"] for l in LIFE_MAP_LAYERS}:
+        raise HTTPException(400, "label and a valid layer are required")
+    node_id = body.get("id") or "n_" + "".join(
+        c if c.isalnum() else "_" for c in label.lower()
+    )[:40]
+    await db.execute(
+        """INSERT INTO life_map_nodes (id, layer, label, detail, status, kind, icon, notes, sort)
+           VALUES (?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO NOTHING""",
+        (node_id, layer, label, body.get("detail", ""), body.get("status", "planned"),
+         body.get("kind", ""), body.get("icon", ""), body.get("notes", ""), body.get("sort", 99)),
+    )
+    await db.commit()
+    async with db.execute("SELECT * FROM life_map_nodes WHERE id=?", (node_id,)) as cur:
+        return dict(await cur.fetchone())
+
+@app.put("/api/lifemap/nodes/{node_id}")
+async def lifemap_update_node(node_id: str, body: dict):
+    db = await vdb()
+    fields = {k: v for k, v in body.items()
+              if k in ("layer", "label", "detail", "status", "kind", "icon", "notes", "sort")}
+    if not fields:
+        raise HTTPException(400, "no editable fields provided")
+    sets = ", ".join(f"{k}=?" for k in fields)
+    await db.execute(
+        f"UPDATE life_map_nodes SET {sets}, updated_at=datetime('now') WHERE id=?",
+        (*fields.values(), node_id),
+    )
+    await db.commit()
+    async with db.execute("SELECT * FROM life_map_nodes WHERE id=?", (node_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "node not found")
+    return dict(row)
+
+@app.delete("/api/lifemap/nodes/{node_id}")
+async def lifemap_delete_node(node_id: str):
+    db = await vdb()
+    await db.execute("DELETE FROM life_map_edges WHERE from_node=? OR to_node=?", (node_id, node_id))
+    await db.execute("DELETE FROM life_map_nodes WHERE id=?", (node_id,))
+    await db.commit()
+    return {"deleted": node_id}
+
+@app.post("/api/lifemap/edges")
+async def lifemap_add_edge(body: dict):
+    db = await vdb()
+    frm, to = body.get("from_node"), body.get("to_node")
+    if not frm or not to or frm == to:
+        raise HTTPException(400, "from_node and to_node (distinct) are required")
+    await db.execute(
+        "INSERT OR IGNORE INTO life_map_edges (from_node, to_node, label) VALUES (?,?,?)",
+        (frm, to, body.get("label", "")),
+    )
+    await db.commit()
+    async with db.execute(
+        "SELECT * FROM life_map_edges WHERE from_node=? AND to_node=?", (frm, to)
+    ) as cur:
+        return dict(await cur.fetchone())
+
+@app.delete("/api/lifemap/edges/{edge_id}")
+async def lifemap_delete_edge(edge_id: int):
+    db = await vdb()
+    await db.execute("DELETE FROM life_map_edges WHERE id=?", (edge_id,))
+    await db.commit()
+    return {"deleted": edge_id}
+
+@app.post("/api/lifemap/reset")
+async def lifemap_reset():
+    """Wipe the map and restore the seed. Destructive — UI asks for confirmation."""
+    db = await vdb()
+    await db.execute("DELETE FROM life_map_edges")
+    await db.execute("DELETE FROM life_map_nodes")
+    await db.commit()
+    await _seed_life_map(db)
+    return {"reset": True}
 
 # ── run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

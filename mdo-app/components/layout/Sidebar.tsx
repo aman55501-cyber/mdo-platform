@@ -5,15 +5,17 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Brain, TrendingUp, MessageSquare, ShieldAlert,
-  Wifi, WifiOff, Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun
+  Wifi, WifiOff, Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun, Network
 } from "lucide-react"
 import { useLiveStore } from "@/lib/store"
+import { NextStepsMini } from "@/components/RemainingSteps"
 
 const NAV_SECTIONS = [
   {
     label: "Command",
     items: [
       { href: "/",           icon: LayoutDashboard, label: "Dashboard"        },
+      { href: "/lifemap",    icon: Network,         label: "Life LLM Map"     },
       { href: "/briefing",   icon: ShieldAlert,     label: "Daily Briefing"   },
       { href: "/feeds",      icon: Rss,             label: "Live Feeds"       },
       { href: "/intel",      icon: Brain,           label: "Intel Centre"     },
@@ -166,6 +168,9 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Remaining roadmap steps — always visible */}
+      <NextStepsMini />
 
       {/* Quick external links / Portals */}
       <div
