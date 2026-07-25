@@ -306,8 +306,8 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
              "Unlocks live trade execution from Morning Setup", "Phase 2 — Connectors", "critical"),
             ("Fetch Staah API token",
              "Hotel occupancy becomes a live feed instead of manual entry", "Phase 2 — Connectors", "high"),
-            ("Decide WhatsApp channel",
-             "Revive Chromium bridge on the VPS vs Meta Business API — unblocks ops feed + push alerts", "Phase 2 — Connectors", "high"),
+            ("Scan WhatsApp QR after VPS launch",
+             "Baileys bridge is integrated — open VWLR Ops Feed page, scan once; session persists", "Phase 2 — Connectors", "high"),
             ("Singhvi extractor live test",
              "VPS has the RAM — run yt-dlp → Whisper → Grok end-to-end; manual entry stays fallback", "Phase 2 — Connectors", "medium"),
             ("Review first nightly agent report",
@@ -369,8 +369,8 @@ LIFE_MAP_SEED_NODES = [
     # ── Data sources ──
     ("src_tender247", "sources", "Tender247", "Tender listings — RCR / loading / rakes", "live", "source", "📋",
      "Manual login each session. Watch WCL, SCCL, SECL categories.", 0),
-    ("src_whatsapp", "sources", "WhatsApp Ops Groups", "6 VWLR site groups on +91 7000512030", "parked", "source", "💬",
-     "Revivable on Hostinger VPS — Chromium fits now. Meta Business API stays plan B.", 1),
+    ("src_whatsapp", "sources", "WhatsApp Ops Groups", "6 VWLR site groups on +91 7000512030", "building", "source", "💬",
+     "Baileys bridge ships in docker-compose — scan QR once on the Ops Feed page.", 1),
     ("src_zee", "sources", "Zee Business — Anil Singhvi", "Live 8:00–9:15 AM IST · ~70% claimed accuracy", "building", "source", "📺",
      "yt-dlp → Whisper → Grok extraction. Manual entry is the reliable fallback.", 2),
     ("src_hdfc", "sources", "HDFC Securities", "Positions, funds, orders via InvestRight", "building", "source", "🏦",
@@ -397,10 +397,12 @@ LIFE_MAP_SEED_NODES = [
      "Standard protocol — lets any LLM agent use your accounts as tools.", 4),
     ("con_ytdlp", "connectors", "yt-dlp + Whisper", "Zee Business audio → transcript", "building", "bridge", "🎙️",
      "Unblocked by Hostinger VPS RAM — ready for live test.", 5),
-    ("con_wa_bridge", "connectors", "WhatsApp Bridge", "whatsapp-web.js — group message ingest", "parked", "bridge", "🌉",
-     "Chromium too heavy for free tier. Meta Business API is plan B.", 6),
+    ("con_wa_bridge", "connectors", "WhatsApp Bridge", "Baileys — no Chromium needed", "building", "bridge", "🌉",
+     "Rewritten on Baileys (WebSocket) — runs as a compose service on the VPS.", 6),
 
     # ── LLM core & agents ──
+    ("core_brain", "core", "MDO Brain", "LLM with 18 live tools over the whole backend", "live", "engine", "🧠",
+     "Claude (claude-opus-5) with Grok fallback. Chat in-app; same tools exposed via MCP to the Claude phone app.", 0),
     ("core_briefing", "core", "Daily Briefing Engine", "🔴🟡🟢 classified scan across all domains", "live", "engine", "🧠",
      "What changed → Why it matters → Action. Runs on demand today; make it scheduled.", 0),
     ("core_grok_qa", "core", "Grok Q&A + Sentiment", "Ask-anything + live X sentiment", "live", "engine", "💬", "", 1),
@@ -459,6 +461,10 @@ LIFE_MAP_SEED_EDGES = [
     ("con_mcp", "agent_biz", ""), ("con_mcp", "agent_compliance", ""),
     ("con_backend", "agent_biz", ""), ("con_backend", "agent_capital", ""),
     ("con_hdfc_api", "agent_capital", ""),
+    # brain wiring
+    ("con_backend", "core_brain", ""), ("con_claude", "core_brain", ""),
+    ("con_grok", "core_brain", ""), ("con_wa_bridge", "core_brain", "ops feed"),
+    ("core_brain", "surf_app", "chat"), ("core_brain", "skill_t1", ""),
     # core → skills
     ("agent_biz", "skill_t1", ""), ("agent_biz", "skill_t2", ""),
     ("agent_capital", "skill_t3", ""), ("agent_compliance", "skill_t1", ""),
@@ -495,13 +501,23 @@ def vedanta_conn() -> sqlite3.Connection:
     return conn
 
 # _"__"_ app _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
+# MDO Brain: MCP server is mounted at /mcp/<MDO_MCP_SECRET>/ when the secret is
+# set — that URL is what the Claude app connects to as a custom connector.
+MCP_SECRET = os.environ.get("MDO_MCP_SECRET", "").strip()
+_mcp_manager = None  # assigned at the bottom of this file once tools exist
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await vdb()  # connect on startup
     print(f"\n___ MDO Server running at http://localhost:{PORT}")
     print(f"   VEGA DB:    {VEGA_DB}")
     print(f"   Vedanta DB: {VEDANTA_DB}\n")
-    yield
+    if _mcp_manager is not None:
+        print(f"   MCP server mounted at /mcp/{MCP_SECRET}/mcp\n")
+        async with _mcp_manager.run():
+            yield
+    else:
+        yield
     if _vdb:
         await _vdb.close()
 
@@ -2034,6 +2050,54 @@ async def lifemap_reset():
     await db.commit()
     await _seed_life_map(db)
     return {"reset": True}
+
+# ── MDO Brain — the LLM layer around this whole backend ────────────────────
+import mdo_brain
+
+mdo_brain.configure({
+    "tenders":     vwlr_tenders,
+    "leads":       vwlr_leads,
+    "followups":   vwlr_followups,
+    "competitors": vwlr_competitors,
+    "bid":         vwlr_bid,
+    "filings":     compliance_filings,
+    "entities":    entities,
+    "pools":       aditi_pools,
+    "hotel":       hotel_daily,
+    "watchlist":   market_watchlist,
+    "briefing":    intelligence_briefing,
+    "tasks":       ops_tasks,
+    "task_add":    ops_task_add,
+    "intel_add":   intel_add,
+    "lifemap":     lifemap,
+    "wa_messages": whatsapp_messages,
+    "wa_groups":   whatsapp_groups,
+})
+
+@app.post("/api/brain/ask")
+async def brain_ask_endpoint(body: dict):
+    """Ask the MDO Brain — an LLM with live tool access to the whole business."""
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(400, "question required")
+    try:
+        return await mdo_brain.brain_ask(question, body.get("history") or [])
+    except Exception as e:
+        return {"answer": f"Brain error: {type(e).__name__}: {e}", "tools_used": [],
+                "provider": None, "model": None}
+
+@app.get("/api/brain/status")
+async def brain_status():
+    st = mdo_brain.provider_status()
+    st["mcp_mounted"] = _mcp_manager is not None
+    return st
+
+if MCP_SECRET:
+    _mcp_manager = mdo_brain.build_mcp_manager()
+    if _mcp_manager is not None:
+        async def _mcp_asgi(scope, receive, send):
+            await _mcp_manager.handle_request(scope, receive, send)
+        app.mount(f"/mcp/{MCP_SECRET}", _mcp_asgi)
 
 # ── run ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
