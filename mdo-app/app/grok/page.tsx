@@ -26,12 +26,14 @@ export default function BrainPage() {
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<{ active: string | null; tools: string[] } | null>(null)
+  const [unreachable, setUnreachable] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages])
   useEffect(() => {
     fetch(`${BASE}/api/brain/status`, { cache: "no-store" })
-      .then(r => r.json()).then(setStatus).catch(() => {})
+      .then(r => r.json()).then(s => { setStatus(s); setUnreachable(false) })
+      .catch(() => setUnreachable(true))
   }, [])
 
   async function send(text: string) {
@@ -67,10 +69,14 @@ export default function BrainPage() {
       <div className="flex items-center gap-3 mb-4">
         <Brain size={20} style={{ color: "var(--accent2)" }} />
         <h1 className="text-2xl font-bold">MDO Brain</h1>
-        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--bg3)", color: "var(--text2)" }}>
-          {status?.active
-            ? `${status.active} · ${status.tools?.length ?? 0} live tools`
-            : "no LLM key configured"}
+        <span className="text-xs px-2 py-0.5 rounded-full"
+          style={{ background: unreachable ? "rgba(239,68,68,0.15)" : "var(--bg3)",
+                   color: unreachable ? "var(--red)" : "var(--text2)" }}>
+          {unreachable
+            ? `backend unreachable at ${BASE}`
+            : status?.active
+              ? `${status.active} · ${status.tools?.length ?? 0} live tools`
+              : status ? "no LLM key configured" : "checking…"}
         </span>
       </div>
       <p className="text-xs mb-4" style={{ color: "var(--text2)" }}>
