@@ -297,6 +297,27 @@ async def _dispatch(name: str, a: dict) -> Any:
 
 # ── provider: Claude (preferred) ─────────────────────────────────────────────
 MAX_TURNS = 8
+_fallbacks_supported = True  # flipped off if the account lacks the beta
+
+async def _claude_create(client, **kwargs):
+    """messages.create with server-side refusal fallback (beta) — degrades
+    gracefully if this account doesn't have the beta enabled."""
+    global _fallbacks_supported
+    import anthropic
+
+    if _fallbacks_supported:
+        try:
+            return await client.messages.create(
+                extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+                extra_body={"fallbacks": "default"},
+                **kwargs,
+            )
+        except anthropic.BadRequestError as e:
+            if "fallback" not in str(e).lower():
+                raise
+            _fallbacks_supported = False  # remember; retry plain below
+    return await client.messages.create(**kwargs)
+
 
 async def _ask_claude(question: str, history: list[dict]) -> dict:
     import anthropic
@@ -310,16 +331,13 @@ async def _ask_claude(question: str, history: list[dict]) -> dict:
     trace: list[str] = []
 
     for _ in range(MAX_TURNS):
-        response = await client.messages.create(
+        response = await _claude_create(
+            client,
             model="claude-opus-5",
             max_tokens=16000,
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             tools=tool_defs,
             messages=messages,
-            # Server-side refusal fallback (beta): if safety classifiers decline,
-            # the API transparently re-runs on Anthropic's recommended fallback.
-            extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-            extra_body={"fallbacks": "default"},
         )
 
         if response.stop_reason == "refusal":
@@ -413,7 +431,20 @@ async def brain_ask(question: str, history: list[dict] | None = None) -> dict:
     ][-12:]
     status = provider_status()
     if status["active"] == "claude":
-        return await _ask_claude(question, history)
+        try:
+            return await _ask_claude(question, history)
+        except Exception as e:
+            # bad/expired Claude key or account issue → degrade to Grok if possible
+            import anthropic
+            auth_issue = isinstance(e, (anthropic.AuthenticationError, anthropic.PermissionDeniedError))
+            if status["grok"]:
+                result = await _ask_grok(question, history)
+                result["note"] = f"Claude unavailable ({type(e).__name__}) — answered via Grok"
+                return result
+            if auth_issue:
+                return {"answer": "ANTHROPIC_API_KEY looks invalid — check it in .env, or add GROK_API_KEY as fallback.",
+                        "tools_used": [], "provider": None, "model": None}
+            raise
     if status["active"] == "grok":
         return await _ask_grok(question, history)
     return {"answer": "No LLM key configured. Set ANTHROPIC_API_KEY (preferred) or GROK_API_KEY in .env.",
