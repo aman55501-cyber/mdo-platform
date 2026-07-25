@@ -251,6 +251,44 @@ def test_screener_text_field_passthrough():
     assert fields["de"] == 0.8                         # screener D/E stays a ratio
 
 
+# --- sub-sector grouping (sector tile -> industries) -----------------------------
+def test_subsector_split_and_unclassified():
+    # mirrors holdings_grouped._summarise/_group(subkey) shape without the web layer
+    def summarise(name, rows):
+        value = sum(s["value"] for s in rows)
+        return {"name": name, "value": value, "count": len(rows),
+                "stocks": sorted(rows, key=lambda x: -x["value"])}
+
+    def group(stocks, key, subkey=None):
+        buckets = {}
+        for s in stocks:
+            buckets.setdefault(s[key], []).append(s)
+        out = []
+        for name, rows in buckets.items():
+            entry = summarise(name, rows)
+            if subkey:
+                subs = {}
+                for s in rows:
+                    subs.setdefault(s.get(subkey) or "Unclassified", []).append(s)
+                entry["sub_sectors"] = sorted((summarise(sn, sr) for sn, sr in subs.items()),
+                                              key=lambda g: -g["value"])
+            out.append(entry)
+        return out
+
+    stocks = [
+        {"symbol": "BOSCHLTD", "sector": "AUTO", "industry": "Auto Ancillary", "value": 300},
+        {"symbol": "MOTHERSON", "sector": "AUTO", "industry": "Auto Ancillary", "value": 200},
+        {"symbol": "TVSMOTOR", "sector": "AUTO", "industry": "2-Wheelers", "value": 500},
+        {"symbol": "XYZ", "sector": "AUTO", "industry": None, "value": 50},
+    ]
+    auto = group(stocks, "sector", subkey="industry")[0]
+    subs = {s["name"]: s for s in auto["sub_sectors"]}
+    assert auto["value"] == 1050 and len(auto["sub_sectors"]) == 3
+    assert subs["2-Wheelers"]["value"] == 500                 # sorted first (largest)
+    assert subs["Auto Ancillary"]["value"] == 500 and subs["Auto Ancillary"]["count"] == 2
+    assert "Unclassified" in subs and subs["Unclassified"]["value"] == 50
+
+
 # --- order model segment awareness ----------------------------------------------
 def test_order_segment_awareness():
     o = _order(quantity=150)                        # 2 lots

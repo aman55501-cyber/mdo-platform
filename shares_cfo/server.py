@@ -2129,6 +2129,7 @@ async def holdings_grouped(request: Request, token: str | None = Query(default=N
     from . import themes
     book = await _consolidated()
     caps = await asyncio.to_thread(fundamentals.market_caps)  # file read, off the loop
+    inds = await asyncio.to_thread(fundamentals.industries)   # NSE code -> sub-sector
 
     agg: dict = {}
     for a in book.get("accounts", []):
@@ -2168,38 +2169,50 @@ async def holdings_grouped(request: Request, token: str | None = Query(default=N
             "avg_price": round(o["invested"] / o["qty"], 2) if o["qty"] else None,
             "market_cap": mcap, "cap": _cap_bucket(mcap),
             "sector": themes.theme_of(o["symbol"], o["sector"]),
+            "industry": inds.get(o["symbol"]) or None,   # sub-sector, None if not in export
             "holders": sorted(o["holders"]),
         })
 
-    def _group(key: str) -> list:
+    def _summarise(name: str, rows: list) -> dict:
+        value = sum(s["value"] for s in rows)
+        invested = sum(s["invested"] for s in rows)
+        day_change = sum(s["day_change"] for s in rows)
+        prev = value - day_change
+        rows = sorted(rows, key=lambda x: -x["value"])
+        return {"name": name, "value": round(value, 2),
+                "day_change": round(day_change, 2),
+                "day_pct": round(day_change / prev * 100, 2) if prev else 0.0,
+                "unrealised": round(value - invested, 2),
+                "unrealised_pct": round((value / invested - 1) * 100, 2) if invested else 0.0,
+                "weight": round(value / total * 100, 2),
+                "count": len(rows), "stocks": rows}
+
+    def _group(key: str, subkey: str | None = None) -> list:
         groups: dict = {}
         for s in stocks:
-            g = groups.setdefault(s[key], {"name": s[key], "value": 0.0, "invested": 0.0,
-                                           "day_change": 0.0, "count": 0, "stocks": []})
-            g["value"] += s["value"]
-            g["invested"] += s["invested"]
-            g["day_change"] += s["day_change"]
-            g["count"] += 1
-            g["stocks"].append(s)
+            groups.setdefault(s[key], []).append(s)
         out = []
-        for g in groups.values():
-            prev = g["value"] - g["day_change"]
-            g["stocks"].sort(key=lambda x: -x["value"])
-            out.append({"name": g["name"], "value": round(g["value"], 2),
-                        "day_change": round(g["day_change"], 2),
-                        "day_pct": round(g["day_change"] / prev * 100, 2) if prev else 0.0,
-                        "unrealised": round(g["value"] - g["invested"], 2),
-                        "unrealised_pct": round((g["value"] / g["invested"] - 1) * 100, 2) if g["invested"] else 0.0,
-                        "weight": round(g["value"] / total * 100, 2),
-                        "count": g["count"], "stocks": g["stocks"]})
+        for name, rows in groups.items():
+            entry = _summarise(name, rows)
+            if subkey:
+                # split this group into sub-groups (e.g. a sector into its industries);
+                # stocks with no sub-value fall under "Unclassified".
+                subs: dict = {}
+                for s in rows:
+                    subs.setdefault(s.get(subkey) or "Unclassified", []).append(s)
+                entry["sub_sectors"] = sorted(
+                    (_summarise(sn, srows) for sn, srows in subs.items()),
+                    key=lambda g: -g["value"])
+            out.append(entry)
         return out
 
     by_cap = _group("cap")
     by_cap.sort(key=lambda g: _CAP_ORDER.get(g["name"], 9))
-    by_sector = _group("sector")
+    by_sector = _group("sector", subkey="industry")
     by_sector.sort(key=lambda g: -g["value"])
     return {"as_of": book.get("as_of"), "total": round(total, 2),
-            "by_cap": by_cap, "by_sector": by_sector, "screener_loaded": bool(caps)}
+            "by_cap": by_cap, "by_sector": by_sector,
+            "screener_loaded": bool(caps), "industries_loaded": bool(inds)}
 
 
 @app.get("/analysis/{ticker}")

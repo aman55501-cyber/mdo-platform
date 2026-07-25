@@ -216,6 +216,31 @@ def market_caps() -> dict:
     return out
 
 
+def industries() -> dict:
+    """{NSE_SYMBOL: industry} from the latest export — to split a broad sector tile into
+    its sub-sectors (Auto → Auto Ancillary / 2-Wheelers …). Empty when the export carries
+    no Industry column. Keyed by NSE code to match broker holdings symbols."""
+    latest = _latest_file()
+    if not latest:
+        return {}
+    rows = _rows_from_file(latest)
+    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
+    if "industry" not in mapping:
+        return {}
+    out: dict = {}
+    for row in rows:
+        ind = _map_row(row, mapping).get("industry")
+        if not ind:
+            continue
+        code = str(row.get("NSE Code") or row.get("Symbol") or "").strip().upper()
+        if not code:
+            nm = _row_name(row)
+            code = nm.split()[0] if nm else ""
+        if code:
+            out[code] = str(ind).strip()
+    return out
+
+
 def screener_status() -> dict:
     """What Screener data is currently loaded — for the dashboard/status view.
 

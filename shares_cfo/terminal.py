@@ -776,19 +776,36 @@ function renderGrouped(){
 }
 function drillGroup(i){const groups=(GVIEW==='cap'?GROUPED.by_cap:GROUPED.by_sector)||[];if(groups[i])showGroup(groups[i]);}
 function drillSector(enc){const name=decodeURIComponent(enc);const g=((GROUPED&&GROUPED.by_sector)||[]).find(x=>x.name===name);if(g)showGroup(g);}
+function stockRow(s){const pnl=s.unrealised>=0;
+  return '<div class="row" onclick="openShare(\''+s.symbol+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:3px">'
+    +'<div style="display:flex;align-items:baseline;gap:8px"><span class="rn">'+s.symbol+'</span>'
+    +'<span class="rsub">'+(s.cap||'')+' · '+(s.holders||[]).join(', ')+' · '+s.weight+'%</span>'
+    +'<span class="p" style="margin-left:auto;font-family:var(--fm)">'+inr(s.value)+' <span class="'+cl(s.day_pct)+'" style="font-size:11px">'+sp(s.day_pct)+'</span></span></div>'
+    +'<div class="rsub mono" style="color:var(--n600)">Qty '+s.qty+' · Avg '+(s.avg_price!=null?s.avg_price:'—')+' · LTP '+(s.last_price!=null?s.last_price:'—')+' · Inv '+inr(s.invested)+'</div>'
+    +'<div class="rsub"><span class="'+(pnl?'up':'down')+'">Unrealised '+(pnl?'+':'')+inr(s.unrealised)+' ('+(pnl?'+':'')+s.unrealised_pct+'%)</span></div>'
+    +'</div>';}
+function subSectorBlock(sub,si){const pnl=sub.unrealised>=0;
+  return '<div style="border:1px solid var(--n300);margin:6px 0;border-radius:2px;overflow:hidden">'
+    +'<div onclick="toggleSub('+si+')" style="display:flex;align-items:baseline;gap:8px;padding:9px 12px;cursor:pointer;background:var(--n100)">'
+      +'<span class="cav" id="cav-'+si+'" style="color:var(--n500);font-size:11px">▸</span>'
+      +'<span class="rn">'+sub.name+'</span><span class="rsub">'+sub.count+' · '+sub.weight+'%</span>'
+      +'<span class="p" style="margin-left:auto;font-family:var(--fm)">'+inr(sub.value)+' <span class="'+cl(sub.day_pct)+'" style="font-size:11px">'+sp(sub.day_pct)+'</span>'
+      +' <span class="'+(pnl?'up':'down')+'" style="font-size:11px">'+(pnl?'+':'')+inr(sub.unrealised)+'</span></span></div>'
+    +'<div class="subbody" id="subbody-'+si+'" style="display:none">'+(sub.stocks||[]).map(stockRow).join('')+'</div></div>';}
+function toggleSub(si){const b=document.getElementById('subbody-'+si),c=document.getElementById('cav-'+si);if(!b)return;
+  const open=b.style.display==='none';b.style.display=open?'':'none';if(c)c.textContent=open?'▾':'▸';}
 function showGroup(g){
   const pnl0=g.unrealised>=0;
   document.getElementById('sh-sym').textContent=g.name;
   document.getElementById('sh-px').innerHTML=inr(g.value)+' · <span class="'+cl(g.day_pct)+'">'+sp(g.day_pct)+'</span> · <span class="'+(pnl0?'up':'down')+'">'+(pnl0?'+':'')+inr(g.unrealised)+'</span>';
-  document.getElementById('sh-body').innerHTML='<div class="rsub" style="margin-bottom:6px;color:var(--n500)">'+g.count+' stocks · '+g.weight+'% of book · tap a name for full detail</div>'
-    +(g.stocks||[]).map(s=>{const pnl=s.unrealised>=0;
-    return '<div class="row" onclick="openShare(\''+s.symbol+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:3px">'
-      +'<div style="display:flex;align-items:baseline;gap:8px"><span class="rn">'+s.symbol+'</span>'
-      +'<span class="rsub">'+(s.cap||'')+' · '+(s.holders||[]).join(', ')+' · '+s.weight+'%</span>'
-      +'<span class="p" style="margin-left:auto;font-family:var(--fm)">'+inr(s.value)+' <span class="'+cl(s.day_pct)+'" style="font-size:11px">'+sp(s.day_pct)+'</span></span></div>'
-      +'<div class="rsub mono" style="color:var(--n600)">Qty '+s.qty+' · Avg '+(s.avg_price!=null?s.avg_price:'—')+' · LTP '+(s.last_price!=null?s.last_price:'—')+' · Inv '+inr(s.invested)+'</div>'
-      +'<div class="rsub"><span class="'+(pnl?'up':'down')+'">Unrealised '+(pnl?'+':'')+inr(s.unrealised)+' ('+(pnl?'+':'')+s.unrealised_pct+'%)</span></div>'
-      +'</div>';}).join('')||'<div class="load">no stocks</div>';
+  const subs=(g.sub_sectors||[]).filter(x=>x.name!=='Unclassified'||(g.sub_sectors||[]).length>1);
+  const useSubs=subs.length>1;   // only split when there's genuinely more than one sub-sector
+  const head='<div class="rsub" style="margin-bottom:6px;color:var(--n500)">'+g.count+' stocks · '+g.weight+'% of book · '
+    +(useSubs?('tap a sub-sector to expand · '+subs.length+' sub-sectors'):'tap a name for full detail')+'</div>';
+  const bodyHtml=useSubs
+    ? subs.map((sub,si)=>subSectorBlock(sub,si)).join('')
+    : ((g.stocks||[]).map(stockRow).join('')||'<div class="load">no stocks</div>');
+  document.getElementById('sh-body').innerHTML=head+bodyHtml;
   document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on');
 }
 function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
