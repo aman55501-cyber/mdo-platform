@@ -236,8 +236,29 @@ a{color:var(--a700);text-decoration:none}
   </div></section>
 
   <section id="s-ideas"><div class="wrap">
-    <div style="display:flex;gap:6px;margin-bottom:12px;grid-column:1/-1"><button class="segb on" id="ist-ideas" onclick="istTab('ideas')" style="flex:1;padding:10px 0">Ideas</button><button class="segb" id="ist-calls" onclick="istTab('calls')" style="flex:1;padding:10px 0">Calls</button><button class="segb" id="ist-income" onclick="istTab('income')" style="flex:1;padding:10px 0">Income</button></div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;grid-column:1/-1"><button class="segb on" id="ist-ideas" onclick="istTab('ideas')" style="flex:1;padding:10px 0">Ideas</button><button class="segb" id="ist-calls" onclick="istTab('calls')" style="flex:1;padding:10px 0">Calls</button><button class="segb" id="ist-income" onclick="istTab('income')" style="flex:1;padding:10px 0">Income</button><button class="segb" id="ist-screener" onclick="istTab('screener')" style="flex:1;padding:10px 0">Screener</button></div>
     <div class="panel span2" id="ideas-panel"><div class="ph"><span class="t">High-conviction ideas</span><span class="lbl">fundamental + technical + backtest</span></div><div id="ideas-list"><div class="load">scanning for setups</div></div></div>
+    <div class="panel span2" id="screener-panel" style="display:none"><div class="ph"><span class="t">Market screener</span><span class="lbl" id="uni-meta">whole Screener universe</span></div>
+      <div style="padding:12px 14px;border-bottom:1px solid var(--n200)">
+        <div style="display:flex;gap:6px"><input id="uni-q" class="tpin" style="flex:1" placeholder="Search any stock — name or NSE code" onkeydown="if(event.key==='Enter')uniSearch()"><button class="segb" onclick="uniSearch()" style="padding:8px 16px">Search</button></div>
+      </div>
+      <div style="padding:12px 14px;border-bottom:1px solid var(--n200)">
+        <div class="ssub">Screen by fundamentals</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <input id="uni-pe" class="tpin" inputmode="decimal" placeholder="P/E ≤">
+          <input id="uni-roe" class="tpin" inputmode="decimal" placeholder="ROE ≥ %">
+          <input id="uni-roce" class="tpin" inputmode="decimal" placeholder="ROCE ≥ %">
+          <input id="uni-de" class="tpin" inputmode="decimal" placeholder="D/E ≤">
+          <input id="uni-mcap" class="tpin" inputmode="decimal" placeholder="Mcap ≥ Cr">
+          <input id="uni-div" class="tpin" inputmode="decimal" placeholder="Div yld ≥ %">
+          <input id="uni-sector" class="tpin" placeholder="Sector ~">
+          <input id="uni-industry" class="tpin" placeholder="Industry ~">
+          <select id="uni-sort" class="tpin"><option value="market_cap">Sort: Mcap</option><option value="roe">Sort: ROE</option><option value="roce">Sort: ROCE</option><option value="pe">Sort: P/E (low)</option><option value="dividend_yield">Sort: Div yld</option></select>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px"><button class="segb" onclick="uniScreen()" style="flex:1;padding:9px 0">Screen</button><button class="segb" onclick="uniReset()" style="padding:9px 16px">Reset</button></div>
+      </div>
+      <div id="uni-list"><div class="load">Search a name, or set filters and Screen.</div></div>
+    </div>
     <div class="panel span2" id="calls-panel" style="display:none"><div class="ph"><span class="t">Advisor calls</span><span class="lbl" id="calls-meta">Bantu Mausaji · Anil Singhvi</span></div>
       <div style="padding:12px 14px;border-bottom:1px solid var(--n200)">
         <div class="ssub">Log a call</div>
@@ -811,11 +832,52 @@ function showGroup(g){
 function angelKey(){const a=((PORT&&PORT.accounts)||[]).find(a=>((a.creds_key||'').toUpperCase()).startsWith('ANGEL'));return a?a.creds_key:(((PORT&&PORT.accounts&&PORT.accounts[0])||{}).creds_key||'ANGEL1');}
 /* ---- income engine (covered calls + cash puts, guarded one-tap) ---- */
 let INCOME_DATA={cc:[],cp:[]},incLoaded=0;
+let uniInit=0;
 function istTab(t){
-  ['ideas','calls','income'].forEach(x=>{const b=document.getElementById('ist-'+x);if(b)b.classList.toggle('on',x===t);
+  ['ideas','calls','income','screener'].forEach(x=>{const b=document.getElementById('ist-'+x);if(b)b.classList.toggle('on',x===t);
     const p=document.getElementById(x+'-panel');if(p)p.style.display=(x===t)?'':'none';});
   if(t==='income'&&!incLoaded){incLoaded=1;loadIncomeT();}
-  if(t==='calls'){loadCalls();}}
+  if(t==='calls'){loadCalls();}
+  if(t==='screener'&&!uniInit){uniInit=1;uniStatusLoad();}}
+/* ---- market screener: search + screen the whole Screener universe ---- */
+async function uniStatusLoad(){const r=await j('/universe/status?'+Q);const m=document.getElementById('uni-meta');
+  if(r.ok&&m)m.textContent=(r.d.companies||0)+' companies · '+(r.d.file_count||0)+' file(s)';}
+function uniMcap(c){return c==null?'':('₹'+(c>=100000?(c/100000).toFixed(2)+'L Cr':Math.round(c).toLocaleString('en-IN')+' Cr'));}
+function uniRow(r){const bits=[];
+  if(r.pe!=null)bits.push('PE '+(+r.pe).toFixed(1));
+  if(r.roe!=null)bits.push('ROE '+(+r.roe).toFixed(1)+'%');
+  if(r.roce!=null)bits.push('ROCE '+(+r.roce).toFixed(1)+'%');
+  if(r.de!=null)bits.push('D/E '+(+r.de).toFixed(2));
+  if(r.dividend_yield!=null)bits.push('Div '+(+r.dividend_yield).toFixed(1)+'%');
+  const tags=[r.sector,r.industry].filter(Boolean).join(' · ');
+  return '<div class="row" onclick="openShare(\''+r.code+'\')" style="cursor:pointer;flex-direction:column;align-items:stretch;gap:3px">'
+    +'<div style="display:flex;align-items:baseline;gap:8px"><span class="rn">'+r.code+'</span>'
+    +'<span class="rsub" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.name||'')+'</span>'
+    +'<span class="p mono">'+uniMcap(r.market_cap)+'</span></div>'
+    +(tags?'<div class="rsub" style="color:var(--n500)">'+tags+'</div>':'')
+    +(bits.length?'<div class="rsub mono" style="color:var(--n600)">'+bits.join(' · ')+'</div>':'')
+    +'</div>';}
+async function uniSearch(){const q=document.getElementById('uni-q').value.trim();const box=document.getElementById('uni-list');
+  if(!q){box.innerHTML='<div class="load">Type a name or code.</div>';return;}
+  box.innerHTML='<div class="load">searching…</div>';
+  const r=await j('/universe/search?q='+encodeURIComponent(q)+'&limit=30&'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not search')+'</div>';return;}
+  const res=r.d.results||[];
+  box.innerHTML=res.length?('<div class="rsub" style="padding:8px 14px;color:var(--n500)">'+res.length+' matches</div>'+res.map(uniRow).join(''))
+    :'<div class="load">No company matches. Load a broader export if the name is missing.</div>';}
+async function uniScreen(){const box=document.getElementById('uni-list');const p=[];
+  const add=(k,id)=>{const v=document.getElementById(id).value.trim();if(v!=='')p.push(k+'='+encodeURIComponent(v));};
+  add('pe_max','uni-pe');add('roe_min','uni-roe');add('roce_min','uni-roce');add('de_max','uni-de');add('mcap_min','uni-mcap');add('div_min','uni-div');
+  add('sector','uni-sector');add('industry','uni-industry');
+  const sort=document.getElementById('uni-sort').value;p.push('sort='+sort);p.push('desc='+(sort==='pe'?0:1));p.push('limit=100');
+  box.innerHTML='<div class="load">screening…</div>';
+  const r=await j('/universe/screen?'+p.join('&')+'&'+Q);
+  if(!r.ok){box.innerHTML='<div class="load">'+((r.d&&r.d.detail)||'could not screen')+'</div>';return;}
+  const res=r.d.results||[];
+  box.innerHTML=res.length?('<div class="rsub" style="padding:8px 14px;color:var(--n500)">'+r.d.count+' match · showing '+res.length+' by '+(r.d.sort_by||'')+'</div>'+res.map(uniRow).join(''))
+    :'<div class="load">No companies match. Loosen the filters, or load a fuller export.</div>';}
+function uniReset(){['uni-pe','uni-roe','uni-roce','uni-de','uni-mcap','uni-div','uni-sector','uni-industry','uni-q'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('uni-list').innerHTML='<div class="load">Search a name, or set filters and Screen.</div>';}
 function tpKind(){const inv=document.getElementById('tp-kind').value==='invest';
   document.getElementById('tp-tgt').style.display=inv?'none':'';document.getElementById('tp-stop').style.display=inv?'none':'';}
 async function addTip(){const m=document.getElementById('tp-msg');
