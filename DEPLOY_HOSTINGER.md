@@ -44,7 +44,11 @@ nano .env
 ```
 Set at minimum:
 - `NEXT_PUBLIC_API_URL=http://YOUR_VPS_IP:8501`  ← the browser talks to this
-- `GROK_API_KEY=...`
+- `GROK_API_KEY=...` (copy the real value from the Railway dashboard env vars)
+- `ANTHROPIC_API_KEY=...` — powers the MDO Brain with Claude (Grok is the
+  fallback if you skip this; get a key at console.anthropic.com)
+- `MDO_MCP_SECRET=...` — any long random string (`openssl rand -hex 16`).
+  Enables the MCP server so the Claude app on your phone can talk to MDO.
 - `HDFC_API_KEY=...` / `HDFC_API_SECRET=...`
 - `HDFC_REDIRECT_URL=http://YOUR_VPS_IP:8501/api/hdfc/callback`
   (register this same URL in the HDFC developer portal — this was roadmap
@@ -55,11 +59,32 @@ Set at minimum:
 ```bash
 docker compose up -d --build
 ```
-First build takes ~3–5 min. Then:
+First build takes ~3–5 min. Three services come up: backend, frontend, and
+the WhatsApp bridge (Baileys — no Chromium). Then:
 - **App: `http://YOUR_VPS_IP:3000`** ← bookmark on laptop, "Add to Home
   Screen" on phone
 - Life LLM Map: `http://YOUR_VPS_IP:3000/lifemap`
+- MDO Brain chat: `http://YOUR_VPS_IP:3000/grok`
 - Backend health check: `http://YOUR_VPS_IP:8501/api/status`
+
+### 5a. Connect WhatsApp (one-time QR scan)
+
+Open **VWLR Ops Feed** in the app — a QR code appears. Scan it from
+WhatsApp on +91 7000512030 (Linked devices → Link a device). The session
+persists in the `wa-auth` volume; messages from the 6 VWLR site groups start
+flowing into the Ops Feed and become Brain tools (`get_site_ops_feed`).
+
+### 5b. Connect the Claude app to your business (MCP)
+
+With `MDO_MCP_SECRET` set, your backend exposes an MCP server at:
+```
+http://YOUR_VPS_IP:8501/mcp/YOUR_SECRET/mcp
+```
+In the Claude app / claude.ai → Settings → Connectors → **Add custom
+connector** → paste that URL. Claude (on your phone, anywhere) can then
+query tenders, compliance, hotel numbers, site ops and file tasks — the same
+18 tools the in-app Brain uses. Use HTTPS (step 7) before relying on it
+daily, and rotate the secret if it ever leaks.
 
 ## 6. Updating after code changes
 

@@ -16,8 +16,22 @@ services:
     environment:
       VEGA_DB_PATH: /data/vega_data.db
       VEDANTA_DB_PATH: /data/vedanta_crm.db
+      WA_BRIDGE_URL: http://whatsapp:3001
     volumes:
       - mdo-data:/data
+
+  # WhatsApp ops-groups bridge (Baileys — no Chromium). After `up`, open the
+  # app's VWLR Ops Feed page and scan the QR once; session persists in wa-auth.
+  whatsapp:
+    build: ./whatsapp_bridge
+    restart: unless-stopped
+    environment:
+      MDO_BACKEND_URL: http://backend:8501
+      AUTH_DIR: /data/wa_auth
+    volumes:
+      - wa-auth:/data
+    depends_on:
+      - backend
 
   frontend:
     build:
@@ -34,3 +48,4 @@ services:
 
 volumes:
   mdo-data:
+  wa-auth:
