@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg \
 COPY requirements_server.txt ./
 RUN pip install --no-cache-dir -r requirements_server.txt
 
-COPY mdo_server.py ./
+COPY mdo_server.py mdo_brain.py ./
 
 # /data is mounted as a Railway persistent volume — SQLite lives here
 ENV VEGA_DB_PATH=/data/vega_data.db
