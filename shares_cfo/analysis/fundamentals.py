@@ -153,42 +153,20 @@ def _latest_file() -> Path | None:
 
 
 def from_screener(symbol: str, exchange: str = "NSE") -> dict | None:
-    """Read the latest Screener Premium export in data/screener/ (.xlsx or .csv)."""
-    latest = _latest_file()
-    if not latest:
+    """One company's fundamentals from the merged Screener universe (all drop-zone files),
+    O(1) by NSE code. Universe merge + index lives in analysis/universe.py."""
+    from . import universe
+    rec = universe.record(symbol)
+    if not rec or not rec.get("fields"):
         return None
-    sym = symbol.upper().strip()
-    rows = _rows_from_file(latest)
-    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
-    for row in rows:
-        code = (str(row.get("NSE Code") or row.get("Symbol") or row.get("Ticker") or "")).upper().strip()
-        name = _row_name(row)
-        # Exact NSE-code match is the strong signal; a name match must be the WHOLE
-        # symbol as the first token — so "IOC" never matches the "BIOCON LTD" row (the
-        # same bidirectional-substring bug fixed in reconciliation).
-        if (code and code == sym) or (name and (name == sym or name.split()[0] == sym)):
-            fields = _map_row(row, mapping)
-            if fields:
-                return {"fields": fields, "source": "screener", "confidence": "high"}
-    return None
+    return {"fields": rec["fields"], "source": "screener", "confidence": "high"}
 
 
 def load_universe() -> list[dict]:
     """Every company in the latest export as [{symbol, fields}], for a broad scan."""
-    latest = _latest_file()
-    if not latest:
-        return []
-    rows = _rows_from_file(latest)
-    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
-    out = []
-    for row in rows:
-        name = _row_name(row)
-        if not name:
-            continue
-        fields = _map_row(row, mapping)
-        if fields:
-            out.append({"symbol": name.split()[0], "name": name, "fields": fields})
-    return out
+    from . import universe
+    return [{"symbol": code, "name": r["name"], "fields": r["fields"]}
+            for code, r in universe.get_index().items() if r["fields"]]
 
 
 def market_caps() -> dict:
@@ -197,48 +175,18 @@ def market_caps() -> dict:
     Keyed by the NSE code (the actual ticker) so it matches broker holdings symbols,
     falling back to the name-derived symbol when a sheet lacks an NSE-code column.
     """
-    latest = _latest_file()
-    if not latest:
-        return {}
-    rows = _rows_from_file(latest)
-    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
-    out: dict = {}
-    for row in rows:
-        mc = _map_row(row, mapping).get("market_cap")
-        if mc is None:
-            continue
-        code = str(row.get("NSE Code") or row.get("Symbol") or "").strip().upper()
-        if not code:
-            nm = _row_name(row)
-            code = nm.split()[0] if nm else ""
-        if code:
-            out[code] = mc
-    return out
+    from . import universe
+    return {code: r["fields"]["market_cap"] for code, r in universe.get_index().items()
+            if r["fields"].get("market_cap") is not None}
 
 
 def industries() -> dict:
     """{NSE_SYMBOL: industry} from the latest export — to split a broad sector tile into
     its sub-sectors (Auto → Auto Ancillary / 2-Wheelers …). Empty when the export carries
     no Industry column. Keyed by NSE code to match broker holdings symbols."""
-    latest = _latest_file()
-    if not latest:
-        return {}
-    rows = _rows_from_file(latest)
-    mapping = resolve_mapping(list(rows[0].keys())) if rows else {}
-    if "industry" not in mapping:
-        return {}
-    out: dict = {}
-    for row in rows:
-        ind = _map_row(row, mapping).get("industry")
-        if not ind:
-            continue
-        code = str(row.get("NSE Code") or row.get("Symbol") or "").strip().upper()
-        if not code:
-            nm = _row_name(row)
-            code = nm.split()[0] if nm else ""
-        if code:
-            out[code] = str(ind).strip()
-    return out
+    from . import universe
+    return {code: r["fields"]["industry"] for code, r in universe.get_index().items()
+            if r["fields"].get("industry")}
 
 
 def screener_status() -> dict:

@@ -2749,6 +2749,67 @@ async def screener_status(request: Request, token: str | None = Query(default=No
     return await asyncio.to_thread(fun.screener_status)  # header resolve/warm, off the loop
 
 
+@app.get("/universe/status")
+async def universe_status(request: Request, token: str | None = Query(default=None)) -> dict:
+    """Coverage of the merged Screener universe — companies, source files, field fill %."""
+    _check_token(request, token)
+    from .analysis import universe as U
+    return await asyncio.to_thread(U.stats)
+
+
+@app.get("/universe/search")
+async def universe_search(request: Request, q: str, token: str | None = Query(default=None),
+                          limit: int = Query(default=25, ge=1, le=100)) -> dict:
+    """Find ANY listed company by NSE code or name across the whole universe."""
+    _check_token(request, token)
+    from .analysis import universe as U
+    return {"query": q, "results": await asyncio.to_thread(U.search, q, limit)}
+
+
+@app.get("/universe/screen")
+async def universe_screen(
+    request: Request, token: str | None = Query(default=None),
+    pe_min: float | None = Query(default=None), pe_max: float | None = Query(default=None),
+    pb_max: float | None = Query(default=None), de_max: float | None = Query(default=None),
+    roe_min: float | None = Query(default=None), roce_min: float | None = Query(default=None),
+    mcap_min: float | None = Query(default=None), mcap_max: float | None = Query(default=None),
+    div_min: float | None = Query(default=None),
+    sector: str | None = Query(default=None), industry: str | None = Query(default=None),
+    sort: str = Query(default="market_cap"), desc: int = Query(default=1),
+    limit: int = Query(default=100, ge=1, le=500)) -> dict:
+    """Screen the whole universe by fundamentals → a ranked, drillable list.
+
+    Numeric knobs are min/max bounds; sector/industry are contains-matches. Every result
+    is a real company from a dropped Premium export (nothing scraped)."""
+    _check_token(request, token)
+    from .analysis import universe as U
+    filters: dict = {}
+
+    def _rng(field, lo, hi):
+        c = {}
+        if lo is not None:
+            c["min"] = lo
+        if hi is not None:
+            c["max"] = hi
+        if c:
+            filters[field] = c
+
+    _rng("pe", pe_min, pe_max)
+    _rng("pb", None, pb_max)
+    _rng("de", None, de_max)
+    _rng("roe", roe_min, None)
+    _rng("roce", roce_min, None)
+    _rng("market_cap", mcap_min, mcap_max)
+    _rng("dividend_yield", div_min, None)
+    if sector:
+        filters["sector"] = sector
+    if industry:
+        filters["industry"] = industry
+    res = await asyncio.to_thread(U.screen, filters, sort, bool(desc), limit)
+    res["filters"] = filters
+    return res
+
+
 @app.post("/fundamentals/screener/upload")
 async def screener_upload(request: Request, file: UploadFile = File(...),
                           token: str | None = Query(default=None)) -> dict:
@@ -2772,10 +2833,13 @@ async def screener_upload(request: Request, file: UploadFile = File(...),
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (15 MB max).")
     dest.write_bytes(data)
-    # Resolve + warm the header mapping for the new export now (off the loop), so the
-    # first fundamentals read after an upload is instant and the status reflects it.
+    # Resolve + warm the header mapping AND rebuild the merged universe index now (off the
+    # loop), so the first read after an upload is instant and the new rows are searchable.
     status = await asyncio.to_thread(fun.screener_status)
-    return {"uploaded": dest.name, "bytes": len(data), "status": status}
+    from .analysis import universe as U
+    universe = await asyncio.to_thread(U.get_index, True)   # refresh=True: re-merge the drop-zone
+    return {"uploaded": dest.name, "bytes": len(data), "status": status,
+            "universe_companies": len(universe)}
 
 
 def _clean_symbol(ticker: str) -> str:

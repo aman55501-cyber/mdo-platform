@@ -289,6 +289,64 @@ def test_subsector_split_and_unclassified():
     assert "Unclassified" in subs and subs["Unclassified"]["value"] == 50
 
 
+# --- universe: merge all exports + index + search/screen -------------------------
+def _write_universe(d: Path):
+    (d / "a_old.csv").write_text(
+        "Name,NSE Code,P/E,Industry\n"
+        "Reliance Industries,RELIANCE,25,Refineries\n"
+        "Tata Consultancy,TCS,30,IT Services\n", encoding="utf-8")
+    (d / "b_new.csv").write_text(
+        "Name,NSE Code,P/E,Industry\n"
+        "Reliance Industries,RELIANCE,20,Refineries\n"
+        "Infosys,INFY,22,IT Services\n", encoding="utf-8")
+    import os
+    os.utime(d / "a_old.csv", (1000, 1000))
+    os.utime(d / "b_new.csv", (2000, 2000))   # newer -> wins on conflict
+
+
+def _universe_env(tmp_path=None):
+    from shares_cfo.analysis import fundamentals as F, universe as U
+    d = Path(tmp_path or tempfile.mkdtemp())
+    _write_universe(d)
+    F.SCREENER_DIR = d
+    U.INDEX_CACHE = d / ".universe_index.json"
+    U._MEMO = {"fp": None, "index": None}
+    return F, U, d
+
+
+def test_universe_merge_newest_wins():
+    _, U, _ = _universe_env()
+    idx = U.get_index()
+    assert set(idx.keys()) == {"RELIANCE", "TCS", "INFY"}       # merged across both files
+    assert U.record("RELIANCE")["fields"]["pe"] == 20.0         # newer file overrides
+
+
+def test_universe_search_ranked():
+    _, U, _ = _universe_env()
+    hits = U.search("INF")
+    assert hits and hits[0]["code"] == "INFY"
+    assert U.search("RELIANCE")[0]["code"] == "RELIANCE"       # exact code first
+
+
+def test_universe_screen_numeric_and_text():
+    _, U, _ = _universe_env()
+    cheap = U.screen({"pe": {"max": 23}})
+    assert cheap["count"] == 2 and {r["code"] for r in cheap["results"]} == {"RELIANCE", "INFY"}
+    it = U.screen({"industry": "IT"})
+    assert {r["code"] for r in it["results"]} == {"TCS", "INFY"}
+
+
+def test_universe_index_cached_and_rebuilds():
+    _, U, d = _universe_env()
+    U.get_index()
+    assert (d / ".universe_index.json").exists()               # persisted
+    # a new file changes the fingerprint -> rebuild picks it up
+    (d / "c.csv").write_text("Name,NSE Code,P/E\nWipro,WIPRO,18\n", encoding="utf-8")
+    import os
+    os.utime(d / "c.csv", (3000, 3000))
+    assert "WIPRO" in U.get_index()
+
+
 # --- order model segment awareness ----------------------------------------------
 def test_order_segment_awareness():
     o = _order(quantity=150)                        # 2 lots
