@@ -1,8 +1,10 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  // Cloud deployment (Railway) — full Next.js server mode
-  // images.unoptimized kept for Railway free tier (no image optimisation server needed)
+  // Cloud deployment — full Next.js server mode
+  // "standalone" emits a self-contained server for the Docker image (Hostinger VPS)
+  output: "standalone",
+  // no image optimisation server needed
   images: { unoptimized: true },
 }
 

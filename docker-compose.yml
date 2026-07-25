@@ -1,0 +1,36 @@
+# MDO Platform — single-VPS deployment (Hostinger KVM or any Docker host)
+#
+#   cp .env.example .env   → set NEXT_PUBLIC_API_URL + API keys
+#   docker compose up -d --build
+#
+# Frontend → http://<VPS_IP>:3000   Backend → http://<VPS_IP>:8501
+# SQLite lives in the named volume `mdo-data` — survives rebuilds/redeploys.
+
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      VEGA_DB_PATH: /data/vega_data.db
+      VEDANTA_DB_PATH: /data/vedanta_crm.db
+    volumes:
+      - mdo-data:/data
+
+  frontend:
+    build:
+      context: ./mdo-app
+      args:
+        # Set in .env — the URL the BROWSER reaches the backend on
+        # (http://<VPS_IP>:8501 or https://api.yourdomain.com)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8501}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  mdo-data:
