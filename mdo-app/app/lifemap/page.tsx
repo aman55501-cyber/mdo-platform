@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Network, Plus, RotateCcw, Trash2, X, Link2 } from "lucide-react"
+import { RemainingStepsPanel } from "@/components/RemainingSteps"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -352,6 +353,9 @@ export default function LifeMapPage() {
       <div className="text-xs" style={{ color: "var(--text2)" }}>
         Click a node to inspect, edit, or rewire it. Nothing here is absolute — refine as the system grows.
       </div>
+
+      {/* Build roadmap — the steps remaining to connect every layer */}
+      <RemainingStepsPanel />
 
       {/* Map canvas */}
       <div ref={containerRef} className="relative overflow-x-auto rounded-xl border p-4"

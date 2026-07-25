@@ -294,6 +294,41 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
         row = await cur.fetchone()
     if row["n"] == 0:
         await _seed_life_map(db)
+    # Seed build roadmap (shown as "Remaining Steps" on /lifemap + sidebar) if empty
+    async with db.execute("SELECT COUNT(*) as n FROM ops_tasks WHERE category='roadmap'") as cur:
+        row = await cur.fetchone()
+    if row["n"] == 0:
+        roadmap = [
+            # (title, description, entity=phase, priority)
+            ("Merge Life LLM Map branch to master",
+             "Railway auto-deploys — /lifemap and this checklist go live", "Phase 2 — Connectors", "critical"),
+            ("HDFC OAuth: register Railway callback + OTP test",
+             "Unlocks live trade execution from Morning Setup", "Phase 2 — Connectors", "critical"),
+            ("Fetch Staah API token",
+             "Hotel occupancy becomes a live feed instead of manual entry", "Phase 2 — Connectors", "high"),
+            ("Decide WhatsApp channel",
+             "Meta Business API vs Tasker webhook — unblocks ops feed + push alerts", "Phase 2 — Connectors", "high"),
+            ("Singhvi extractor live test",
+             "Whisper RAM on Railway free tier — else upgrade plan; manual entry stays the fallback", "Phase 2 — Connectors", "medium"),
+            ("Review first nightly agent report",
+             "Branch claude/agent-reports, runs 01:30 IST — tune the Routine prompt after reading", "Phase 3 — Agents", "high"),
+            ("Attach MCP connectors to Routines",
+             "Gmail/Notion via claude.ai Routines UI — gives agents inbox/docs reach", "Phase 3 — Agents", "medium"),
+            ("Write Tier 1 skill: escalation-routing",
+             "First of 10 playbooks in skills/ — the COO-handoff unlock", "Phase 4 — Skills", "high"),
+            ("Build 13-week cash flow rollup",
+             "Build priority #10 from MDO_VISION §15", "Phase 4 — Skills", "medium"),
+            ("Wire 🔴 alerts to phone push",
+             "WhatsApp/push for critical items — agents reach you unprompted", "Phase 5 — Surfaces", "medium"),
+            ("Monday Master Brief page in app",
+             "Render the weekly agent synthesis as an app module", "Phase 5 — Surfaces", "medium"),
+        ]
+        await db.executemany(
+            "INSERT INTO ops_tasks (title, description, entity, priority, category, assigned_to) "
+            "VALUES (?,?,?,?, 'roadmap', 'Aman')",
+            roadmap,
+        )
+        await db.commit()
 
 
 # ── Life LLM Map seed ───────────────────────────────────────────────────────

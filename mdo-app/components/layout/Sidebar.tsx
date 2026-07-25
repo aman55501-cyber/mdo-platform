@@ -8,6 +8,7 @@ import {
   Wifi, WifiOff, Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun, Network
 } from "lucide-react"
 import { useLiveStore } from "@/lib/store"
+import { NextStepsMini } from "@/components/RemainingSteps"
 
 const NAV_SECTIONS = [
   {
@@ -167,6 +168,9 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Remaining roadmap steps — always visible */}
+      <NextStepsMini />
 
       {/* Quick external links / Portals */}
       <div
