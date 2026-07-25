@@ -530,6 +530,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── access control ──────────────────────────────────────────────────────────
+# Set MDO_AUTH_TOKEN in .env to require a key on every API call. The frontend
+# asks for it once (lock screen) and sends it as X-MDO-Key; the SSE stream and
+# any manual use can pass ?key=. The /mcp/<secret> mount keeps its own secret.
+MDO_AUTH_TOKEN = os.environ.get("MDO_AUTH_TOKEN", "").strip()
+_CORS_401 = {"Access-Control-Allow-Origin": "*"}
+
+@app.middleware("http")
+async def _require_key(request, call_next):
+    if not MDO_AUTH_TOKEN or request.method == "OPTIONS" or request.url.path.startswith("/mcp/"):
+        return await call_next(request)
+    supplied = (
+        request.headers.get("x-mdo-key")
+        or request.query_params.get("key")
+        or (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+    )
+    if supplied != MDO_AUTH_TOKEN:
+        from starlette.responses import JSONResponse
+        return JSONResponse({"detail": "unauthorized — send X-MDO-Key"}, status_code=401, headers=_CORS_401)
+    return await call_next(request)
+
 # _"__"_ status _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
 @app.get("/api/status")
 async def status():
