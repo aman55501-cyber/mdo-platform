@@ -3,8 +3,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # ffmpeg needed by yt-dlp for audio extraction; gcc for faster-whisper build
-RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg \
+# tzdata so TZ=Asia/Kolkata gives correct IST market hours
+RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Kolkata
 
 COPY requirements_server.txt ./
 RUN pip install --no-cache-dir -r requirements_server.txt
