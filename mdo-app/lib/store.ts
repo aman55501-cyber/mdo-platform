@@ -39,7 +39,9 @@ export function connectLiveStream() {
   if (typeof window === "undefined") return
 
   const store = useLiveStore.getState()
-  const es = new EventSource(`${BASE}/api/stream`)
+  // EventSource can't send headers — pass the access key as a query param
+  const key = localStorage.getItem("mdo_key")
+  const es = new EventSource(`${BASE}/api/stream${key ? `?key=${encodeURIComponent(key)}` : ""}`)
 
   es.onopen = () => store.setConnected(true)
   es.onerror = () => store.setConnected(false)

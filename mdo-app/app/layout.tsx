@@ -4,6 +4,7 @@ import "./globals.css"
 import { useEffect } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Sidebar } from "@/components/layout/Sidebar"
+import { AuthGate } from "@/components/AuthGate"
 import { connectLiveStream } from "@/lib/store"
 
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, refetchInterval: 20_000 } } })
@@ -23,10 +24,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="h-full flex" style={{ background: "var(--bg)", color: "var(--text)" }}>
         <QueryClientProvider client={qc}>
-          <Sidebar />
-          <main className="flex-1 overflow-auto p-6" style={{ background: "var(--bg)" }}>
-            {children}
-          </main>
+          <AuthGate>
+            <Sidebar />
+            <main className="flex-1 overflow-auto p-6" style={{ background: "var(--bg)" }}>
+              {children}
+            </main>
+          </AuthGate>
         </QueryClientProvider>
       </body>
     </html>

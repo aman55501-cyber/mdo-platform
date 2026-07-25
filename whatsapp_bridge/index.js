@@ -77,52 +77,73 @@ async function startWA() {
 
   sock.ev.on("creds.update", saveCreds)
 
-  // ── Listen to messages ──────────────────────────────────────────────────────
+  // ── Message ingestion (live + history backfill) ────────────────────────────
+  const groupNameCache = {}
+
+  async function resolveGroupName(jid) {
+    if (groupNameCache[jid] !== undefined) return groupNameCache[jid]
+    try {
+      const meta = await sock.groupMetadata(jid)
+      groupNameCache[jid] = meta.subject || ""
+    } catch {
+      groupNameCache[jid] = null // unknown — don't retry every message
+    }
+    return groupNameCache[jid]
+  }
+
+  async function ingestMessage(msg, { skipFromMe = true } = {}) {
+    if (!msg?.message) return
+    if (skipFromMe && msg.key?.fromMe) return
+
+    const jid = msg.key?.remoteJid || ""
+    if (!jid.endsWith("@g.us")) return // groups only
+
+    const groupName = await resolveGroupName(jid)
+    if (!groupName) return
+
+    const isWatched = WATCHED_GROUPS.some(g =>
+      groupName.toLowerCase().includes(g.toLowerCase())
+    )
+    if (!isWatched) return
+
+    const text = (
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      msg.message.imageMessage?.caption ||
+      msg.message.documentMessage?.caption ||
+      "[media]"
+    )
+
+    const sender = msg.pushName || msg.key.participant || "Unknown"
+    const tsNum = Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000)
+    const timestamp = new Date(tsNum * 1000).toISOString()
+
+    console.log(`[${groupName}] ${sender}: ${String(text).slice(0, 80)}`)
+
+    await postToMDO("/api/whatsapp/message", {
+      group: groupName,
+      sender,
+      text: String(text),
+      timestamp,
+      jid,
+    })
+  }
+
+  // Live messages
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return
-
     for (const msg of messages) {
-      if (!msg.message) continue
-      if (msg.key.fromMe) continue  // skip own messages
+      try { await ingestMessage(msg) } catch {}
+    }
+  })
 
-      const jid = msg.key.remoteJid || ""
-      if (!jid.endsWith("@g.us")) continue  // groups only
-
-      // Get group name
-      let groupName = ""
-      try {
-        const meta = await sock.groupMetadata(jid)
-        groupName = meta.subject || ""
-      } catch { continue }
-
-      // Check if it's a watched group
-      const isWatched = WATCHED_GROUPS.some(g =>
-        groupName.toLowerCase().includes(g.toLowerCase())
-      )
-      if (!isWatched) continue
-
-      // Extract message text
-      const text = (
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
-        msg.message.documentMessage?.caption ||
-        "[media]"
-      )
-
-      const sender = msg.pushName || msg.key.participant || "Unknown"
-      const timestamp = new Date((msg.messageTimestamp || Date.now() / 1000) * 1000).toISOString()
-
-      console.log(`[${groupName}] ${sender}: ${text.slice(0, 80)}`)
-
-      // Forward to MDO backend
-      await postToMDO("/api/whatsapp/message", {
-        group: groupName,
-        sender,
-        text,
-        timestamp,
-        jid,
-      })
+  // History backfill — WhatsApp pushes recent chat history right after the QR
+  // pairing. Ingest it so the Ops Feed is populated immediately, not empty.
+  sock.ev.on("messaging-history.set", async ({ messages }) => {
+    const recent = (messages || []).slice(-400) // newest chunk only
+    console.log(`history sync: scanning ${recent.length} messages for watched groups`)
+    for (const msg of recent) {
+      try { await ingestMessage(msg, { skipFromMe: false }) } catch {}
     }
   })
 }
@@ -139,7 +160,12 @@ async function postToMDO(path, body) {
       port: url.port || 80,
       path: url.pathname,
       method: "POST",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data),
+        // backend access key (when MDO_AUTH_TOKEN protection is enabled)
+        "X-MDO-Key": process.env.MDO_AUTH_TOKEN || "",
+      },
     })
     req.write(data)
     req.end()

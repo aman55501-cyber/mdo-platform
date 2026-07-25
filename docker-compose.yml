@@ -30,6 +30,7 @@ services:
       MDO_BACKEND_URL: http://backend:8501
       AUTH_DIR: /data/wa_auth
       TZ: Asia/Kolkata
+      MDO_AUTH_TOKEN: ${MDO_AUTH_TOKEN:-}
     volumes:
       - wa-auth:/data
     depends_on:
