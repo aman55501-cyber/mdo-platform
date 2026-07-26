@@ -84,6 +84,12 @@ async function startWA() {
           }
         }
         console.log(`group cache primed: ${Object.keys(groups).length} groups, ${watched} watched`)
+        if (watched < WATCHED_GROUPS.length) {
+          const missed = Object.values(groups)
+            .map(m => m.subject || "")
+            .filter(n => n && !isWatchedName(n) && /vwlr|vedanta|rake|rkm|shifting/i.test(n))
+          if (missed.length) console.log(`unmatched candidates: ${missed.join(" | ")}`)
+        }
         if (watched === 0) {
           console.log("WARNING: no groups matched WATCHED_GROUPS — check the names above against the list in index.js")
         }
