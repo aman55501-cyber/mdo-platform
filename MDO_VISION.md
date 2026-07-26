@@ -135,16 +135,19 @@
 
 Active on phone +91 7000512030:
 
-1. Vedanta Daily Report
-2. VWLR Rake Status
-3. VWLR Rake Placement
-4. VWLR to APL Raigarh
-5. VWLR-RKM Group
-6. VWLR Shifting
+1. Vedanta Daily Report — includes rake count + daily dispatch quantity
+2. VWLR Rake Placement
+3. VWLR to APL Raigarh
+4. VWLR - RKM Group
+5. VWLR Shifting
+
+*(The old "VWLR Rake Status" group no longer exists — its data moved into
+Vedanta Daily Report. Confirmed 26-Jul-2026.)*
 
 **Goal:** Birds-eye view of site operations, identify bottlenecks
 (weighbridge, gate, PC, operator, infrastructure).
-**Current status:** Not yet integrated (Chromium-based bridge failed on Railway free tier).
+**Current status:** ✅ Integrated — Baileys bridge on Hostinger VPS forwards
+all five groups into the Ops Feed and the Brain's `get_site_ops_feed` tool.
 
 ---
 
