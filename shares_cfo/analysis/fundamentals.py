@@ -32,7 +32,7 @@ COLMAP = {
     # Text (name) fields — the sub-sector drill reads `industry`. Left un-mapped by most
     # exports; the LLM mapper (screener_map) finds them when the header text varies.
     "industry": ["Industry", "Sub-Industry", "Sub Industry", "Sub-sector", "Sub Sector"],
-    "sector": ["Sector", "Macro Sector", "Basic Industry"],
+    "sector": ["Sector", "Industry Group", "Macro Sector", "Basic Industry"],
 }
 
 # Canonical fields that carry TEXT, not a number — passed through verbatim (never to_float).
