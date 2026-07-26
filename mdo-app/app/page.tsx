@@ -61,13 +61,26 @@ async function generateBriefing(): Promise<BriefingResponse> {
 async function fetchIndices(): Promise<IndicesResponse> {
   const res = await fetch(`${BASE}/api/market/indices`)
   if (!res.ok) throw new Error("Indices failed")
-  return res.json()
+  const j = await res.json()
+  // backend returns {indices: [{label, value, change, change_pct}...]} — key it
+  const KEYMAP: Record<string, keyof IndicesResponse> = {
+    "NIFTY 50": "nifty50", "BANKNIFTY": "banknifty", "USD/INR": "usdinr",
+    "NASDAQ": "nasdaq", "DOW JONES": "dowjones",
+  }
+  const out = {} as IndicesResponse
+  for (const it of (Array.isArray(j?.indices) ? j.indices : [])) {
+    const key = KEYMAP[it?.label]
+    if (key) out[key] = { label: it.label, value: it.value ?? 0, change: it.change ?? 0, changePct: it.change_pct ?? 0 }
+  }
+  return out
 }
 
 async function fetchWatchlist(): Promise<WatchlistItem[]> {
   const res = await fetch(`${BASE}/api/market/watchlist`)
   if (!res.ok) throw new Error("Watchlist failed")
-  return res.json()
+  const j = await res.json()
+  // backend wraps as {watchlist: [...]} — accept both shapes, never crash the page
+  return Array.isArray(j) ? j : Array.isArray(j?.watchlist) ? j.watchlist : []
 }
 
 async function fetchQuote(ticker: string): Promise<StockQuote> {
