@@ -75,19 +75,26 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (state === "open") return <>{children}</>
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
       style={{ background: "var(--bg)" }}>
-      <div className="w-full max-w-xs px-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Lock size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22, letterSpacing: "6px", color: "var(--accent)" }}>
-            A M A N
+      {/* ambient orb */}
+      <div className="brain-orb" aria-hidden
+        style={{ position: "absolute", left: "50%", top: "38%", width: 380, height: 380, opacity: 0.16 }} />
+
+      <div className={`glass fade-up w-full max-w-sm mx-4 px-8 py-9 rounded-3xl ${error ? "shake" : ""}`}
+        style={{ boxShadow: "0 30px 90px rgba(0,0,0,0.55)" }}>
+        <div className="flex flex-col items-center text-center mb-7">
+          <div className="brain-orb mb-5" style={{ width: 52, height: 52 }} />
+          <span className="grad-text"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 30, letterSpacing: "10px", fontWeight: 400, paddingLeft: 10 }}>
+            AMAN
           </span>
+          <p className="text-xs mt-2" style={{ color: "var(--text2)", letterSpacing: "0.04em" }}>
+            Management Decision Office
+          </p>
         </div>
-        <p className="text-xs mb-4" style={{ color: "var(--text2)" }}>
-          This system is private. Enter the access key.
-        </p>
-        <div className="relative mb-2">
+
+        <div className="relative mb-3">
           <input
             type={show ? "text" : "password"}
             autoFocus
@@ -98,25 +105,28 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onChange={e => { setInput(e.target.value); setError("") }}
             onKeyDown={e => e.key === "Enter" && unlock()}
             placeholder="Access key"
-            className="w-full px-3 py-2.5 pr-10 rounded-lg text-sm border outline-none"
-            style={{ background: "var(--bg2)", borderColor: error ? "var(--red)" : "var(--border)", color: "var(--text)" }}
+            className="w-full px-4 py-3 pr-11 rounded-xl text-sm border outline-none"
+            style={{ background: "rgba(7,8,13,0.6)", borderColor: error ? "var(--red)" : "var(--border)", color: "var(--text)" }}
           />
           <button
             type="button"
             onClick={() => setShow(s => !s)}
             aria-label={show ? "Hide access key" : "Show access key"}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1"
-            style={{ color: "var(--text2)" }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
+            style={{ color: "var(--text2)", background: "none", border: "none", cursor: "pointer" }}
           >
             {show ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
-        {error && <p className="text-xs mb-2" style={{ color: "var(--red)" }}>{error}</p>}
+        {error && <p className="text-xs mb-3" style={{ color: "var(--red)" }}>{error}</p>}
         <button onClick={unlock}
-          className="w-full py-2.5 rounded-lg text-sm font-medium"
-          style={{ background: "var(--accent)", color: "#fff" }}>
-          Unlock
+          className="w-full py-3 rounded-xl text-sm font-semibold transition-transform active:scale-[0.98]"
+          style={{ background: "var(--accent-grad)", color: "#fff", border: "none", cursor: "pointer", boxShadow: "0 6px 24px rgba(109,106,248,0.35)" }}>
+          <span className="inline-flex items-center gap-2 justify-center"><Lock size={13} /> Unlock</span>
         </button>
+        <p className="text-[10px] text-center mt-5" style={{ color: "var(--text2)", opacity: 0.6 }}>
+          Private system · encrypted · Raigarh CG
+        </p>
       </div>
     </div>
   )

@@ -925,23 +925,32 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: 1280, display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Page title bar */}
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1
-            style={{
-              fontFamily: "'Cormorant Garamond', serif",
-              fontWeight: 300,
-              fontSize: 22,
-              letterSpacing: "0.06em",
-              color: "var(--text)",
-              margin: 0,
-            }}
-          >
-            AMAN{" "}
-            <span style={{ color: "var(--accent)", fontSize: 13, letterSpacing: "0.16em", fontWeight: 400 }}>
-              / OVERVIEW
-            </span>
-          </h1>
-          <span style={{ color: "var(--text2)", fontSize: 11 }}>{todayLabel()}</span>
+        <div className="fade-up" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h1
+              className="grad-text"
+              style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                fontWeight: 400,
+                fontSize: 30,
+                letterSpacing: "0.03em",
+                margin: 0,
+                lineHeight: 1.15,
+              }}
+            >
+              {(() => {
+                const h = (new Date().getUTCHours() + 5.5) % 24
+                return h < 5 ? "Working late, Aman" : h < 12 ? "Good morning, Aman" : h < 17 ? "Good afternoon, Aman" : "Good evening, Aman"
+              })()}
+            </h1>
+            <div style={{ color: "var(--text2)", fontSize: 12, marginTop: 4 }}>
+              {todayLabel()} · here&apos;s where the group stands
+            </div>
+          </div>
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full"
+            style={{ background: "rgba(143,140,255,0.07)", border: "1px solid var(--glass-brd)", color: "var(--text2)" }}>
+            Press <kbd style={{ fontFamily: "'JetBrains Mono', monospace", background: "var(--bg3)", padding: "1px 6px", borderRadius: 5, border: "1px solid var(--border)", fontSize: 10 }}>Ctrl K</kbd> to ask MDO anything
+          </span>
         </div>
 
         {/* S1: Morning Briefing */}
