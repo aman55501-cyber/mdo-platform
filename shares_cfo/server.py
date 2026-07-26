@@ -2833,13 +2833,12 @@ async def screener_upload(request: Request, file: UploadFile = File(...),
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (15 MB max).")
     dest.write_bytes(data)
-    # Resolve + warm the header mapping AND rebuild the merged universe index now (off the
-    # loop), so the first read after an upload is instant and the new rows are searchable.
-    status = await asyncio.to_thread(fun.screener_status)
-    from .analysis import universe as U
-    universe = await asyncio.to_thread(U.get_index, True)   # refresh=True: re-merge the drop-zone
-    return {"uploaded": dest.name, "bytes": len(data), "status": status,
-            "universe_companies": len(universe)}
+    # Return immediately. Do NOT build the index or resolve headers here: a large export
+    # (thousands of rows + an LLM header-map pass) can take long enough that the upload
+    # request itself times out and the browser reports a "network error". The merged index
+    # rebuilds lazily on the next read (the status panel refresh / dashboard), off the loop.
+    return {"uploaded": dest.name, "bytes": len(data),
+            "note": "saved — indexing on next read"}
 
 
 def _clean_symbol(ticker: str) -> str:

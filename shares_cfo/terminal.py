@@ -1051,9 +1051,9 @@ async function uploadScreener(){
   if(!f){el.textContent='Pick a .xlsx or .csv first.';return;}
   el.textContent='Uploading '+f.name+'…';const fd=new FormData();fd.append('file',f);
   try{const r=await fetch('/fundamentals/screener/upload?'+Q,{method:'POST',body:fd});const d=await r.json().catch(()=>({}));
-    if(r.ok){el.innerHTML='<span class="up">✅ uploaded — '+((d.status&&d.status.companies)||0)+' companies</span>';loadScreener();}
+    if(r.ok){el.innerHTML='<span class="up">✅ uploaded '+(d.uploaded||f.name)+' — indexing…</span>';setTimeout(loadScreener,800);}
     else el.innerHTML='<span class="down">'+(d.detail||'upload failed')+'</span>';
-  }catch(e){el.innerHTML='<span class="down">network error</span>';}
+  }catch(e){el.innerHTML='<span class="down">network error — file may be too large or the link dropped; retry once</span>';}
 }
 async function loadBalances(){
   const [b,w]=await Promise.all([j('/balances?'+Q),j('/wealth?'+Q)]);
