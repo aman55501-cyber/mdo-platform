@@ -15,7 +15,7 @@ async function apiFetch<T>(url: string): Promise<T> {
 
 const GROUP_COLORS: Record<string, string> = {
   "vedanta": "#f59e0b",
-  "rake status": "#6366f1",
+  "night report": "#f472b6",
   "rake placement": "#06b6d4",
   "apl raigarh": "#22c55e",
   "rkm": "#ef4444",
@@ -40,9 +40,54 @@ function timeAgo(ts: string) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+type QrResp = { connected: boolean; qr: string | null; message?: string }
+
+function AccountBadge({ label, q, onScan }: { label: string; q?: QrResp; onScan: () => void }) {
+  const configured = !q?.message?.includes("not set")
+  const connected = q?.connected || false
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
+      style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      {connected
+        ? <Wifi size={12} style={{ color: "var(--green)" }} />
+        : <WifiOff size={12} style={{ color: configured ? "var(--red)" : "var(--text2)" }} />}
+      <span style={{ fontSize: 12, color: connected ? "var(--green)" : "var(--text2)" }}>{label}</span>
+      {!connected && configured && (
+        <button onClick={onScan} className="flex items-center gap-1 text-xs font-medium"
+          style={{ color: "var(--accent2)", background: "none", border: "none", cursor: "pointer" }}>
+          <QrCode size={11} /> scan
+        </button>
+      )}
+    </div>
+  )
+}
+
+function QrPanel({ title, q }: { title: string; q?: QrResp }) {
+  return (
+    <div className="rounded-xl p-6 mb-6 text-center" style={{ background: "var(--bg2)", border: "1px solid var(--accent)" }}>
+      <div className="font-semibold mb-2">{title}</div>
+      <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 16 }}>
+        Open WhatsApp → Settings → Linked Devices → Link a Device → scan this QR
+      </div>
+      {q?.qr ? (
+        <img src={q.qr} alt="WhatsApp QR" style={{ width: 220, height: 220, margin: "0 auto", borderRadius: 12 }} />
+      ) : (
+        <div style={{ width: 220, height: 220, margin: "0 auto", background: "var(--bg3)", borderRadius: 12,
+          display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)", fontSize: 13 }}>
+          Loading QR… (takes ~10 seconds)
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 12 }}>
+        QR refreshes automatically. Once scanned, this panel closes on its own.
+      </div>
+    </div>
+  )
+}
+
 export default function OpsFeedPage() {
   const [activeGroup, setActiveGroup] = useState("ALL")
-  const [showQR, setShowQR] = useState(false)
+  const [showQR1, setShowQR1] = useState(false)
+  const [showQR2, setShowQR2] = useState(false)
 
   const { data: groupsData } = useQuery({
     queryKey: ["wa-groups"],
@@ -59,15 +104,19 @@ export default function OpsFeedPage() {
     refetchInterval: 15_000,
   })
 
-  const { data: qrData } = useQuery({
-    queryKey: ["wa-qr"],
-    queryFn: () => apiFetch<{ connected: boolean; qr: string | null }>(`${BASE}/api/whatsapp/qr`),
+  const { data: qr1 } = useQuery({
+    queryKey: ["wa-qr", 1],
+    queryFn: () => apiFetch<QrResp>(`${BASE}/api/whatsapp/qr?account=1`),
+    refetchInterval: 10_000,
+  })
+  const { data: qr2 } = useQuery({
+    queryKey: ["wa-qr", 2],
+    queryFn: () => apiFetch<QrResp>(`${BASE}/api/whatsapp/qr?account=2`),
     refetchInterval: 10_000,
   })
 
   const groups  = groupsData?.groups || []
   const messages = msgsData?.messages || []
-  const connected = qrData?.connected || false
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto" }}>
@@ -77,53 +126,24 @@ export default function OpsFeedPage() {
         <div className="flex items-center gap-3">
           <MessageSquare size={20} style={{ color: "var(--accent2)" }} />
           <div>
-            <h1 className="text-2xl font-bold">VWLR Ops Feed</h1>
+            <h1 className="text-2xl font-bold">Ops Feed</h1>
             <div style={{ fontSize: 12, color: "var(--text2)" }}>
-              Live from your WhatsApp site groups
+              Live from your WhatsApp groups — VWLR site ops + Hotel ANS night report
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-            style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
-            {connected
-              ? <><Wifi size={12} style={{ color: "var(--green)" }} /><span style={{ fontSize: 12, color: "var(--green)" }}>Connected</span></>
-              : <><WifiOff size={12} style={{ color: "var(--red)" }} /><span style={{ fontSize: 12, color: "var(--red)" }}>Not connected</span></>
-            }
-          </div>
-          {!connected && (
-            <button onClick={() => setShowQR(v => !v)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium"
-              style={{ background: "var(--accent)", color: "#fff" }}>
-              <QrCode size={13} /> Scan QR
-            </button>
-          )}
-          <button onClick={() => refetch()} style={{ color: "var(--text2)" }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <AccountBadge label="Phone 1 · VWLR" q={qr1} onScan={() => setShowQR1(v => !v)} />
+          <AccountBadge label="Phone 2 · Hotel" q={qr2} onScan={() => setShowQR2(v => !v)} />
+          <button onClick={() => refetch()} style={{ color: "var(--text2)", background: "none", border: "none", cursor: "pointer" }}>
             <RefreshCw size={14} />
           </button>
         </div>
       </div>
 
-      {/* QR scan panel */}
-      {showQR && !connected && (
-        <div className="rounded-xl p-6 mb-6 text-center" style={{ background: "var(--bg2)", border: "1px solid var(--accent)" }}>
-          <div className="font-semibold mb-2">Scan with WhatsApp on +917000512030</div>
-          <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 16 }}>
-            Open WhatsApp → Settings → Linked Devices → Link a Device → scan this QR
-          </div>
-          {qrData?.qr ? (
-            <img src={qrData.qr} alt="WhatsApp QR" style={{ width: 220, height: 220, margin: "0 auto", borderRadius: 12 }} />
-          ) : (
-            <div style={{ width: 220, height: 220, margin: "0 auto", background: "var(--bg3)", borderRadius: 12,
-              display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)", fontSize: 13 }}>
-              Loading QR… (takes ~10 seconds)
-            </div>
-          )}
-          <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 12 }}>
-            QR refreshes every 20 seconds. Once scanned, this panel closes automatically.
-          </div>
-        </div>
-      )}
+      {/* QR scan panels */}
+      {showQR1 && !qr1?.connected && <QrPanel title="Scan with WhatsApp on +91 7000512030 (Phone 1)" q={qr1} />}
+      {showQR2 && !qr2?.connected && <QrPanel title="Scan with WhatsApp on your second phone (Phone 2 — hotel groups)" q={qr2} />}
 
       {/* Group tabs */}
       {groups.length > 0 && (
@@ -159,8 +179,8 @@ export default function OpsFeedPage() {
           <MessageSquare size={32} style={{ color: "var(--text2)", margin: "0 auto 12px" }} />
           <div className="font-semibold mb-2">No messages yet</div>
           <div style={{ fontSize: 13, color: "var(--text2)", maxWidth: 380, margin: "0 auto" }}>
-            Scan the QR code above to link your WhatsApp (+917000512030).
-            Messages from your 6 VWLR groups will appear here in real time.
+            Link a phone using the badges above. Messages from the 5 VWLR site
+            groups and the Hotel ANS night report will appear here in real time.
           </div>
         </div>
       )}

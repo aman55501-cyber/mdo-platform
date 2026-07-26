@@ -24,6 +24,9 @@ const WATCHED_GROUPS = [
   "vwlr to apl raigarh",
   "vwlr-rkm group",
   "vwlr shifting",
+  // Hotel ANS — the night report carries occupancy + daily numbers; the
+  // backend parses them into hotel_daily automatically.
+  "night report",
 ]
 
 // Normalize before matching: lowercase, collapse punctuation/whitespace runs
@@ -93,7 +96,7 @@ async function startWA() {
         if (watched < WATCHED_GROUPS.length) {
           const missed = Object.values(groups)
             .map(m => m.subject || "")
-            .filter(n => n && !isWatchedName(n) && /vwlr|vedanta|rake|rkm|shifting/i.test(n))
+            .filter(n => n && !isWatchedName(n) && /vwlr|vedanta|rake|rkm|shifting|hotel|night|report|dsr|front office|kitchen/i.test(n))
           if (missed.length) console.log(`unmatched candidates: ${missed.join(" | ")}`)
         }
         if (watched === 0) {
