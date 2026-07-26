@@ -15,10 +15,11 @@ const app  = express()
 const PORT = process.env.PORT || 3001
 const MDO_BACKEND = process.env.MDO_BACKEND_URL || "http://localhost:8501"
 
-// Groups to monitor (partial name match — case insensitive)
+// Groups to monitor (normalized partial name match — see isWatchedName).
+// Rake count + daily dispatch quantity arrive inside "Vedanta Daily Report";
+// the old "VWLR Rake Status" group no longer exists.
 const WATCHED_GROUPS = [
   "vedanta daily report",
-  "vwlr rake status",
   "vwlr rake placement",
   "vwlr to apl raigarh",
   "vwlr-rkm group",
