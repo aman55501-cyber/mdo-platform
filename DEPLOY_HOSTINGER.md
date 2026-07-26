@@ -92,7 +92,50 @@ daily, and rotate the secret if it ever leaks.
 cd mdo-platform && git pull && docker compose up -d --build
 ```
 
-## 7. Optional but recommended — domain + HTTPS (~15 min)
+## 7a. Custom domain via an EXISTING Caddy on the same VPS
+
+If another compose stack on this VPS already runs Caddy on 80/443 (e.g.
+sharecfo), route MDO through it instead of starting a second proxy:
+
+1. **DNS (Hostinger hPanel → Domains → your domain → DNS):**
+   - `A` record, name `@`, value = VPS IP
+   - `A` record, name `api`, value = VPS IP
+2. **Join Caddy to MDO's docker network** so it can reach the containers:
+   ```bash
+   docker network connect mdo-platform_default sharecfo-caddy-1
+   ```
+   (Re-run this if the Caddy container is ever recreated — or add the
+   `mdo-platform_default` network to the Caddy service in that stack's
+   compose file to make it permanent.)
+3. **Append site blocks to that stack's Caddyfile** (find its path with
+   `grep -B2 -A6 'caddy' /docker/sharecfo/docker-compose.yml` — look for the
+   volume mounted at `/etc/caddy/Caddyfile`), e.g.:
+   ```
+   yourdomain.example {
+       reverse_proxy frontend:3000
+   }
+   api.yourdomain.example {
+       reverse_proxy backend:8501
+   }
+   ```
+   `frontend` / `backend` resolve via the shared docker network. Then:
+   ```bash
+   docker restart sharecfo-caddy-1
+   ```
+   Caddy fetches HTTPS certificates automatically once DNS resolves.
+4. **Rebuild the frontend against the HTTPS API** (browsers block an https
+   page calling an http API):
+   ```bash
+   cd /docker/sharecfo/mdo-platform
+   sed -i 's|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=https://api.yourdomain.example|' .env
+   sed -i 's|^HDFC_REDIRECT_URL=.*|HDFC_REDIRECT_URL=https://api.yourdomain.example/api/hdfc/callback|' .env
+   docker compose up -d --build frontend
+   ```
+5. New addresses: app `https://yourdomain.example`, MCP connector
+   `https://api.yourdomain.example/mcp/<MDO_MCP_SECRET>/mcp`. You can then
+   close ports 3000/8501 in the firewall if you want domain-only access.
+
+## 7b. Domain + HTTPS from scratch (no existing proxy) (~15 min)
 
 1. Point a domain/subdomain A-record at the VPS IP (Hostinger DNS panel):
    `mdo.yourdomain.com` → VPS IP, `api.yourdomain.com` → VPS IP
