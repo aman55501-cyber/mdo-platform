@@ -540,7 +540,11 @@ _CORS_401 = {"Access-Control-Allow-Origin": "*"}
 
 @app.middleware("http")
 async def _require_key(request, call_next):
-    if not MDO_AUTH_TOKEN or request.method == "OPTIONS" or request.url.path.startswith("/mcp/"):
+    # /api/hdfc/callback is exempt: HDFC's OAuth redirect arrives from the
+    # user's browser without our key. It carries only a one-time auth code.
+    if (not MDO_AUTH_TOKEN or request.method == "OPTIONS"
+            or request.url.path.startswith("/mcp/")
+            or request.url.path == "/api/hdfc/callback"):
         return await call_next(request)
     supplied = (
         request.headers.get("x-mdo-key")
@@ -1509,96 +1513,139 @@ async def singhvi_delete(call_id: int):
     await db.commit()
     return {"id": call_id, "deleted": True}
 
+# Progress is tracked so the app (and you, via curl) can watch the pipeline.
+_singhvi_status = {"state": "idle", "detail": "", "updated": ""}
+
+def _sstat(state: str, detail: str = ""):
+    import datetime as _dt
+    _singhvi_status.update({
+        "state": state, "detail": detail,
+        "updated": _dt.datetime.now().isoformat(timespec="seconds"),
+    })
+    print(f"Singhvi[{state}] {detail}")
+
 @app.post("/api/singhvi/extract")
-async def singhvi_extract():
-    """Trigger YouTube audio extraction from Zee Business live stream.
-    Runs yt-dlp + faster-whisper + Grok in background thread.
-    Returns immediately; calls appear in /api/singhvi/today as they are parsed."""
+async def singhvi_extract(body: dict | None = None):
+    """Trigger the yt-dlp → faster-whisper → LLM pipeline in a background thread.
+
+    Default: capture the Zee Business LIVE stream (use during 8:00–9:15 AM IST).
+    Test mode: pass {"url": "<any past YouTube video>"} to run the identical
+    pipeline on recorded video — verifies everything end-to-end off-hours.
+    Optional {"seconds": N} sets capture length (default 600)."""
+    body = body or {}
+    url = str(body.get("url", "") or "")
+    seconds = min(int(body.get("seconds", 600) or 600), 1800)
+    if _singhvi_status["state"] in ("downloading", "transcribing", "extracting"):
+        return {"started": False, "message": "Extraction already running", "status": _singhvi_status}
     import threading
-    def _run():
-        try:
-            _extract_singhvi_calls()
-        except Exception as ex:
-            print("Singhvi extract error:", ex)
-    threading.Thread(target=_run, daemon=True).start()
-    return {"started": True, "message": "Extraction started. Calls will appear in 2-3 minutes."}
+    threading.Thread(target=_extract_singhvi_calls, args=(url, seconds), daemon=True).start()
+    return {"started": True, "message": "Extraction started — poll /api/singhvi/extract/status"}
 
-def _extract_singhvi_calls():
-    """Pull Zee Business live audio, transcribe, parse with Grok, insert calls."""
-    import subprocess, tempfile, os, json as _j, sqlite3, datetime as _dt
-    grok_key = os.environ.get("GROK_API_KEY", "")
+@app.get("/api/singhvi/extract/status")
+async def singhvi_extract_status():
+    return _singhvi_status
 
-    # Step 1: Download ~10 min of Zee Business live audio via yt-dlp
-    ZEE_URL = "https://www.youtube.com/@ZeeBusiness/streams"
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf:
-        audio_path = tf.name
-
+def _singhvi_llm_extract(transcript: str):
+    """Transcript → list of structured calls. Claude first, Grok fallback."""
+    import json as _j
+    prompt = (
+        "Extract every stock/futures/options call from this Zee Business / Anil Singhvi "
+        "transcript (Hindi/Hinglish). Return ONLY a JSON array. Each object:\n"
+        "  ticker (NSE symbol, uppercase), direction (BUY/SELL/AVOID),\n"
+        "  entry_price (number or 0), stop_loss (number or 0), target_price (number or 0),\n"
+        "  instrument (EQ/FUT/OPT-CE/OPT-PE), timeframe (Intraday/Swing/Positional),\n"
+        "  confidence (0-100), raw_quote (the exact transcript words backing the call).\n"
+        "Do NOT invent prices — 0 when not stated. If no calls, return [].\n"
+        "Transcript:\n" + transcript[:12000]
+    )
+    ant_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    grok_key = os.environ.get("GROK_API_KEY", "").strip()
     try:
-        subprocess.run([
-            "yt-dlp", "--no-playlist", "-x", "--audio-format", "mp3",
-            "--audio-quality", "0", "--match-filter", "is_live",
-            "-o", audio_path, "--max-filesize", "20M",
-            "--no-warnings", "--quiet",
-            ZEE_URL,
-        ], timeout=120, check=False)
-
-        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-            print("Singhvi: no audio downloaded")
-            return
-
-        # Step 2: Transcribe with faster-whisper
-        try:
-            from faster_whisper import WhisperModel
-            model = WhisperModel("small", device="cpu", compute_type="int8")
-            segments, _ = model.transcribe(audio_path, language="hi", beam_size=1)
-            transcript = " ".join(seg.text for seg in segments)
-        except ImportError:
-            transcript = "[faster-whisper not installed — install on server]"
-
-        if not transcript or len(transcript) < 50:
-            print("Singhvi: transcript too short")
-            return
-
-        # Step 3: Send to Grok to extract stock calls
-        if not grok_key:
-            print("Singhvi: no GROK_API_KEY")
-            return
-
-        prompt = (
-            "Extract every stock/futures/options call from this Zee Business / Anil Singhvi transcript.\n"
-            "Return a JSON array. Each object must have:\n"
-            "  ticker (NSE symbol, uppercase), direction (BUY/SELL/AVOID),\n"
-            "  entry_price (number or 0), stop_loss (number or 0), target_price (number or 0),\n"
-            "  instrument (EQ/FUT/OPT-CE/OPT-PE), timeframe (Intraday/Swing/Positional),\n"
-            "  confidence (0-100), raw_quote (exact words from transcript).\n"
-            "If no calls found, return [].\n"
-            "Transcript:\n" + transcript[:3000]
-        )
-
-        payload = _j.dumps({
-            "model": "grok-3-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            "https://api.x.ai/v1/chat/completions", data=payload,
-            headers={"Authorization": "Bearer " + grok_key, "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            resp = _j.loads(r.read())
-        text = resp["choices"][0]["message"]["content"].strip()
-
-        # Parse JSON from Grok response
+        if ant_key:
+            payload = _j.dumps({
+                "model": "claude-sonnet-5", "max_tokens": 2000,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages", data=payload,
+                headers={"x-api-key": ant_key, "anthropic-version": "2023-06-01",
+                         "Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=90) as r:
+                resp = _j.loads(r.read())
+            text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+        elif grok_key:
+            payload = _j.dumps({
+                "model": "grok-3-mini", "max_tokens": 2000,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.x.ai/v1/chat/completions", data=payload,
+                headers={"Authorization": "Bearer " + grok_key,
+                         "Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=90) as r:
+                resp = _j.loads(r.read())
+            text = resp["choices"][0]["message"]["content"].strip()
+        else:
+            _sstat("error", "no ANTHROPIC_API_KEY or GROK_API_KEY configured")
+            return None
         start = text.find("[")
-        end   = text.rfind("]") + 1
+        end = text.rfind("]") + 1
         if start < 0 or end <= start:
-            print("Singhvi: Grok returned no JSON array")
-            return
-        calls = _j.loads(text[start:end])
+            _sstat("error", "LLM returned no JSON array: " + text[:150])
+            return None
+        return _j.loads(text[start:end])
+    except Exception as e:
+        _sstat("error", "LLM extraction failed: " + str(e)[:250])
+        return None
 
-        # Step 4: Insert into DB
+def _extract_singhvi_calls(src_url: str = "", capture_seconds: int = 600):
+    """Audio (live capture or test URL) → Hindi transcript → structured calls → DB."""
+    import subprocess, tempfile, os as _os, json as _j, sqlite3, datetime as _dt
+    audio_path = tempfile.mktemp(suffix=".mp3")
+    try:
+        live = not src_url
+        target = src_url or "https://www.youtube.com/@ZeeBusiness/live"
+        _sstat("downloading", f"live capture {capture_seconds}s" if live else target)
+        r = None
+        if live:
+            # Resolve the live stream manifest, then record N seconds with ffmpeg.
+            # (yt-dlp downloading a live stream directly never terminates.)
+            g = subprocess.run(["yt-dlp", "-g", "-f", "bestaudio/best", "--no-warnings", target],
+                               capture_output=True, text=True, timeout=90)
+            stream = (g.stdout or "").strip().splitlines()
+            if not stream:
+                _sstat("error", "no live stream right now: " + (g.stderr or "")[-200:])
+                return
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", stream[0], "-t", str(capture_seconds),
+                 "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", audio_path],
+                capture_output=True, timeout=capture_seconds + 180)
+        else:
+            section = "*00:00-" + str(_dt.timedelta(seconds=capture_seconds))
+            r = subprocess.run(
+                ["yt-dlp", "--no-playlist", "-x", "--audio-format", "mp3",
+                 "--postprocessor-args", "ffmpeg:-ar 16000 -ac 1",
+                 "--download-sections", section,
+                 "-o", audio_path, "--force-overwrites", "--no-warnings", target],
+                capture_output=True, timeout=1200)
+        if not _os.path.exists(audio_path) or _os.path.getsize(audio_path) < 10_000:
+            err = ""
+            if r is not None and r.stderr:
+                err = (r.stderr.decode() if isinstance(r.stderr, bytes) else str(r.stderr))[-300:]
+            _sstat("error", "no audio produced. " + err)
+            return
+        _sstat("transcribing", f"{_os.path.getsize(audio_path)//1024} KB audio (first run downloads the Whisper model, ~1 min extra)")
+        from faster_whisper import WhisperModel
+        model = WhisperModel("small", device="cpu", compute_type="int8")
+        segments, _info = model.transcribe(audio_path, language="hi", beam_size=1, vad_filter=True)
+        transcript = " ".join(seg.text for seg in segments).strip()
+        if len(transcript) < 50:
+            _sstat("error", f"transcript too short ({len(transcript)} chars) — silent audio?")
+            return
+        _sstat("extracting", f"{len(transcript)} chars of transcript → LLM")
+        calls = _singhvi_llm_extract(transcript)
+        if calls is None:
+            return  # error state already set
         today = _dt.date.today().isoformat()
         conn = sqlite3.connect(VEGA_DB)
         for c in calls:
@@ -1609,26 +1656,32 @@ def _extract_singhvi_calls():
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     today,
-                    str(c.get("ticker","")).upper(),
+                    str(c.get("ticker", "")).upper(),
                     "NSE",
-                    str(c.get("instrument","EQ")),
-                    str(c.get("direction","BUY")),
-                    float(c.get("entry_price",0) or 0),
-                    float(c.get("stop_loss",0) or 0),
-                    float(c.get("target_price",0) or 0),
-                    str(c.get("timeframe","Intraday")),
-                    "Confidence: " + str(c.get("confidence","—")) + "%",
-                    "youtube",
-                    str(c.get("raw_quote",""))[:500],
+                    str(c.get("instrument", "EQ")),
+                    str(c.get("direction", "BUY")),
+                    float(c.get("entry_price", 0) or 0),
+                    float(c.get("stop_loss", 0) or 0),
+                    float(c.get("target_price", 0) or 0),
+                    str(c.get("timeframe", "Intraday")),
+                    "Confidence: " + str(c.get("confidence", "—")) + "%",
+                    "youtube" if live else "youtube-test",
+                    str(c.get("raw_quote", ""))[:500],
                     "pending",
                 )
             )
         conn.commit()
         conn.close()
-        print("Singhvi: inserted", len(calls), "calls")
+        _sstat("done", f"inserted {len(calls)} calls — review in Morning Setup")
+    except subprocess.TimeoutExpired:
+        _sstat("error", "audio download timed out")
+    except Exception as ex:
+        _sstat("error", str(ex)[:300])
     finally:
-        try: os.unlink(audio_path)
-        except: pass
+        try:
+            _os.unlink(audio_path)
+        except Exception:
+            pass
 
 @app.post("/api/singhvi/execute")
 async def singhvi_execute():
@@ -1664,10 +1717,11 @@ async def singhvi_execute():
 
 # ── HDFC Auth ────────────────────────────────────────────────────────────────
 
-HDFC_CLIENT_ID     = "45889297"
-HDFC_API_KEY_VAL   = os.environ.get("HDFC_API_KEY", "f0ff26190ea94acb87593ce2ad556d02")
-HDFC_API_SECRET    = os.environ.get("HDFC_API_SECRET", "815f56e54ea84c58923fd7c187ef7c29")
-HDFC_REDIRECT_URL  = os.environ.get("HDFC_REDIRECT_URL", "https://localhost/callback")
+# Credentials live ONLY in .env — never hardcode them here (they end up in git).
+HDFC_CLIENT_ID     = os.environ.get("HDFC_CLIENT_ID", "45889297")
+HDFC_API_KEY_VAL   = os.environ.get("HDFC_API_KEY", "")
+HDFC_API_SECRET    = os.environ.get("HDFC_API_SECRET", "")
+HDFC_REDIRECT_URL  = os.environ.get("HDFC_REDIRECT_URL", "https://api.amanagrawal.cloud/api/hdfc/callback")
 HDFC_AUTH_BASE     = "https://developer.hdfcsec.com"
 
 @app.get("/api/hdfc/status")
@@ -1687,6 +1741,8 @@ async def hdfc_status():
 @app.post("/api/hdfc/auth/init")
 async def hdfc_auth_init():
     """Return the HDFC OAuth login URL for the user to complete in browser."""
+    if not HDFC_API_KEY_VAL or not HDFC_API_SECRET:
+        raise HTTPException(400, "HDFC_API_KEY / HDFC_API_SECRET not set in .env on the VPS")
     import urllib.parse as _up
     params = _up.urlencode({
         "apiKey": HDFC_API_KEY_VAL,
@@ -1696,13 +1752,8 @@ async def hdfc_auth_init():
     login_url = HDFC_AUTH_BASE + "/oauth2/auth?" + params
     return {"login_url": login_url, "client_id": HDFC_CLIENT_ID}
 
-@app.post("/api/hdfc/auth/callback")
-async def hdfc_auth_callback(body: dict):
-    """Exchange auth code for access token and store in DB."""
-    code = body.get("code", "")
-    if not code:
-        raise HTTPException(400, "Missing code")
-
+async def _hdfc_store_token(code: str) -> dict:
+    """Exchange an OAuth code for an access token and persist the session."""
     payload = _json.dumps({
         "apiKey": HDFC_API_KEY_VAL,
         "apiSecret": HDFC_API_SECRET,
@@ -1714,24 +1765,60 @@ async def hdfc_auth_callback(body: dict):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            resp = _json.loads(r.read())
-        token = resp.get("access_token", "")
-        expiry = resp.get("expires_in", 86400)
-        import datetime as _dtt
-        expiry_str = (_dtt.datetime.now() + _dtt.timedelta(seconds=expiry)).isoformat()
+    with urllib.request.urlopen(req, timeout=15) as r:
+        resp = _json.loads(r.read())
+    token = resp.get("access_token", "")
+    if not token:
+        raise RuntimeError(f"HDFC returned no access_token: {str(resp)[:300]}")
+    expiry = resp.get("expires_in", 86400)
+    import datetime as _dtt
+    expiry_str = (_dtt.datetime.now() + _dtt.timedelta(seconds=expiry)).isoformat()
 
-        db = await vdb()
-        await db.execute("DELETE FROM hdfc_session")
-        await db.execute(
-            "INSERT INTO hdfc_session (access_token,token_expiry,connected,client_id) VALUES (?,?,1,?)",
-            (token, expiry_str, HDFC_CLIENT_ID)
-        )
-        await db.commit()
-        return {"connected": True, "expiry": expiry_str}
+    db = await vdb()
+    await db.execute("DELETE FROM hdfc_session")
+    await db.execute(
+        "INSERT INTO hdfc_session (access_token,token_expiry,connected,client_id) VALUES (?,?,1,?)",
+        (token, expiry_str, HDFC_CLIENT_ID)
+    )
+    await db.commit()
+    return {"connected": True, "expiry": expiry_str}
+
+@app.post("/api/hdfc/auth/callback")
+async def hdfc_auth_callback(body: dict):
+    """Exchange auth code for access token and store in DB (app-initiated)."""
+    code = body.get("code", "")
+    if not code:
+        raise HTTPException(400, "Missing code")
+    try:
+        return await _hdfc_store_token(code)
     except Exception as e:
         raise HTTPException(500, str(e))
+
+@app.get("/api/hdfc/callback")
+async def hdfc_oauth_redirect(code: str = "", request_token: str = "", requestToken: str = ""):
+    """Browser lands here after HDFC login + OTP. Exempt from the access key."""
+    from starlette.responses import HTMLResponse
+    tok = code or request_token or requestToken
+    page = (
+        "<html><body style=\"font-family:system-ui,sans-serif;background:#07080d;"
+        "color:#e7ebf4;display:flex;align-items:center;justify-content:center;"
+        "height:100vh;margin:0\"><div style=\"text-align:center\">{inner}</div></body></html>"
+    )
+    if not tok:
+        return HTMLResponse(page.format(inner="<h2 style='color:#f87171'>HDFC callback: no auth code received</h2><p>Check the redirect URL registered in the HDFC developer portal.</p>"), status_code=400)
+    try:
+        res = await _hdfc_store_token(tok)
+        return HTMLResponse(page.format(inner=(
+            "<h2 style='color:#34d399'>✓ HDFC connected</h2>"
+            f"<p>Token valid until {res.get('expiry','')}</p>"
+            "<p>Return to the MDO app → Morning Setup. Funds and execution are live.</p>"
+        )))
+    except Exception as e:
+        return HTMLResponse(page.format(inner=(
+            "<h2 style='color:#f87171'>HDFC token exchange failed</h2>"
+            f"<pre style='color:#8b93ab;white-space:pre-wrap;max-width:480px'>{str(e)[:400]}</pre>"
+            "<p>Send this error to Claude — likely an endpoint-shape mismatch we can fix in minutes.</p>"
+        )), status_code=502)
 
 @app.get("/api/hdfc/funds")
 async def hdfc_funds():
