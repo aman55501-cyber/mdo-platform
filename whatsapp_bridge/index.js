@@ -25,6 +25,12 @@ const WATCHED_GROUPS = [
   "vwlr shifting",
 ]
 
+function isWatchedName(name) {
+  if (!name) return false
+  const lower = name.toLowerCase()
+  return WATCHED_GROUPS.some(g => lower.includes(g))
+}
+
 app.use(express.json())
 
 let qrCodeData  = null   // latest QR as base64 PNG
@@ -39,6 +45,12 @@ async function startWA() {
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
   const { version } = await fetchLatestBaileysVersion()
+
+  // jid → group subject. Populated in bulk on connect; per-message lookups are
+  // only a fallback. Failures are NOT cached — WhatsApp rate-limits metadata
+  // calls during the post-pairing history flood, and a cached failure would
+  // silently blackhole that group forever.
+  const groupNameCache = {}
 
   sock = makeWASocket({
     version,
@@ -61,6 +73,23 @@ async function startWA() {
       isConnected = true
       qrCodeData  = null
       console.log("WhatsApp connected")
+      try {
+        const groups = await sock.groupFetchAllParticipating()
+        let watched = 0
+        for (const [jid, meta] of Object.entries(groups)) {
+          groupNameCache[jid] = meta.subject || ""
+          if (isWatchedName(meta.subject)) {
+            watched++
+            console.log(`watching: ${meta.subject}`)
+          }
+        }
+        console.log(`group cache primed: ${Object.keys(groups).length} groups, ${watched} watched`)
+        if (watched === 0) {
+          console.log("WARNING: no groups matched WATCHED_GROUPS — check the names above against the list in index.js")
+        }
+      } catch (e) {
+        console.log("group prefetch failed (falling back to per-message lookups):", e.message)
+      }
       await postToMDO("/api/whatsapp/status", { connected: true, message: "WhatsApp bridge connected" })
     }
 
@@ -78,33 +107,31 @@ async function startWA() {
   sock.ev.on("creds.update", saveCreds)
 
   // ── Message ingestion (live + history backfill) ────────────────────────────
-  const groupNameCache = {}
 
   async function resolveGroupName(jid) {
-    if (groupNameCache[jid] !== undefined) return groupNameCache[jid]
+    const cached = groupNameCache[jid]
+    if (cached !== undefined) return cached
     try {
       const meta = await sock.groupMetadata(jid)
       groupNameCache[jid] = meta.subject || ""
-    } catch {
-      groupNameCache[jid] = null // unknown — don't retry every message
+      return groupNameCache[jid]
+    } catch (e) {
+      console.log(`groupMetadata failed for ${jid}: ${e.message} (will retry on next message)`)
+      return null // deliberately not cached
     }
-    return groupNameCache[jid]
   }
 
+  // Returns true if the message was forwarded to the backend.
   async function ingestMessage(msg, { skipFromMe = true } = {}) {
-    if (!msg?.message) return
-    if (skipFromMe && msg.key?.fromMe) return
+    if (!msg?.message) return false
+    if (skipFromMe && msg.key?.fromMe) return false
 
     const jid = msg.key?.remoteJid || ""
-    if (!jid.endsWith("@g.us")) return // groups only
+    if (!jid.endsWith("@g.us")) return false // groups only
 
     const groupName = await resolveGroupName(jid)
-    if (!groupName) return
-
-    const isWatched = WATCHED_GROUPS.some(g =>
-      groupName.toLowerCase().includes(g.toLowerCase())
-    )
-    if (!isWatched) return
+    if (!groupName) return false
+    if (!isWatchedName(groupName)) return false
 
     const text = (
       msg.message.conversation ||
@@ -127,13 +154,14 @@ async function startWA() {
       timestamp,
       jid,
     })
+    return true
   }
 
   // Live messages
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return
     for (const msg of messages) {
-      try { await ingestMessage(msg) } catch {}
+      try { await ingestMessage(msg) } catch (e) { console.log("ingest error:", e.message) }
     }
   })
 
@@ -142,36 +170,59 @@ async function startWA() {
   sock.ev.on("messaging-history.set", async ({ messages }) => {
     const recent = (messages || []).slice(-400) // newest chunk only
     console.log(`history sync: scanning ${recent.length} messages for watched groups`)
+    let ingested = 0
     for (const msg of recent) {
-      try { await ingestMessage(msg, { skipFromMe: false }) } catch {}
+      try {
+        if (await ingestMessage(msg, { skipFromMe: false })) ingested++
+      } catch (e) {
+        console.log("history ingest error:", e.message)
+      }
     }
+    console.log(`history sync: forwarded ${ingested} messages to backend`)
   })
 }
 
 // ── POST to MDO backend ───────────────────────────────────────────────────────
 
-async function postToMDO(path, body) {
-  try {
-    const http = require("http")
-    const url  = new URL(MDO_BACKEND + path)
-    const data = JSON.stringify(body)
-    const req  = http.request({
-      hostname: url.hostname,
-      port: url.port || 80,
-      path: url.pathname,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(data),
-        // backend access key (when MDO_AUTH_TOKEN protection is enabled)
-        "X-MDO-Key": process.env.MDO_AUTH_TOKEN || "",
-      },
-    })
-    req.write(data)
-    req.end()
-  } catch (e) {
-    // Silent fail — don't crash bridge on backend unavailability
-  }
+function postToMDO(path, body) {
+  return new Promise((resolve) => {
+    try {
+      const http = require("http")
+      const url  = new URL(MDO_BACKEND + path)
+      const data = JSON.stringify(body)
+      const req  = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(data),
+          // backend access key (when MDO_AUTH_TOKEN protection is enabled)
+          "X-MDO-Key": process.env.MDO_AUTH_TOKEN || "",
+        },
+      }, (res) => {
+        if (res.statusCode >= 300) {
+          const hint = res.statusCode === 401
+            ? " — MDO_AUTH_TOKEN missing/wrong in the whatsapp container (docker compose up -d after .env edits)"
+            : ""
+          console.log(`POST ${path} -> ${res.statusCode}${hint}`)
+        }
+        res.resume()
+        res.on("end", resolve)
+        res.on("error", resolve)
+      })
+      req.on("error", (e) => {
+        console.log(`POST ${path} failed: ${e.message}`)
+        resolve()
+      })
+      req.write(data)
+      req.end()
+    } catch (e) {
+      console.log(`POST ${path} error: ${e.message}`)
+      resolve()
+    }
+  })
 }
 
 // ── Express API ───────────────────────────────────────────────────────────────
