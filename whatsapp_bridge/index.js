@@ -70,7 +70,9 @@ async function startWA() {
   sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: true,
+    // Ask the phone to push chat history after pairing — without this the
+    // messaging-history.set event never fires and backfill is empty.
+    syncFullHistory: true,
     logger: require("pino")({ level: "silent" }),
   })
 
@@ -198,9 +200,9 @@ async function startWA() {
 
   // History backfill — WhatsApp pushes recent chat history right after the QR
   // pairing. Ingest it so the Ops Feed is populated immediately, not empty.
-  sock.ev.on("messaging-history.set", async ({ messages }) => {
-    const recent = (messages || []).slice(-400) // newest chunk only
-    console.log(`history sync: scanning ${recent.length} messages for watched groups`)
+  sock.ev.on("messaging-history.set", async ({ messages, isLatest, progress }) => {
+    const recent = (messages || []).slice(-2000) // cap per chunk; chunks keep arriving
+    console.log(`history sync: chunk of ${recent.length} messages (progress: ${progress ?? "?"}, latest: ${isLatest ?? "?"})`)
     let ingested = 0
     for (const msg of recent) {
       try {
