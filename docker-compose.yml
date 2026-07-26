@@ -17,6 +17,7 @@ services:
       VEGA_DB_PATH: /data/vega_data.db
       VEDANTA_DB_PATH: /data/vedanta_crm.db
       WA_BRIDGE_URL: http://whatsapp:3001
+      WA_BRIDGE2_URL: http://whatsapp2:3001
       TZ: Asia/Kolkata
     volumes:
       - mdo-data:/data
@@ -36,6 +37,21 @@ services:
     depends_on:
       - backend
 
+  # Second WhatsApp account (e.g. the hotel phone). Same bridge image, its own
+  # session volume. Scan its QR from the Ops Feed page → "Phone 2".
+  whatsapp2:
+    build: ./whatsapp_bridge
+    restart: unless-stopped
+    environment:
+      MDO_BACKEND_URL: http://backend:8501
+      AUTH_DIR: /data/wa_auth
+      TZ: Asia/Kolkata
+      MDO_AUTH_TOKEN: ${MDO_AUTH_TOKEN:-}
+    volumes:
+      - wa-auth2:/data
+    depends_on:
+      - backend
+
   frontend:
     build:
       context: ./mdo-app
@@ -52,3 +68,4 @@ services:
 volumes:
   mdo-data:
   wa-auth:
+  wa-auth2:

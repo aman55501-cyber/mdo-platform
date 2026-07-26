@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import urllib.request
 import urllib.parse
@@ -1301,21 +1302,84 @@ async def briefing_generate():
 
 # ── WhatsApp Bridge ──────────────────────────────────────────────────────────
 
+HOTEL_TOTAL_ROOMS = 88  # Hotel ANS International (MDO_VISION §2B)
+
+def _parse_night_report(text: str) -> dict | None:
+    """Extract occupancy from a hotel night-report WhatsApp message.
+
+    Conservative: returns None unless an explicit occupied-count or
+    occupancy-% is present. Handles '34/88', 'rooms sold: 34',
+    'occupied rooms - 34', 'occupancy 38.6%'.
+    """
+    t = text.lower()
+    occupied = total = pct = None
+    m = re.search(r"\b(\d{1,3})\s*/\s*(\d{2,3})\b", t)
+    if m and 40 <= int(m.group(2)) <= 150 and int(m.group(1)) <= int(m.group(2)):
+        occupied, total = int(m.group(1)), int(m.group(2))
+    if occupied is None:
+        m = re.search(r"(?:rooms?\s*(?:sold|occupied|occ)\w*|(?:occupied|occ\w*|sold)\s*rooms?)\s*[:\-–=]?\s*(\d{1,3})\b", t)
+        if m:
+            occupied = int(m.group(1))
+    m = re.search(r"occupanc\w*\s*[:\-–=]?\s*(\d{1,3}(?:\.\d+)?)\s*%", t)
+    if m:
+        pct = float(m.group(1))
+    if occupied is None and pct is None:
+        return None
+    total = total or HOTEL_TOTAL_ROOMS
+    if occupied is not None and occupied > total:
+        return None
+    if pct is None:
+        pct = round(occupied * 100.0 / total, 1)
+    if occupied is None:
+        occupied = round(pct * total / 100)
+    if not (0 <= pct <= 100):
+        return None
+    return {"occupied": occupied, "total": total, "pct": pct}
+
+def _night_report_date(timestamp: str) -> str:
+    """A night report sent before 6 AM IST covers the previous hotel day."""
+    from datetime import datetime, timedelta, timezone
+    try:
+        ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except ValueError:
+        ts = datetime.now(timezone.utc)
+    ist = ts.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    day = ist.date() - timedelta(days=1) if ist.hour < 6 else ist.date()
+    return day.isoformat()
+
 @app.post("/api/whatsapp/message")
 async def whatsapp_message(body: dict):
     """Receives messages forwarded from the WhatsApp bridge."""
     db = await vdb()
+    group = str(body.get("group", ""))[:200]
+    text = str(body.get("text", ""))[:2000]
+    timestamp = str(body.get("timestamp", ""))[:50]
     await db.execute(
         "INSERT INTO whatsapp_messages (group_name, sender, text, timestamp, jid) VALUES (?,?,?,?,?)",
-        (
-            str(body.get("group", ""))[:200],
-            str(body.get("sender", ""))[:100],
-            str(body.get("text", ""))[:2000],
-            str(body.get("timestamp", ""))[:50],
-            str(body.get("jid", ""))[:100],
-        )
+        (group, str(body.get("sender", ""))[:100], text, timestamp, str(body.get("jid", ""))[:100])
     )
     await db.commit()
+
+    # Hotel night report → parse occupancy straight into hotel_daily
+    if "night report" in re.sub(r"[^a-z0-9]+", " ", group.lower()):
+        parsed = _parse_night_report(text)
+        if parsed:
+            date_str = _night_report_date(timestamp)
+            note = f"auto: WhatsApp night report ({str(body.get('sender',''))[:40]})"
+            cur = await db.execute(
+                "UPDATE hotel_daily SET occupied=?, total_rooms=?, occupancy_pct=?, notes=? WHERE date=?",
+                (parsed["occupied"], parsed["total"], parsed["pct"], note, date_str),
+            )
+            if cur.rowcount == 0:
+                await db.execute(
+                    "INSERT INTO hotel_daily (date,total_rooms,occupied,occupancy_pct,notes) VALUES (?,?,?,?,?)",
+                    (date_str, parsed["total"], parsed["occupied"], parsed["pct"], note),
+                )
+            await db.commit()
+            return {"received": True, "hotel_daily": date_str, **parsed}
+
     return {"received": True}
 
 @app.post("/api/whatsapp/status")
@@ -1323,11 +1387,12 @@ async def whatsapp_status_update(body: dict):
     return {"ok": True}
 
 @app.get("/api/whatsapp/qr")
-async def whatsapp_qr():
-    """Proxy QR code from WhatsApp bridge to avoid CORS issues."""
-    wa_url = os.environ.get("WA_BRIDGE_URL", "")
+async def whatsapp_qr(account: str = "1"):
+    """Proxy QR code from a WhatsApp bridge (account 1 or 2) to avoid CORS issues."""
+    env_key = "WA_BRIDGE2_URL" if account == "2" else "WA_BRIDGE_URL"
+    wa_url = os.environ.get(env_key, "")
     if not wa_url:
-        return {"connected": False, "qr": None, "message": "WA_BRIDGE_URL not set"}
+        return {"connected": False, "qr": None, "message": f"{env_key} not set"}
     try:
         req = urllib.request.Request(wa_url.rstrip("/") + "/api/whatsapp/qr")
         with urllib.request.urlopen(req, timeout=8) as r:
