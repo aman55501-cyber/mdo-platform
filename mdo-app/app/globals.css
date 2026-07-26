@@ -1,25 +1,188 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
-  --bg:        #0d0f14;
-  --bg2:       #141720;
-  --bg3:       #1c2030;
-  --border:    #2a2f3d;
-  --text:      #e2e8f0;
-  --text2:     #94a3b8;
-  --accent:    #6366f1;
-  --accent2:   #818cf8;
-  --green:     #22c55e;
-  --red:       #ef4444;
-  --amber:     #f59e0b;
-  --cyan:      #06b6d4;
+  /* Core surfaces — obsidian with a cold blue undertone */
+  --bg:        #07080d;
+  --bg2:       #0d0f17;
+  --bg3:       #151827;
+  --border:    #1f2333;
+  --border2:   #2c3148;
+
+  /* Text */
+  --text:      #e7ebf4;
+  --text2:     #8b93ab;
+
+  /* Accent system — indigo core with violet/cyan iridescence */
+  --accent:    #6d6af8;
+  --accent2:   #8f8cff;
+  --accent3:   #22d3ee;
+  --accent-grad: linear-gradient(135deg, #8f8cff 0%, #6d6af8 45%, #22d3ee 120%);
+
+  /* Signals */
+  --green:     #34d399;
+  --red:       #f87171;
+  --amber:     #fbbf24;
+  --cyan:      #22d3ee;
+
+  /* Glass */
+  --glass:     rgba(18, 21, 35, 0.72);
+  --glass-brd: rgba(143, 140, 255, 0.14);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+/* NOTE: no bare `* { … }` reset here — Tailwind's preflight already resets
+   margins/padding, and an unlayered rule would override every utility class. */
 
-html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg2); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a4050; }
+/* Ambient background — two ultra-soft radial glows, fixed behind everything.
+   z-index: -1 keeps it under all content without touching children's own
+   position/z-index (an unlayered body>* rule would override Tailwind utilities). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(900px 600px at 85% -10%, rgba(109, 106, 248, 0.09), transparent 60%),
+    radial-gradient(700px 500px at -10% 110%, rgba(34, 211, 238, 0.05), transparent 60%);
+}
+
+::selection { background: rgba(109, 106, 248, 0.35); }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3d4360; }
+
+input, textarea, select, button { font-family: inherit; }
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+  border-color: rgba(143, 140, 255, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(109, 106, 248, 0.15);
+}
+
+/* ── Reusable primitives ─────────────────────────────────────────────────── */
+
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--glass-brd);
+}
+
+.grad-text {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.card-hover { transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease; }
+.card-hover:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp .35s cubic-bezier(.21,.68,.32,1) both; }
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50%      { transform: translate(-50%, -52%) scale(1.06); }
+}
+@keyframes orbHue {
+  0%, 100% { filter: hue-rotate(0deg); }
+  50%      { filter: hue-rotate(35deg); }
+}
+.brain-orb {
+  background:
+    radial-gradient(circle at 32% 30%, rgba(143, 140, 255, 0.95), rgba(109, 106, 248, 0.55) 42%, rgba(34, 211, 238, 0.22) 72%, transparent 78%);
+  border-radius: 9999px;
+  animation: orbFloat 7s ease-in-out infinite, orbHue 11s ease-in-out infinite;
+  filter: blur(0.2px);
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+  60%      { opacity: .75; box-shadow: 0 0 0 5px rgba(52, 211, 153, 0); }
+}
+.live-dot { animation: pulseDot 2.2s ease-out infinite; }
+
+@keyframes thinkingSweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.thinking-text {
+  background: linear-gradient(90deg, var(--text2) 30%, var(--text) 50%, var(--text2) 70%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinkingSweep 1.8s linear infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); } 40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); } 80% { transform: translateX(3px); }
+}
+.shake { animation: shake .35s ease; }
+
+/* ── Markdown (Brain answers) ────────────────────────────────────────────── */
+
+.md { font-size: 13.5px; line-height: 1.65; }
+.md > * + * { margin-top: .6em; }
+.md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.3; color: var(--text); }
+.md h1 { font-size: 1.15em; margin-top: 1em; }
+.md h2 { font-size: 1.08em; margin-top: 1em; }
+.md h3 { font-size: 1em; margin-top: .9em; }
+.md strong { font-weight: 600; color: var(--text); }
+.md ul, .md ol { padding-left: 1.3em; display: flex; flex-direction: column; gap: .25em; }
+.md li::marker { color: var(--accent2); }
+.md code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: .85em;
+  background: rgba(143, 140, 255, 0.1);
+  border: 1px solid rgba(143, 140, 255, 0.12);
+  padding: .1em .35em;
+  border-radius: 5px;
+}
+.md pre {
+  background: #0a0c14;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.md pre code { background: none; border: none; padding: 0; font-size: 12px; }
+.md blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+  color: var(--text2);
+}
+.md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+.md .md-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+.md table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.md th {
+  text-align: left; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; font-size: 10px; letter-spacing: .06em;
+  padding: 8px 12px; background: rgba(143, 140, 255, 0.06);
+  border-bottom: 1px solid var(--border);
+}
+.md td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.md tr:last-child td { border-bottom: none; }
