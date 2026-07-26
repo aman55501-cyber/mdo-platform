@@ -3,11 +3,11 @@ Run once: python seed_mdo_db.py
 """
 import sqlite3, os, sys
 
-DB = os.path.join(os.path.dirname(__file__), "vega", "data", "vega_data.db")
-if not os.path.exists(DB):
-    # create blank db; schema applied by store.py on first engine start
-    # but we can still create tables here
-    pass
+# In Docker the backend sets VEGA_DB_PATH=/data/vega_data.db (persistent volume)
+DB = os.environ.get("VEGA_DB_PATH") or os.path.join(
+    os.path.dirname(__file__), "vega", "data", "vega_data.db"
+)
+os.makedirs(os.path.dirname(DB) or ".", exist_ok=True)
 
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
@@ -142,12 +142,15 @@ FILINGS = [
     ("ANS Holdings Pvt Ltd",      "MCA ROC",    "Annual return",                            "2026-09-30", "FY2026",   "pending",  ""),
     ("ANS Holdings Pvt Ltd",      "Board",      "Board meeting + minutes",                  "2026-06-30", "FY2026",   "pending",  "All subsidiaries"),
 ]
-for row in FILINGS:
-    c.execute("""INSERT INTO compliance_filings
-        (entity_name,filing_type,description,due_date,period,status,notes)
-        VALUES (?,?,?,?,?,?,?)""", row)
-conn.commit()
-print(f"✓ {len(FILINGS)} compliance filings seeded")
+if c.execute("SELECT COUNT(*) FROM compliance_filings").fetchone()[0] == 0:
+    for row in FILINGS:
+        c.execute("""INSERT INTO compliance_filings
+            (entity_name,filing_type,description,due_date,period,status,notes)
+            VALUES (?,?,?,?,?,?,?)""", row)
+    conn.commit()
+    print(f"✓ {len(FILINGS)} compliance filings seeded")
+else:
+    print("· compliance filings already present — skipped")
 
 # ── Intel Items ───────────────────────────────────────────────────────────────
 INTEL = [
@@ -160,12 +163,16 @@ INTEL = [
     ("vwlr",       "system",  "MEDIUM",   "SECL",           "SECL tender MCL/2026/048 — due Apr 28",            "10,500 MT coal supply tender from SECL. Eligibility 85%. Prepare documentation.", "2026-04-28", "open"),
     ("wealth",     "system",  "LOW",      "Pool D",         "SGB tranche open — consider allocation",           "Sovereign Gold Bond new tranche. Pool D allocation opportunity for capital preservation.", None, "open"),
 ]
-for row in INTEL:
-    c.execute("""INSERT INTO intel_items
-        (category,source,urgency,entity,title,body,due_date,status)
-        VALUES (?,?,?,?,?,?,?,?)""", row)
-conn.commit()
-print(f"✓ {len(INTEL)} intel items seeded")
+# guard on source='system' so Brain/agent-filed intel doesn't block seeding
+if c.execute("SELECT COUNT(*) FROM intel_items WHERE source='system'").fetchone()[0] == 0:
+    for row in INTEL:
+        c.execute("""INSERT INTO intel_items
+            (category,source,urgency,entity,title,body,due_date,status)
+            VALUES (?,?,?,?,?,?,?,?)""", row)
+    conn.commit()
+    print(f"✓ {len(INTEL)} intel items seeded")
+else:
+    print("· system intel items already present — skipped")
 
 # ── Ops Tasks ─────────────────────────────────────────────────────────────────
 TASKS = [
@@ -180,12 +187,16 @@ TASKS = [
     ("DIR-3 KYC for all directorships",          "Aman Agrawal DIN renewal across all companies",                        "All Entities",   "CA Vimal Agrawal", "medium",   "open",   "compliance", "2026-09-30"),
     ("Board meeting — ANS Holdings",             "Schedule Q1 FY27 board meeting, prepare minutes template",             "ANS Holdings",   "Aman",             "low",      "open",   "operations", "2026-06-30"),
 ]
-for row in TASKS:
-    c.execute("""INSERT INTO ops_tasks
-        (title,description,entity,assigned_to,priority,status,category,due_date)
-        VALUES (?,?,?,?,?,?,?,?)""", row)
-conn.commit()
-print(f"✓ {len(TASKS)} ops tasks seeded")
+# exclude roadmap tasks from the guard — the server seeds those itself
+if c.execute("SELECT COUNT(*) FROM ops_tasks WHERE category != 'roadmap'").fetchone()[0] == 0:
+    for row in TASKS:
+        c.execute("""INSERT INTO ops_tasks
+            (title,description,entity,assigned_to,priority,status,category,due_date)
+            VALUES (?,?,?,?,?,?,?,?)""", row)
+    conn.commit()
+    print(f"✓ {len(TASKS)} ops tasks seeded")
+else:
+    print("· ops tasks already present — skipped")
 
 conn.close()
 print("\n✅ MDO database seeded successfully!")

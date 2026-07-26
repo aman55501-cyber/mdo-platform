@@ -11,7 +11,7 @@ ENV TZ=Asia/Kolkata
 COPY requirements_server.txt ./
 RUN pip install --no-cache-dir -r requirements_server.txt
 
-COPY mdo_server.py mdo_brain.py ./
+COPY mdo_server.py mdo_brain.py seed_mdo_db.py ./
 
 # /data is mounted as a Railway persistent volume — SQLite lives here
 ENV VEGA_DB_PATH=/data/vega_data.db
