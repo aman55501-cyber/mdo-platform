@@ -72,8 +72,8 @@ ENTITIES = [
     # name, short_name, type, business, location, directors, turnover, notes
     ("ANS Coal Washery Pvt Ltd",       "ANS Coal",     "company", "Coal washery / VWLR",          "Kharsia, Raigarh CG", "Aman Agrawal",          "₹18-22 Cr",  "Core washery ops"),
     ("Aditi Investments",              "Aditi Inv",    "company", "Equity / derivatives trading",  "Raigarh CG",          "Aman Agrawal",          "₹16-20 Cr AUM", "Liquid portfolio entity"),
-    ("Hotel ANS",                      "Hotel ANS",    "company", "Hospitality / hotel",           "Raigarh CG",          "Aman Agrawal",          "₹2-3 Cr",    "Hotel operations"),
-    ("Ozone Steel Pvt Ltd",            "Ozone Steel",  "company", "Steel / iron",                  "Raigarh CG",          "Aman Agrawal",          "",           "§454 CRITICAL — strike-off notice"),
+    ("Hotel ANS International Ltd",    "Hotel ANS",    "company", "Hospitality / hotel",           "Raigarh CG",          "Aman Agrawal",          "₹2-3 Cr",    "Hotel operations"),
+    ("Ozone Steel & Power Ltd",        "Ozone Steel",  "company", "Steel / iron",                  "Raigarh CG",          "Aman Agrawal",          "",           "§454 CRITICAL — strike-off notice"),
     ("Rashi Steel Ltd",                "Rashi Steel",  "company", "Steel manufacturing",           "Raigarh CG",          "Aman Agrawal",          "",           "Court case 3616/2026"),
     ("ANS Transport Pvt Ltd",          "ANS Trans",    "company", "Coal/goods transport",          "Raigarh CG",          "Aman Agrawal",          "₹1-2 Cr",    "Fleet: trucks/tippers"),
     ("ANS Minerals Pvt Ltd",           "ANS Min",      "company", "Mineral trading",               "Raigarh CG",          "Aman Agrawal",          "",           ""),
@@ -198,6 +198,178 @@ if c.execute("SELECT COUNT(*) FROM ops_tasks WHERE category != 'roadmap'").fetch
 else:
     print("· ops tasks already present — skipped")
 
+# ── Entity enrichment — verified facts from MDO_VISION.md / MDO_INTEL.md ─────
+# Idempotent: re-asserts doc-sourced fields on every run. Placeholder rows are
+# only flagged while still in untouched seed state (empty notes) so manual
+# edits in the app are never overwritten.
+
+# Legal-name corrections — migrate rows created by older seed runs, then drop
+# any stale old-name duplicate the UNIQUE constraint kept around.
+c.execute("UPDATE OR IGNORE ans_entities SET name='Hotel ANS International Ltd' WHERE name='Hotel ANS'")
+c.execute("UPDATE OR IGNORE ans_entities SET name='Ozone Steel & Power Ltd' WHERE name='Ozone Steel Pvt Ltd'")
+c.execute("DELETE FROM ans_entities WHERE name IN ('Hotel ANS','Ozone Steel Pvt Ltd')")
+c.execute("UPDATE compliance_filings SET entity_name='Hotel ANS International Ltd' WHERE entity_name='Hotel ANS'")
+c.execute("UPDATE ops_tasks SET entity='Hotel ANS International Ltd' WHERE entity='Hotel ANS'")
+c.execute("UPDATE compliance_filings SET entity_name='Ozone Steel & Power Ltd' WHERE entity_name='Ozone Steel Pvt Ltd'")
+
+ENRICH = {
+    "ANS Coal Washery Pvt Ltd": {
+        "pan": "AAECV8176B",
+        "business": "Coal washery — VWLR (RCR, loading/unloading, rake handling)",
+        "location": "Kharsia, Raigarh CG",
+        "notes": "C1. COMMISSIONING ~50% capacity (Apr 2026). Active pipeline ₹34.55 Cr: "
+                 "WCL ₹22.2 Cr, SCCL ₹7.8 Cr, SECL ₹51.32 L, Indonesian ₹4 Cr. "
+                 "Tender platform: Tender247. Exact legal name unconfirmed (MDO_INTEL §2) — "
+                 "verify against ANS_Group_Data_Capture.",
+    },
+    "Hotel ANS International Ltd": {
+        "business": "Hospitality — 88 rooms",
+        "location": "Regd. Kolkata · ops Raigarh CG",
+        "notes": "C2, Public Ltd. Occupancy ~23% (Apr 2026) — focus area. Staah inventory, "
+                 "Swiggy/Zomato delivery. 🔴 AOC-4 + MGT-7 filing currency unknown — confirm with CA Vimal.",
+    },
+    "Aditi Investments": {
+        "entity_type": "firm",
+        "pan": "ACFFA4349B",
+        "directors": "Partners: Aman Agrawal, Ashok, Sudha",
+        "annual_turnover": "₹85.78 L liquid (19 Apr 2026) · target ₹100 Cr in 2 yrs",
+        "notes": "F1 partnership firm. HDFC Securities a/c #4016900. Pool B vehicle: 200+ NSE "
+                 "equities, F&O (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY), US equity via IndMoney, "
+                 "crypto on SunCrypto + Binance.",
+    },
+    "Ozone Steel & Power Ltd": {
+        "pan": "AAACA1111A",
+        "business": "Steel & power — Public Ltd",
+        "notes": "C10. 🔴 §454(8) strike-off risk — no ITR PDF filed. NCLT/ROC exposure. "
+                 "Escalate via CA Vimal Agrawal (9755220259).",
+    },
+    "Rashi Steel Ltd": {
+        "entity_type": "external",
+        "directors": "",
+        "notes": "X1 — EXTERNAL entity, not ANS-controlled. 🔴 §454(8) CJM Bilaspur case "
+                 "3616/2026, next hearing was 15 May 2026; advocate not yet engaged.",
+    },
+    "Aman Agrawal (Individual)": {
+        "notes": "I1. Age 31, first-generation industrialist. Father: Narendra Agrawal (founder), "
+                 "sister: Aditi Agrawal. PAN/ITR/DIN compliance; DIR-3 KYC due 30 Sep 2026.",
+    },
+    "ANS Group HUF": {
+        "notes": "H1. Karta: Aman Agrawal. HUF ITR due 31 Jul 2026.",
+    },
+}
+for name, fields in ENRICH.items():
+    sets = ", ".join(f"{k}=?" for k in fields)
+    c.execute(f"UPDATE ans_entities SET {sets} WHERE name=?", [*fields.values(), name])
+conn.commit()
+print(f"✓ {len(ENRICH)} entities enriched from MDO_VISION/MDO_INTEL")
+
+# Rows that appear in NO source document — likely placeholders from an earlier
+# session. MDO_VISION §2D says the real register is 6 persons + 1 HUF + 5 firms
+# + 14 companies + 1 external; the authoritative list lives in the
+# ANS_Group_Data_Capture files on Aman's laptop.
+UNVERIFIED = [
+    "ANS Energy Pvt Ltd", "ANS Logistics Pvt Ltd", "ANS Agro Pvt Ltd",
+    "ANS Realty Pvt Ltd", "ANS Cement Pvt Ltd", "ANS Power Pvt Ltd",
+    "ANS Construction Pvt Ltd", "ANS Projects Pvt Ltd", "ANS Fuels Pvt Ltd",
+    "ANS Metals Pvt Ltd", "ANS Ventures Pvt Ltd", "ANS Enterprises",
+]
+flagged = 0
+for name in UNVERIFIED:
+    flagged += c.execute(
+        "UPDATE ans_entities SET status='unverified', "
+        "notes='UNVERIFIED — name not found in any source document. Real 26-unit register "
+        "(6 persons, 1 HUF, 5 firms, 14 companies, 1 external) is in ANS_Group_Data_Capture "
+        "on laptop. Confirm, correct, or delete.' "
+        "WHERE name=? AND status='active' AND notes=''",
+        (name,),
+    ).rowcount
+conn.commit()
+if flagged:
+    print(f"✓ {flagged} placeholder entities flagged unverified")
+
+AUDIT_TITLE = "Entity register needs verification — seed list vs documented 26-unit structure"
+if not c.execute("SELECT 1 FROM intel_items WHERE title=?", (AUDIT_TITLE,)).fetchone():
+    c.execute(
+        """INSERT INTO intel_items (category,source,urgency,entity,title,body,due_date,status)
+           VALUES ('compliance','audit','MEDIUM','All Entities',?,?,NULL,'open')""",
+        (AUDIT_TITLE,
+         "MDO_VISION §2D documents 26 taxable units as 6 persons (I1-I6) + 1 HUF + 5 firms "
+         "(F1-F5) + 14 companies (C1-C14) + 1 external (X1 Rashi Steel). The seeded register "
+         "has 1 person, 1 HUF, 2 firms, 22 companies — 12 company names have no source and "
+         "are flagged 'unverified'. Action: pull the ANS_Group_Data_Capture files from "
+         "Desktop/MASTER and replace placeholders with the real register."),
+    )
+    conn.commit()
+    print("✓ audit intel item filed")
+
+# Roadmap step 1 is factually complete — the system is running on the VPS.
+c.execute(
+    "UPDATE ops_tasks SET status='done', completed_at=datetime('now'), updated_at=datetime('now') "
+    "WHERE category='roadmap' AND title='Deploy MDO to Hostinger VPS' AND status='open'"
+)
+conn.commit()
+
 conn.close()
 print("\n✅ MDO database seeded successfully!")
 print(f"   DB: {DB}")
+
+# ── Stopgap Vedanta CRM DB (tenders / leads) ─────────────────────────────────
+# Created ONLY if /data/vedanta_crm.db is absent, so it can never clobber the
+# real CRM database once that is uploaded from the laptop. Contents come from
+# MDO_INTEL §3 (11 seed leads) and MDO_VISION §2A (pipeline breakdown).
+VDB = os.environ.get("VEDANTA_DB_PATH") or os.path.join(
+    os.path.dirname(__file__), "vega", "data", "vedanta_crm.db"
+)
+if os.path.exists(VDB):
+    print(f"· Vedanta CRM DB present — untouched: {VDB}")
+else:
+    v = sqlite3.connect(VDB)
+    v.executescript("""
+    CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company TEXT NOT NULL, contact_person TEXT DEFAULT '', phone TEXT DEFAULT '',
+        location TEXT DEFAULT '', distance_km REAL DEFAULT 0,
+        potential_volume TEXT DEFAULT '', status TEXT DEFAULT 'prospect',
+        priority TEXT DEFAULT 'Medium', tender_score REAL DEFAULT 0,
+        next_followup TEXT, notes TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS tender_tracking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer TEXT NOT NULL, title TEXT DEFAULT '', volume REAL, unit TEXT DEFAULT 'MT',
+        category TEXT DEFAULT '', due_date TEXT, status TEXT DEFAULT 'active',
+        eligibility_score REAL, url TEXT DEFAULT '', notes TEXT DEFAULT ''
+    );
+    """)
+    LEADS = [
+        # company, distance_km, potential_volume, priority  (MDO_INTEL §3)
+        ("NTPC Sipat",        85, "50,000 MT/mo", "High"),
+        ("JSPL Raigarh",      12, "30,000 MT/mo", "High"),
+        ("SAIL Bhilai",      140, "45,000 MT/mo", "High"),
+        ("Monnet Ispat",      35, "20,000 MT/mo", "High"),
+        ("Chettinad Cement",  95, "15,000 MT/mo", "Medium"),
+        ("OCL India",        110, "12,000 MT/mo", "Medium"),
+        ("Godawari Power",    45, "25,000 MT/mo", "High"),
+        ("Shakti Pumps",     180, "8,000 MT/mo",  "Low"),
+        ("KSK Energy",        65, "18,000 MT/mo", "Medium"),
+        ("SECL",              20, "100,000 MT/mo","High"),
+        ("ACC Cement",       125, "10,000 MT/mo", "Low"),
+    ]
+    v.executemany(
+        "INSERT INTO leads (company,distance_km,potential_volume,priority,status,notes) "
+        "VALUES (?,?,?,?,'prospect','Seeded from MDO_INTEL §3 (Apr 2026) — stopgap until real CRM DB is uploaded')",
+        LEADS,
+    )
+    PIPELINE = [
+        ("WCL",        "Service pipeline — RCR / handling", "₹22.2 Cr pipeline value (MDO_VISION §2A, Apr 2026)"),
+        ("SCCL",       "Service pipeline — RCR / handling", "₹7.8 Cr pipeline value. 🔴 18 Apr 2026 tender deadline — confirm submitted/missed (MDO_VISION §4)"),
+        ("SECL",       "Service pipeline — RCR / handling", "₹51.32 L pipeline value (MDO_VISION §2A, Apr 2026)"),
+        ("Indonesian", "Service pipeline — import-linked",  "₹4 Cr pipeline value (MDO_VISION §2A, Apr 2026)"),
+    ]
+    v.executemany(
+        "INSERT INTO tender_tracking (buyer,title,category,status,notes) VALUES (?,?, 'Pipeline','pipeline',?)",
+        PIPELINE,
+    )
+    v.commit()
+    v.close()
+    print(f"✓ Stopgap Vedanta CRM DB created: 11 leads + 4 pipeline entries → {VDB}")
+    print("  (upload the real vedanta_crm.db from the laptop to replace it)")
