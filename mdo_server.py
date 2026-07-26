@@ -30,7 +30,7 @@ except ImportError:
 
 import aiosqlite
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── paths ────────────────────────────────────────────────────────────────────
@@ -1744,32 +1744,50 @@ async def hdfc_auth_init():
     if not HDFC_API_KEY_VAL or not HDFC_API_SECRET:
         raise HTTPException(400, "HDFC_API_KEY / HDFC_API_SECRET not set in .env on the VPS")
     import urllib.parse as _up
-    params = _up.urlencode({
-        "apiKey": HDFC_API_KEY_VAL,
-        "redirect_uri": HDFC_REDIRECT_URL,
-        "response_type": "code",
-    })
-    login_url = HDFC_AUTH_BASE + "/oauth2/auth?" + params
+    # InvestRight Individual API lives under /oapi/v1/ (confirmed base path);
+    # the login page takes the key as api_key and redirects back to the URL
+    # registered in the developer portal.
+    login_url = HDFC_AUTH_BASE + "/oapi/v1/login?" + _up.urlencode({"api_key": HDFC_API_KEY_VAL})
     return {"login_url": login_url, "client_id": HDFC_CLIENT_ID}
 
+def _hdfc_try_exchange(code: str) -> dict:
+    """Try the token exchange against the endpoint/payload shapes InvestRight
+    is known to use, in order. Returns the parsed JSON of the first success;
+    raises with ALL failure details otherwise (they show on the callback page
+    so the exact mismatch is visible)."""
+    import urllib.parse as _up
+    attempts = [
+        (HDFC_AUTH_BASE + "/oapi/v1/access-token?" + _up.urlencode({"api_key": HDFC_API_KEY_VAL}),
+         {"apiSecret": HDFC_API_SECRET, "requestToken": code}),
+        (HDFC_AUTH_BASE + "/oapi/v1/access-token",
+         {"api_key": HDFC_API_KEY_VAL, "api_secret": HDFC_API_SECRET, "request_token": code}),
+        (HDFC_AUTH_BASE + "/oapi/v1/access-token?" + _up.urlencode({"api_key": HDFC_API_KEY_VAL}),
+         {"apiSecret": HDFC_API_SECRET, "tokenId": code}),
+        (HDFC_AUTH_BASE + "/oauth2/token",
+         {"apiKey": HDFC_API_KEY_VAL, "apiSecret": HDFC_API_SECRET, "code": code}),
+    ]
+    errors = []
+    for url, body in attempts:
+        try:
+            req = urllib.request.Request(
+                url, data=_json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as r:
+                resp = _json.loads(r.read())
+            token = (resp.get("access_token") or resp.get("accessToken")
+                     or resp.get("token") or (resp.get("data") or {}).get("access_token", ""))
+            if token:
+                resp["_token"] = token
+                return resp
+            errors.append(f"{url} → 200 but no token field: {str(resp)[:200]}")
+        except Exception as e:
+            errors.append(f"{url} → {str(e)[:200]}")
+    raise RuntimeError("all exchange attempts failed:\n" + "\n".join(errors))
+
 async def _hdfc_store_token(code: str) -> dict:
-    """Exchange an OAuth code for an access token and persist the session."""
-    payload = _json.dumps({
-        "apiKey": HDFC_API_KEY_VAL,
-        "apiSecret": HDFC_API_SECRET,
-        "code": code,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        HDFC_AUTH_BASE + "/oauth2/token",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=15) as r:
-        resp = _json.loads(r.read())
-    token = resp.get("access_token", "")
-    if not token:
-        raise RuntimeError(f"HDFC returned no access_token: {str(resp)[:300]}")
+    """Exchange an auth code/request token for an access token and persist it."""
+    resp = _hdfc_try_exchange(code)
+    token = resp["_token"]
     expiry = resp.get("expires_in", 86400)
     import datetime as _dtt
     expiry_str = (_dtt.datetime.now() + _dtt.timedelta(seconds=expiry)).isoformat()
@@ -1795,10 +1813,14 @@ async def hdfc_auth_callback(body: dict):
         raise HTTPException(500, str(e))
 
 @app.get("/api/hdfc/callback")
-async def hdfc_oauth_redirect(code: str = "", request_token: str = "", requestToken: str = ""):
+async def hdfc_oauth_redirect(request: Request, code: str = "", request_token: str = "",
+                              requestToken: str = "", tokenid: str = "", tokenId: str = ""):
     """Browser lands here after HDFC login + OTP. Exempt from the access key."""
     from starlette.responses import HTMLResponse
-    tok = code or request_token or requestToken
+    print("HDFC callback query:", str(request.query_params))  # shows the real param name in logs
+    tok = code or request_token or requestToken or tokenid or tokenId
+    if not tok and len(request.query_params) == 1:
+        tok = next(iter(request.query_params.values()))  # single unknown param — take it
     page = (
         "<html><body style=\"font-family:system-ui,sans-serif;background:#07080d;"
         "color:#e7ebf4;display:flex;align-items:center;justify-content:center;"
