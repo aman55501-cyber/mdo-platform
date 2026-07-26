@@ -5,7 +5,7 @@
 // every API request via the fetch patch below.
 
 import { useEffect, useState } from "react"
-import { Lock } from "lucide-react"
+import { Lock, Eye, EyeOff } from "lucide-react"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 const KEY_NAME = "mdo_key"
@@ -42,6 +42,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<"checking" | "open" | "locked">("checking")
   const [input, setInput] = useState("")
   const [error, setError] = useState("")
+  const [show, setShow] = useState(false)
 
   useEffect(() => {
     fetch(`${BASE}/api/status`, { cache: "no-store" })
@@ -86,16 +87,30 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <p className="text-xs mb-4" style={{ color: "var(--text2)" }}>
           This system is private. Enter the access key.
         </p>
-        <input
-          type="password"
-          autoFocus
-          value={input}
-          onChange={e => { setInput(e.target.value); setError("") }}
-          onKeyDown={e => e.key === "Enter" && unlock()}
-          placeholder="Access key"
-          className="w-full px-3 py-2.5 rounded-lg text-sm border outline-none mb-2"
-          style={{ background: "var(--bg2)", borderColor: error ? "var(--red)" : "var(--border)", color: "var(--text)" }}
-        />
+        <div className="relative mb-2">
+          <input
+            type={show ? "text" : "password"}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={input}
+            onChange={e => { setInput(e.target.value); setError("") }}
+            onKeyDown={e => e.key === "Enter" && unlock()}
+            placeholder="Access key"
+            className="w-full px-3 py-2.5 pr-10 rounded-lg text-sm border outline-none"
+            style={{ background: "var(--bg2)", borderColor: error ? "var(--red)" : "var(--border)", color: "var(--text)" }}
+          />
+          <button
+            type="button"
+            onClick={() => setShow(s => !s)}
+            aria-label={show ? "Hide access key" : "Show access key"}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1"
+            style={{ color: "var(--text2)" }}
+          >
+            {show ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
         {error && <p className="text-xs mb-2" style={{ color: "var(--red)" }}>{error}</p>}
         <button onClick={unlock}
           className="w-full py-2.5 rounded-lg text-sm font-medium"
