@@ -25,10 +25,15 @@ const WATCHED_GROUPS = [
   "vwlr shifting",
 ]
 
+// Normalize before matching: lowercase, collapse punctuation/whitespace runs
+// to single spaces — so "VWLR - RKM GROUP" matches "vwlr-rkm group".
+const normName = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+const WATCHED_NORM = WATCHED_GROUPS.map(normName)
+
 function isWatchedName(name) {
   if (!name) return false
-  const lower = name.toLowerCase()
-  return WATCHED_GROUPS.some(g => lower.includes(g))
+  const n = normName(name)
+  return WATCHED_NORM.some(g => n.includes(g))
 }
 
 app.use(express.json())
