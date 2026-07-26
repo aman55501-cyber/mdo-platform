@@ -34,8 +34,14 @@ const WATCHED_GROUPS = [
 const normName = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
 const WATCHED_NORM = WATCHED_GROUPS.map(normName)
 
+// Watch mode: "all" (default) ingests EVERY group on the account — reports
+// from all firms, no per-business whitelist. Set WA_WATCH_MODE=list to
+// restrict to WATCHED_GROUPS above.
+const WATCH_MODE = (process.env.WA_WATCH_MODE || "all").toLowerCase()
+
 function isWatchedName(name) {
   if (!name) return false
+  if (WATCH_MODE === "all") return true
   const n = normName(name)
   return WATCHED_NORM.some(g => n.includes(g))
 }
@@ -89,18 +95,20 @@ async function startWA() {
           groupNameCache[jid] = meta.subject || ""
           if (isWatchedName(meta.subject)) {
             watched++
-            console.log(`watching: ${meta.subject}`)
+            if (WATCH_MODE !== "all") console.log(`watching: ${meta.subject}`)
           }
         }
-        console.log(`group cache primed: ${Object.keys(groups).length} groups, ${watched} watched`)
-        if (watched < WATCHED_GROUPS.length) {
-          const missed = Object.values(groups)
-            .map(m => m.subject || "")
-            .filter(n => n && !isWatchedName(n) && /vwlr|vedanta|rake|rkm|shifting|hotel|night|report|dsr|front office|kitchen/i.test(n))
-          if (missed.length) console.log(`unmatched candidates: ${missed.join(" | ")}`)
-        }
-        if (watched === 0) {
-          console.log("WARNING: no groups matched WATCHED_GROUPS — check the names above against the list in index.js")
+        console.log(`group cache primed: ${Object.keys(groups).length} groups, ${watched} watched (mode: ${WATCH_MODE})`)
+        if (WATCH_MODE !== "all") {
+          if (watched < WATCHED_GROUPS.length) {
+            const missed = Object.values(groups)
+              .map(m => m.subject || "")
+              .filter(n => n && !isWatchedName(n) && /vwlr|vedanta|rake|rkm|shifting|hotel|night|report|dsr|front office|kitchen/i.test(n))
+            if (missed.length) console.log(`unmatched candidates: ${missed.join(" | ")}`)
+          }
+          if (watched === 0) {
+            console.log("WARNING: no groups matched WATCHED_GROUPS — check the names above against the list in index.js")
+          }
         }
       } catch (e) {
         console.log("group prefetch failed (falling back to per-message lookups):", e.message)
