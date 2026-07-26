@@ -107,11 +107,19 @@ async function startWA() {
 
     if (connection === "close") {
       isConnected = false
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
-      console.log("WhatsApp disconnected. Reconnecting:", shouldReconnect)
-      if (shouldReconnect) setTimeout(startWA, 5000)
-      else {
+      const loggedOut = lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut
+      if (!loggedOut) {
+        console.log("WhatsApp disconnected — reconnecting in 5s")
+        setTimeout(startWA, 5000)
+      } else {
+        // Device was unlinked from the phone. The stored session is dead —
+        // wipe it and restart so a FRESH QR is generated for re-pairing.
+        console.log("WhatsApp logged out — clearing dead session, generating fresh QR")
+        try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }) } catch (e) {
+          console.log("could not clear auth dir:", e.message)
+        }
         await postToMDO("/api/whatsapp/status", { connected: false, message: "WhatsApp logged out — rescan QR" })
+        setTimeout(startWA, 2000)
       }
     }
   })
