@@ -60,8 +60,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (r.ok) {
         localStorage.setItem(KEY_NAME, key)
         window.location.reload() // rerun every query + the live stream with the key
-      } else {
+      } else if (r.status === 401) {
         setError("Wrong key")
+      } else {
+        setError(`Server error ${r.status} — key not the problem; check the backend/proxy`)
       }
     } catch {
       setError("Backend unreachable")
