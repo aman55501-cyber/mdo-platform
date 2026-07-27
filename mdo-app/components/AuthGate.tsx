@@ -97,6 +97,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <div className="relative mb-3">
           <input
             type={show ? "text" : "password"}
+            name="mdo-access-key"
+            autoComplete="new-password"
             autoFocus
             autoCapitalize="none"
             autoCorrect="off"
