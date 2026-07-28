@@ -206,6 +206,38 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
     category TEXT DEFAULT 'ops',
     created_at TEXT DEFAULT (datetime('now'))
 );
+-- Checks registry: the standing questions the agents answer on a cadence.
+CREATE TABLE IF NOT EXISTS checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    cadence TEXT NOT NULL,                  -- hourly|daily|weekly|monthly|quarterly|annual
+    domain TEXT DEFAULT 'general',          -- market|capital|vwlr|hotel|compliance|projects|banking
+    sources TEXT DEFAULT '',                -- where the data comes from
+    threshold TEXT DEFAULT '',              -- what makes it red vs amber
+    owner TEXT DEFAULT 'Aman',
+    run_window TEXT DEFAULT '',             -- e.g. "09:00-15:30 IST Mon-Fri"; blank = any time
+    status TEXT NOT NULL DEFAULT 'active',  -- active|blocked|paused
+    blocker TEXT DEFAULT '',                -- why it cannot run yet
+    last_run TEXT,
+    last_result TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+-- Agent output lands here (not only a git branch) so it reaches the app/phone.
+CREATE TABLE IF NOT EXISTS agent_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cadence TEXT NOT NULL DEFAULT 'daily',
+    agent TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    summary TEXT DEFAULT '',
+    body TEXT DEFAULT '',
+    findings_json TEXT DEFAULT '[]',
+    n_critical INTEGER DEFAULT 0,
+    n_important INTEGER DEFAULT 0,
+    n_info INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS hdfc_session (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     access_token TEXT DEFAULT '',
@@ -295,6 +327,17 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
         row = await cur.fetchone()
     if row["n"] == 0:
         await _seed_life_map(db)
+    # Seed the checks registry (Aman's standing cadence list) if empty
+    async with db.execute("SELECT COUNT(*) as n FROM checks") as cur:
+        row = await cur.fetchone()
+    if row["n"] == 0:
+        await db.executemany(
+            """INSERT OR IGNORE INTO checks
+               (code,title,cadence,domain,sources,threshold,owner,run_window,status,blocker)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            CHECKS_SEED,
+        )
+        await db.commit()
     # Seed build roadmap (shown as "Remaining Steps" on /lifemap + sidebar) if empty
     async with db.execute("SELECT COUNT(*) as n FROM ops_tasks WHERE category='roadmap'") as cur:
         row = await cur.fetchone()
@@ -493,6 +536,60 @@ async def _seed_life_map(db):
         LIFE_MAP_SEED_EDGES,
     )
     await db.commit()
+
+# ── Checks registry seed ─────────────────────────────────────────────────────
+# Aman's standing cadence list. status='blocked' means the data source does not
+# exist yet — the agent reports the gap instead of inventing an answer.
+# (code, title, cadence, domain, sources, threshold, owner, run_window, status, blocker)
+MARKET_WINDOW = "09:00-15:30 IST Mon-Fri"
+CHECKS_SEED = [
+    # ── hourly ──────────────────────────────────────────────────────────────
+    ("mkt_pulse", "Share market update — indices + watchlist", "hourly", "market",
+     "/api/market/indices, /api/market/watchlist (15 business-context names)",
+     "🔴 watchlist name moves >4% or index >1.5%; 🟡 >2% / >0.8%", "Aman",
+     MARKET_WINDOW, "active", ""),
+    ("acct_positions", "Account-level positions — Aman + Sudha + Aditi", "hourly", "capital",
+     "HDFC InvestRight API (per-account)",
+     "🔴 single position down >5% or margin utilisation >80%", "Aman",
+     MARKET_WINDOW, "blocked", "HDFC OAuth token exchange incomplete; Sudha needs her own API credentials"),
+    ("fo_update", "F&O positions — Aman + Sudha HDFC", "hourly", "capital",
+     "HDFC InvestRight API — F&O book",
+     "🔴 loss >2% of capital, expiry <2 days unhedged, or daily loss limit 5% hit", "Aman",
+     MARKET_WINDOW, "blocked", "Same HDFC auth blocker; Sudha = second connection"),
+    ("dispatch_rakes", "Dispatch vs incoming rakes — Vedanta", "hourly", "vwlr",
+     "WhatsApp: Vedanta Daily Report, VWLR RAKE PLACEMENT, VWLR - RKM GROUP, LOADER REPORT VWLR",
+     "🔴 rake placed with no dispatch movement >6h, or dispatch <70% of placed volume", "Aman",
+     "", "active", ""),
+    ("tender_watch", "New relevant tenders — coal/RCR/handling", "hourly", "vwlr",
+     "Public portals (SECL/WCL/CIL/GeM/CPPP) + web search; Tender247 is manual login",
+     "🔴 eligible tender closing <72h; 🟡 new eligible tender in target categories", "Aman",
+     "", "active", "Tender247 has no API — public sources only"),
+    # ── daily ───────────────────────────────────────────────────────────────
+    ("dispatch_trend", "Dispatch report — day vs week vs month", "daily", "vwlr",
+     "whatsapp_messages history (rake/dispatch groups)",
+     "🔴 day <70% of trailing weekly average; 🟡 weekly trend down 2 weeks running", "Aman",
+     "", "active", ""),
+    ("market_close", "Market change — close + portfolio impact", "daily", "market",
+     "/api/market/indices, watchlist, portfolio news",
+     "🔴 any watchlist thesis broken by news; 🟡 sector move >3%", "Aman",
+     "", "active", ""),
+    ("compliance_due", "Compliance & deadlines — all entities", "daily", "compliance",
+     "compliance_filings, ops_tasks(category=compliance), intel_items",
+     "🔴 overdue or due <3 days; 🟡 due 4-14 days", "CA Vimal Agrawal",
+     "", "active", "Seeded filing dates are from Apr 2026 — need a refresh pass with CA"),
+    ("hotel_daily", "Hotel ANS — sales + occupancy", "daily", "hotel",
+     "Night report WhatsApp group (unidentified) or Staah API",
+     "🔴 occupancy <20% or no report received; 🟡 below trailing 7-day average", "Aman",
+     "", "blocked", "Night-report group not identified; Staah token not fetched; figures may be photos (needs vision)"),
+    ("projects_update", "Ongoing projects — hotel renovation, washery, siding/civil", "daily", "projects",
+     "WhatsApp: Ans Hotel civil, Vedanta washery- Civil Works, ROAD BRIDGE WORK VEDANTA KUNKUNI, VWLR Machine Update",
+     "🔴 no update >48h on an active project, or a blocker/stoppage reported", "Aman",
+     "", "active", ""),
+    ("bank_balances", "Bank balances — personal + all firms", "daily", "banking",
+     "None connected yet (options: emailed statements via Gmail, bank API, manual entry)",
+     "🔴 any account below its working-capital floor; 🟡 large unexplained debit", "Aman",
+     "", "blocked", "No bank feed exists — decide channel: emailed statements, API, or manual"),
+]
 
 def vedanta_conn() -> sqlite3.Connection:
     if not os.path.exists(VEDANTA_DB):
@@ -697,6 +794,137 @@ async def ops_task_update(task_id: int, body: dict):
         await db.execute(f"UPDATE ops_tasks SET {','.join(sets)} WHERE id=?", params)
         await db.commit()
     rows = await db.execute_fetchall("SELECT * FROM ops_tasks WHERE id=?", (task_id,))
+    return dict(rows[0]) if rows else {}
+
+# ── Checks registry ─────────────────────────────────────────────────────────
+@app.get("/api/checks")
+async def checks_list(cadence: str | None = None, status: str | None = None,
+                      domain: str | None = None):
+    """The standing cadence list. Agents call this to know what to produce."""
+    db = await vdb()
+    q = "SELECT * FROM checks WHERE 1=1"
+    params: list = []
+    if cadence: q += " AND cadence=?"; params.append(cadence.lower())
+    if status:  q += " AND status=?";  params.append(status.lower())
+    if domain:  q += " AND domain=?";  params.append(domain.lower())
+    q += (" ORDER BY CASE cadence WHEN 'hourly' THEN 0 WHEN 'daily' THEN 1 "
+          "WHEN 'weekly' THEN 2 WHEN 'monthly' THEN 3 WHEN 'quarterly' THEN 4 "
+          "ELSE 5 END, domain, code")
+    rows = await db.execute_fetchall(q, params)
+    out = [dict(r) for r in rows]
+    return {"checks": out, "count": len(out),
+            "blocked": [c["code"] for c in out if c["status"] == "blocked"]}
+
+@app.post("/api/checks")
+async def checks_add(body: dict):
+    db = await vdb()
+    await db.execute(
+        """INSERT OR REPLACE INTO checks
+           (code,title,cadence,domain,sources,threshold,owner,run_window,status,blocker)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (str(body.get("code", "")).strip(), body.get("title", ""),
+         str(body.get("cadence", "daily")).lower(), str(body.get("domain", "general")).lower(),
+         body.get("sources", ""), body.get("threshold", ""), body.get("owner", "Aman"),
+         body.get("run_window", ""), str(body.get("status", "active")).lower(),
+         body.get("blocker", "")),
+    )
+    await db.commit()
+    rows = await db.execute_fetchall("SELECT * FROM checks WHERE code=?", (body.get("code", ""),))
+    return dict(rows[0]) if rows else {}
+
+@app.put("/api/checks/{check_id}")
+async def checks_update(check_id: int, body: dict):
+    db = await vdb()
+    sets, params = [], []
+    for k in ("title", "cadence", "domain", "sources", "threshold", "owner",
+              "run_window", "status", "blocker", "last_result"):
+        if k in body:
+            sets.append(f"{k}=?"); params.append(body[k])
+    if sets:
+        sets.append("updated_at=datetime('now')")
+        params.append(check_id)
+        await db.execute(f"UPDATE checks SET {','.join(sets)} WHERE id=?", params)
+        await db.commit()
+    rows = await db.execute_fetchall("SELECT * FROM checks WHERE id=?", (check_id,))
+    return dict(rows[0]) if rows else {}
+
+# ── Agent reports ───────────────────────────────────────────────────────────
+_LEVEL_URGENCY = {"critical": "CRITICAL", "red": "CRITICAL", "🔴": "CRITICAL",
+                  "important": "HIGH", "amber": "HIGH", "🟡": "HIGH",
+                  "info": "LOW", "green": "LOW", "🟢": "LOW"}
+
+@app.post("/api/agent/report")
+async def agent_report(body: dict):
+    """Agents POST their run here — this is the delivery path that reaches the
+    app and the phone. 🔴/🟡 findings also become intel items automatically."""
+    db = await vdb()
+    findings = body.get("findings") or []
+    if not isinstance(findings, list):
+        findings = []
+    counts = {"CRITICAL": 0, "HIGH": 0, "LOW": 0}
+    for f in findings:
+        counts[_LEVEL_URGENCY.get(str(f.get("level", "info")).lower().strip(), "LOW")] += 1
+
+    await db.execute(
+        """INSERT INTO agent_reports
+           (cadence,agent,title,summary,body,findings_json,n_critical,n_important,n_info)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (str(body.get("cadence", "daily")).lower(), str(body.get("agent", ""))[:80],
+         str(body.get("title", ""))[:200], str(body.get("summary", ""))[:2000],
+         str(body.get("body", ""))[:60000], _json.dumps(findings)[:60000],
+         counts["CRITICAL"], counts["HIGH"], counts["LOW"]),
+    )
+    # Surface actionable findings in the Intel Centre / briefing
+    filed = 0
+    for f in findings:
+        urgency = _LEVEL_URGENCY.get(str(f.get("level", "info")).lower().strip(), "LOW")
+        if urgency == "LOW":
+            continue
+        title = str(f.get("title", ""))[:200]
+        if not title:
+            continue
+        # don't refile an identical open item from an earlier run
+        dup = await db.execute_fetchall(
+            "SELECT id FROM intel_items WHERE title=? AND status='open' LIMIT 1", (title,))
+        if dup:
+            continue
+        detail = str(f.get("detail", ""))
+        action = str(f.get("action", ""))
+        await db.execute(
+            """INSERT INTO intel_items (category,source,urgency,entity,title,body,due_date,status)
+               VALUES (?,?,?,?,?,?,?,'open')""",
+            (str(f.get("domain", "agent")).lower()[:40], "agent", urgency,
+             str(f.get("entity", ""))[:100], title,
+             (detail + ("\n\nAction: " + action if action else ""))[:4000],
+             f.get("due_date") or None),
+        )
+        filed += 1
+
+    # Stamp the checks this run covered
+    for code in (body.get("checks_run") or []):
+        await db.execute(
+            "UPDATE checks SET last_run=datetime('now'), last_result=?, updated_at=datetime('now') WHERE code=?",
+            (str(body.get("summary", ""))[:300], str(code)),
+        )
+    await db.commit()
+    rows = await db.execute_fetchall("SELECT * FROM agent_reports ORDER BY id DESC LIMIT 1")
+    return {"stored": True, "report_id": (dict(rows[0])["id"] if rows else None),
+            "intel_filed": filed, "counts": counts}
+
+@app.get("/api/agent/reports")
+async def agent_reports_list(cadence: str | None = None, limit: int = 20):
+    db = await vdb()
+    q = "SELECT * FROM agent_reports WHERE 1=1"
+    params: list = []
+    if cadence: q += " AND cadence=?"; params.append(cadence.lower())
+    q += " ORDER BY id DESC LIMIT ?"; params.append(min(int(limit), 100))
+    rows = await db.execute_fetchall(q, params)
+    return {"reports": [dict(r) for r in rows]}
+
+@app.get("/api/agent/reports/{report_id}")
+async def agent_report_get(report_id: int):
+    db = await vdb()
+    rows = await db.execute_fetchall("SELECT * FROM agent_reports WHERE id=?", (report_id,))
     return dict(rows[0]) if rows else {}
 
 # _"__"_ Entities _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
@@ -2267,6 +2495,9 @@ mdo_brain.configure({
     "lifemap":     lifemap,
     "wa_messages": whatsapp_messages,
     "wa_groups":   whatsapp_groups,
+    "checks":      checks_list,
+    "reports":     agent_reports_list,
+    "file_report": agent_report,
 })
 
 @app.post("/api/brain/ask")

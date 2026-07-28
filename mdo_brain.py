@@ -186,6 +186,31 @@ TOOLS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
+        "name": "list_checks",
+        "description": "The standing checks registry — every recurring question the agents answer (hourly/daily/weekly/monthly/quarterly/annual), with its data source, red/amber threshold, owner, run window, and whether it is blocked (data source missing). Use to answer 'what is monitored', 'what ran', or 'what is not covered yet'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cadence": {"type": "string", "enum": ["hourly", "daily", "weekly", "monthly", "quarterly", "annual"]},
+                "status": {"type": "string", "enum": ["active", "blocked", "paused"]},
+                "domain": {"type": "string", "description": "market|capital|vwlr|hotel|compliance|projects|banking"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "list_agent_reports",
+        "description": "Past agent runs (hourly/daily/weekly…) with their summaries and 🔴/🟡/🟢 counts. Use to see what the autonomous agents already reported before repeating a finding.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cadence": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "add_task",
         "description": "WRITE: add a task to Aman's ops board. Use when he asks you to track something or a finding demands follow-up.",
         "input_schema": {
@@ -280,6 +305,11 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["wa_messages"](group=a.get("group", ""), limit=int(a.get("limit", 100)))
     if name == "list_whatsapp_groups":
         return await tb["wa_groups"]()
+    if name == "list_checks":
+        return await tb["checks"](cadence=a.get("cadence"), status=a.get("status"),
+                                  domain=a.get("domain"))
+    if name == "list_agent_reports":
+        return await tb["reports"](cadence=a.get("cadence"), limit=int(a.get("limit", 10)))
     if name == "add_task":
         return await tb["task_add"]({
             "title": a["title"], "description": a.get("description", ""),
