@@ -21,7 +21,27 @@ _INDEX_ALIASES = {
 }
 
 
+_OHLCV_CACHE: dict = {}   # (symbol, exchange, period) -> (ts, result); successes only
+_OHLCV_TTL = 300.0        # daily candles barely move intraday; 5 min is safe and fast
+
+
 def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
+    """Cached front door to the provider chain. Caches successful fetches ~5 min so a
+    chart view, a deep-analysis pass and the ideas scan don't each re-pull the same daily
+    series. Failures are never cached (a transient outage must be retryable)."""
+    import time
+    key = (_INDEX_ALIASES.get(symbol.strip().upper(), symbol.strip().upper()), exchange, period)
+    hit = _OHLCV_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _OHLCV_TTL:
+        return hit[1]
+    res = _fetch_ohlcv(symbol, exchange, period)
+    _OHLCV_CACHE[key] = (time.time(), res)
+    if len(_OHLCV_CACHE) > 2000:      # bound memory during a full-universe scan
+        _OHLCV_CACHE.clear()
+    return res
+
+
+def _fetch_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     """Return {'closes': [...], 'volumes': [...], 'source': 'yfinance', 'confidence': ...}.
 
     `symbol` is a clean NSE symbol (e.g. 'COALINDIA'). yfinance wants a suffix.
@@ -31,18 +51,22 @@ def get_ohlcv(symbol: str, exchange: str = "NSE", period: str = "1y") -> dict:
     # doesn't license NSE equity data), then yfinance as a last resort.
     tried: list[str] = []  # why each source was skipped/failed, for an actionable error
     from . import eodhd
-    if eodhd.enabled():
+    # EODHD is licensed for INDICES + global/forex/commodity, NOT NSE equities. Routing
+    # every stock through EODHD first bought a dead 404 round-trip per symbol (thousands
+    # during a full-universe ideas scan) before falling to Angel. So only ask EODHD for
+    # the symbols it actually serves; equities skip straight to Angel candles.
+    eodhd_symbol = symbol.startswith("^") or "=" in symbol or symbol in eodhd.INDEX_CANDIDATES
+    if eodhd_symbol and eodhd.enabled():
         try:
             res = eodhd.get_ohlcv(symbol, exchange, period)
-            # EODHD doesn't license NSE equity — it can return an EMPTY series without
-            # error. Only accept a non-empty result, else fall through to Angel (which
-            # DOES serve NSE stocks). Returning empty here 500s the chart downstream.
+            # Indices can still come back empty across EODHD's naming variants; only accept
+            # a non-empty series, else fall through (yfinance for indices).
             if res and res.get("closes"):
                 return res
-            tried.append("EODHD returned no closes (NSE equity unlicensed?)")
+            tried.append("EODHD returned no closes")
         except Exception as exc:
             tried.append(f"EODHD failed ({str(exc)[:60]})")
-    else:
+    elif eodhd_symbol:
         tried.append("EODHD off (no CFO_EODHD_API_KEY)")
     if not symbol.startswith("^"):  # stocks: try Angel candles
         try:

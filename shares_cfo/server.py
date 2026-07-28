@@ -3468,17 +3468,18 @@ async def market_indices(request: Request, token: str | None = Query(default=Non
     wanted = [("NIFTY 50", "^NSEI"), ("BANK NIFTY", "^NSEBANK"), ("SENSEX", "^BSESN"),
               ("INDIA VIX", "^INDIAVIX"), ("MIDCAP", "^CNXMIDCAP"), ("SMALLCAP", "^CNXSC")]
 
-    def _fetch() -> list:  # sync EODHD calls, run off the event loop
-        o = []
-        if eodhd.enabled():
-            for name, sym in wanted:
-                q = eodhd.quote(sym)
-                if q and q.get("last") is not None:
-                    o.append({"name": name, "symbol": sym,
-                              "last": q["last"], "change_pct": q.get("change_pct")})
-        return o
+    async def _one(name: str, sym: str):
+        q = await asyncio.to_thread(eodhd.quote, sym)  # each EODHD call off the loop
+        if q and q.get("last") is not None:
+            return {"name": name, "symbol": sym, "last": q["last"], "change_pct": q.get("change_pct")}
+        return None
 
-    out = await asyncio.to_thread(_fetch)
+    out = []
+    if eodhd.enabled():
+        # Fetch all six indices CONCURRENTLY — sequential calls made the strip take up to
+        # 6x a single (possibly slow) EODHD round-trip and time the endpoint out.
+        results = await asyncio.gather(*[_one(n, s) for n, s in wanted], return_exceptions=True)
+        out = [r for r in results if r and not isinstance(r, Exception)]
     data = {"indices": out, "note": "EODHD; unlisted indices omitted." if out
             else "No index feed — set CFO_EODHD_API_KEY."}
     _IDX_CACHE.update(ts=time.time(), data=data)

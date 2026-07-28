@@ -62,7 +62,7 @@ def _symbol(raw: str, exchange: str = "NSE") -> str:
 def _get(path: str, params: dict) -> object:
     import httpx
     params = {**params, "api_token": api_key(), "fmt": "json"}
-    r = httpx.get(f"{BASE}/{path}", params=params, timeout=10.0)
+    r = httpx.get(f"{BASE}/{path}", params=params, timeout=6.0)  # fail fast; strip degrades
     r.raise_for_status()
     return r.json()
 
