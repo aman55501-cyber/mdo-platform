@@ -1422,8 +1422,28 @@ async def market_indices():
 
 # _"__"_ Morning Briefing (Grok AI) _"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"__"_
 @app.get("/api/briefing/today")
-async def briefing_today():
-    """Return today's briefing from DB if it exists."""
+async def briefing_today(auto: int = 1):
+    """Today's briefing. Generates it on first view of the day (auto=1) so the
+    homepage is never empty — no button press required."""
+    from datetime import date
+    db = await vdb()
+    today = date.today().isoformat()
+    rows = await db.execute_fetchall(
+        "SELECT * FROM morning_briefing WHERE date=? ORDER BY id DESC LIMIT 1", (today,))
+    if rows:
+        return {"briefing": dict(rows[0]), "fresh": True}
+    if auto:
+        try:
+            gen = await briefing_generate()
+            if gen.get("briefing"):
+                return {"briefing": gen["briefing"], "fresh": True, "auto_generated": True}
+        except Exception as e:
+            print("auto-briefing failed:", e)
+    return {"briefing": None, "fresh": False}
+
+@app.get("/api/briefing/today/raw")
+async def briefing_today_raw():
+    """Return today's briefing from DB only — never generates."""
     db = await vdb()
     from datetime import date
     today = date.today().isoformat()
@@ -1434,103 +1454,159 @@ async def briefing_today():
         return {"briefing": dict(rows[0]), "fresh": True}
     return {"briefing": None, "fresh": False}
 
+async def _briefing_context(db) -> dict:
+    """Everything today's briefing should be built from — live, never invented."""
+    from datetime import date
+    today = date.today().isoformat()
+    ctx: dict = {"date": today}
+
+    ctx["overdue_filings"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT entity_name, filing_type, description, due_date, status FROM compliance_filings "
+        "WHERE status IN ('overdue','pending') AND due_date IS NOT NULL AND due_date <= date('now','+14 days') "
+        "ORDER BY due_date LIMIT 12")]
+    ctx["open_tasks"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT title, entity, assigned_to, priority, due_date FROM ops_tasks "
+        "WHERE status='open' AND category!='roadmap' "
+        "ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, "
+        "due_date ASC NULLS LAST LIMIT 12")]
+    ctx["intel"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT urgency, entity, title FROM intel_items WHERE status='open' "
+        "AND urgency IN ('CRITICAL','HIGH') ORDER BY CASE urgency WHEN 'CRITICAL' THEN 0 ELSE 1 END, "
+        "created_at DESC LIMIT 10")]
+    ctx["tenders"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT buyer, category, due_date, status, notes FROM vwlr_tender_pipeline "
+        "ORDER BY due_date ASC NULLS LAST LIMIT 8")]
+    ctx["wa_recent"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT group_name, sender, substr(text,1,180) AS text, timestamp FROM whatsapp_messages "
+        "WHERE text != '[media]' AND created_at >= datetime('now','-1 day') "
+        "ORDER BY id DESC LIMIT 40")]
+    ctx["wa_activity"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT group_name, COUNT(*) AS n FROM whatsapp_messages "
+        "WHERE created_at >= datetime('now','-1 day') GROUP BY group_name ORDER BY n DESC LIMIT 10")]
+    ctx["agent_reports"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT cadence, title, summary, n_critical, n_important, created_at FROM agent_reports "
+        "ORDER BY id DESC LIMIT 5")]
+    ctx["blocked_checks"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT code, title, blocker FROM checks WHERE status='blocked'")]
+    ctx["hotel"] = [dict(r) for r in await db.execute_fetchall(
+        "SELECT date, occupied, total_rooms, occupancy_pct FROM hotel_daily ORDER BY date DESC LIMIT 3")]
+    return ctx
+
+def _briefing_fallback(ctx: dict) -> str:
+    """Deterministic briefing from real records only — used when no LLM key is
+    configured or the call fails. States gaps instead of inventing content."""
+    lines = []
+    crit = [i for i in ctx["intel"] if i["urgency"] == "CRITICAL"]
+    if crit:
+        lines.append("* CRITICAL: " + "; ".join(i["title"] for i in crit[:2]))
+    od = [f for f in ctx["overdue_filings"] if f["status"] == "overdue"]
+    if od:
+        lines.append("* COMPLIANCE: " + str(len(od)) + " overdue filing(s) — " +
+                     ", ".join(f"{f['entity_name']} {f['filing_type']} (due {f['due_date']})" for f in od[:2]))
+    elif ctx["overdue_filings"]:
+        lines.append("* COMPLIANCE: " + str(len(ctx["overdue_filings"])) + " filing(s) due within 14 days")
+    if ctx["wa_activity"]:
+        top = ctx["wa_activity"][0]
+        lines.append("* SITE OPS: " + str(sum(g["n"] for g in ctx["wa_activity"])) +
+                     " messages in last 24h; busiest " + top["group_name"] + " (" + str(top["n"]) + ")")
+    else:
+        lines.append("* SITE OPS: no WhatsApp messages in the last 24h — check the bridge is connected")
+    if ctx["open_tasks"]:
+        t = ctx["open_tasks"][0]
+        lines.append("* TASKS: " + str(len(ctx["open_tasks"])) + " open — top: " + t["title"] +
+                     (" (due " + str(t["due_date"]) + ")" if t.get("due_date") else ""))
+    if ctx["blocked_checks"]:
+        lines.append("* GAPS: no data source yet for " +
+                     ", ".join(c["code"] for c in ctx["blocked_checks"][:4]))
+    lines.append("* ACTION: add ANTHROPIC_API_KEY on the VPS for a written briefing — this is the raw-data fallback")
+    return "\n".join(lines[:6])
+
+def _briefing_llm(prompt: str) -> str:
+    """Claude first, Grok fallback. Returns '' if neither is configured/works."""
+    ant = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    grok = os.environ.get("GROK_API_KEY", "").strip()
+    try:
+        if ant:
+            payload = _json.dumps({"model": "claude-sonnet-5", "max_tokens": 1200,
+                                   "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages", data=payload,
+                headers={"x-api-key": ant, "anthropic-version": "2023-06-01",
+                         "Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=45) as r:
+                resp = _json.loads(r.read())
+            return "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text").strip()
+        if grok:
+            payload = _json.dumps({"model": "grok-3-mini", "max_tokens": 1200,
+                                   "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.x.ai/v1/chat/completions", data=payload,
+                headers={"Authorization": "Bearer " + grok, "Content-Type": "application/json"},
+                method="POST")
+            with urllib.request.urlopen(req, timeout=45) as r:
+                resp = _json.loads(r.read())
+            return resp["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print("briefing LLM failed:", str(e)[:200])
+    return ""
+
 @app.post("/api/briefing/generate")
 async def briefing_generate():
-    """Generate today morning briefing using Grok API."""
-    from datetime import date, datetime
-
-    # Read Grok key from env or .env file
-    grok_key = os.environ.get("GROK_API_KEY", "")
-    if not grok_key:
-        env_path = BASE / ".env"
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
-                if line.startswith("GROK_API_KEY="):
-                    grok_key = line.split("=", 1)[1].strip()
-                    break
-
-    today = date.today().isoformat()
-
-    # Pull live context from DB
+    """Build today's briefing from live business data (Claude → Grok → facts)."""
+    from datetime import date
     db = await vdb()
-    pending_tenders = await db.execute_fetchall(
-        "SELECT buyer AS title, category AS issuer, due_date FROM vwlr_tender_pipeline WHERE status='active' ORDER BY due_date LIMIT 5"
-    )
-    urgent_intel = await db.execute_fetchall(
-        "SELECT title FROM intel_items WHERE status='open' AND urgency IN ('CRITICAL','HIGH') LIMIT 5"
-    )
-    signals = await db.execute_fetchall(
-        "SELECT ticker, action, confidence FROM trading_signals WHERE status='pending' ORDER BY confidence DESC LIMIT 5"
-    )
+    today = date.today().isoformat()
+    ctx = await _briefing_context(db)
 
-    tender_lines = [str(r["title"]) + " -- deadline " + str(r["due_date"] or "TBD") for r in pending_tenders]
-    intel_lines  = [str(r["title"]) for r in urgent_intel]
-    signal_lines = [str(r["ticker"]) + " " + str(r["action"]) + " (" + str(r["confidence"]) + "% conf)" for r in signals]
-
-    tenders_ctx = "\n".join("- " + t for t in tender_lines) if tender_lines else "None tracked"
-    intel_ctx   = "\n".join("- " + t for t in intel_lines)  if intel_lines  else "None"
-    signals_ctx = "\n".join("- " + t for t in signal_lines) if signal_lines else "No pending signals"
+    def block(title, rows, fmt):
+        if not rows:
+            return title + ": none\n"
+        return title + ":\n" + "\n".join("- " + fmt(r) for r in rows) + "\n"
 
     prompt = (
-        "You are Aman's personal morning intelligence officer. Aman runs:\n"
-        "- Vedanta Washery & Logistic Solutions (VWLR) -- 6-platform railway siding at Raigarh CG, coal loading/unloading/RCR/washing\n"
-        "- Hotel Ans International -- 70 rooms, Raigarh\n"
-        "- Active equity and options trader on NSE via HDFC Securities\n"
-        "- 26 group companies across logistics, trading, steel\n\n"
-        "Current context:\n"
-        "Pending coal tenders:\n" + tenders_ctx + "\n\n"
-        "Urgent intel items:\n" + intel_ctx + "\n\n"
-        "Capital algo pending trade signals:\n" + signals_ctx + "\n\n"
-        "Date: " + today + "\n\n"
-        "Write exactly 5 bullet points. Max 2 lines each. No jargon. No preamble. No 'Good morning'.\n"
-        "Start with most important. Be specific with numbers where possible.\n"
-        "Format each line starting with: * CATEGORY: text\n"
-        "Categories to use: MARKETS, COAL, TENDERS, CAPITAL, ACTION"
+        "You are Aman Agrawal's morning intelligence officer. He is a first-generation "
+        "industrialist in Raigarh, Chhattisgarh running: VWLR coal washery (Kharsia, ~50% "
+        "commissioning capacity, ₹34.55 Cr service pipeline), Hotel ANS International "
+        "(88 rooms, ~23% occupancy), Aditi Investments (NSE cash + F&O), and ~26 group entities.\n\n"
+        "TODAY IS " + today + ". Live data follows — this is everything the system knows.\n\n"
+        + block("OPEN CRITICAL/HIGH INTEL", ctx["intel"], lambda r: f"[{r['urgency']}] {r['entity'] or '-'}: {r['title']}")
+        + block("FILINGS DUE OR OVERDUE (next 14 days)", ctx["overdue_filings"],
+                lambda r: f"{r['entity_name']} — {r['filing_type']} {r['description'] or ''} due {r['due_date']} ({r['status']})")
+        + block("OPEN TASKS", ctx["open_tasks"],
+                lambda r: f"[{r['priority']}] {r['title']} — {r['entity'] or '-'}, owner {r['assigned_to'] or '-'}, due {r['due_date'] or 'none'}")
+        + block("TENDER PIPELINE", ctx["tenders"],
+                lambda r: f"{r['buyer']} — {r['category'] or ''} due {r['due_date'] or 'TBD'} ({r['status']}) {r['notes'] or ''}")
+        + block("WHATSAPP ACTIVITY (24h, by group)", ctx["wa_activity"], lambda r: f"{r['group_name']}: {r['n']} messages")
+        + block("RECENT SITE MESSAGES", ctx["wa_recent"][:25], lambda r: f"[{r['group_name']}] {r['sender']}: {r['text']}")
+        + block("HOTEL OCCUPANCY (latest records)", ctx["hotel"],
+                lambda r: f"{r['date']}: {r['occupied']}/{r['total_rooms']} rooms ({r['occupancy_pct']}%)")
+        + block("RECENT AGENT REPORTS", ctx["agent_reports"],
+                lambda r: f"{r['cadence']} {r['created_at']}: {r['title']} — {r['summary'][:160]}")
+        + block("CHECKS WITH NO DATA SOURCE YET", ctx["blocked_checks"], lambda r: f"{r['code']}: {r['blocker']}")
+        + "\nWrite Aman's morning briefing as 5-7 bullet lines, each starting '* CATEGORY: '.\n"
+        "Categories: CRITICAL, COMPLIANCE, SITE OPS, TENDERS, HOTEL, CAPITAL, ACTION.\n"
+        "Rules — these are absolute:\n"
+        "- NEVER invent a number or a fact. Only use what appears above. If a domain has no data, "
+        "say so plainly (e.g. 'HOTEL: no occupancy data — source not connected') rather than guessing.\n"
+        "- Lead with whatever genuinely matters most today, not a fixed order.\n"
+        "- Be specific: name entities, amounts (lakh/crore), dates, group names.\n"
+        "- Note where a date looks stale (data seeded April 2026) rather than treating it as current.\n"
+        "- Last line is always '* ACTION: ' with the single most valuable thing he should do today.\n"
+        "- No preamble, no greeting, no closing remark. Just the bullets."
     )
 
-    content = ""
-    error_msg = ""
-
-    if grok_key:
-        try:
-            payload = _json.dumps({
-                "model": "grok-3-mini",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 500
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                "https://api.x.ai/v1/chat/completions",
-                data=payload,
-                headers={"Authorization": "Bearer " + grok_key, "Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=25) as r:
-                resp = _json.loads(r.read().decode("utf-8"))
-            content = resp["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            error_msg = str(e)
-            content = (
-                "* MARKETS: API error -- " + error_msg[:80] + "\n"
-                "* COAL: No update available.\n"
-                "* TENDERS: " + (tender_lines[0] if tender_lines else "No active tenders tracked.") + "\n"
-                "* CAPITAL: " + (signal_lines[0] if signal_lines else "No signals pending.") + "\n"
-                "* ACTION: Check GROK_API_KEY in .env and retry."
-            )
-    else:
-        content = (
-            "* MARKETS: Add GROK_API_KEY to .env for live briefings.\n"
-            "* COAL: No live data -- key missing.\n"
-            "* TENDERS: " + (tender_lines[0] if tender_lines else "No active tenders tracked.") + "\n"
-            "* CAPITAL: " + (signal_lines[0] if signal_lines else "No signals pending.") + "\n"
-            "* ACTION: Add GROK_API_KEY to .env file to enable AI morning briefings."
-        )
+    content = _briefing_llm(prompt).strip()
+    if not content or "* " not in content:
+        content = _briefing_fallback(ctx)
 
     await db.execute(
         "INSERT OR REPLACE INTO morning_briefing (date, content, generated_at) VALUES (?,?,datetime('now'))",
         (today, content)
     )
     await db.commit()
-    return {"briefing": {"date": today, "content": content, "error": error_msg or None}}
+    rows = await db.execute_fetchall(
+        "SELECT * FROM morning_briefing WHERE date=? ORDER BY id DESC LIMIT 1", (today,))
+    return {"briefing": dict(rows[0]) if rows else {"date": today, "content": content}}
 
 # ── WhatsApp Bridge ──────────────────────────────────────────────────────────
 
