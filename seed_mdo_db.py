@@ -302,11 +302,39 @@ if not c.execute("SELECT 1 FROM intel_items WHERE title=?", (AUDIT_TITLE,)).fetc
     conn.commit()
     print("✓ audit intel item filed")
 
-# Roadmap step 1 is factually complete — the system is running on the VPS.
-c.execute(
-    "UPDATE ops_tasks SET status='done', completed_at=datetime('now'), updated_at=datetime('now') "
-    "WHERE category='roadmap' AND title='Deploy MDO to Hostinger VPS' AND status='open'"
-)
+# Close roadmap steps that are factually complete (verified, not assumed).
+DONE_ROADMAP = [
+    "Deploy MDO to Hostinger VPS",          # running at amanagrawal.cloud
+    "Scan WhatsApp QR after VPS launch",    # both phones linked, 5k+ messages ingested
+]
+for title in DONE_ROADMAP:
+    c.execute(
+        "UPDATE ops_tasks SET status='done', completed_at=datetime('now'), updated_at=datetime('now') "
+        "WHERE category='roadmap' AND title=? AND status='open'", (title,))
+
+# Roadmap items created by the cadence build (idempotent on title).
+NEW_ROADMAP = [
+    ("Identify hotel night-report WhatsApp group",
+     "Occupancy parser is built but needs the group name; if figures are photos, vision extraction is the fix. Unblocks check hotel_daily.",
+     "Phase 2 — Connectors", "high"),
+    ("Choose bank-balance feed channel",
+     "Personal + all firms. Options: emailed statements via Gmail connector, bank API, or manual entry. Unblocks check bank_balances.",
+     "Phase 2 — Connectors", "high"),
+    ("Refresh compliance calendar with CA Vimal",
+     "Seeded filing dates are April 2026 and now stale — confirm real due dates/status per entity so daily checks are trustworthy.",
+     "Phase 2 — Connectors", "critical"),
+    ("Send weekly/monthly/quarterly/annual check lists",
+     "Hourly + daily are live in the checks registry; remaining cadences slot straight in.",
+     "Phase 3 — Agents", "medium"),
+    ("Build vision pipeline for photo reports",
+     "~27% of WhatsApp messages are [media] — weighbridge slips, dispatch tallies, hotel registers unreadable until images are parsed.",
+     "Phase 3 — Agents", "high"),
+]
+for title, desc, phase, prio in NEW_ROADMAP:
+    if not c.execute("SELECT 1 FROM ops_tasks WHERE title=?", (title,)).fetchone():
+        c.execute(
+            "INSERT INTO ops_tasks (title,description,entity,priority,category,assigned_to,status) "
+            "VALUES (?,?,?,?, 'roadmap','Aman','open')", (title, desc, phase, prio))
 conn.commit()
 
 conn.close()
