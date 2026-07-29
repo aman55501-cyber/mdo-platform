@@ -306,6 +306,7 @@ if not c.execute("SELECT 1 FROM intel_items WHERE title=?", (AUDIT_TITLE,)).fetc
 DONE_ROADMAP = [
     "Deploy MDO to Hostinger VPS",          # running at amanagrawal.cloud
     "Scan WhatsApp QR after VPS launch",    # both phones linked, 5k+ messages ingested
+    "Decide WhatsApp channel",              # Baileys bridge, 2 accounts, all groups
 ]
 for title in DONE_ROADMAP:
     c.execute(

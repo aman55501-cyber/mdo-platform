@@ -149,6 +149,37 @@ sharecfo), route MDO through it instead of starting a second proxy:
    set `NEXT_PUBLIC_API_URL=https://api.yourdomain.com` in `.env`, then
    `docker compose up -d --build frontend`. Update `HDFC_REDIRECT_URL` too.
 
+## 8. Autonomous agents (run ON the VPS)
+
+`mdo_agent.py` runs the checks registry on a cadence and files reports into the
+app. It lives inside the backend container — same key, same database, same
+network as everything else, so there is no cloud-session auth to fail silently.
+
+Test it by hand first:
+```bash
+cd /docker/sharecfo/mdo-platform
+docker compose exec backend python mdo_agent.py daily
+```
+Expect: `filed report N — {...} — intel items: M`. Findings appear in the app's
+Intel Centre immediately.
+
+Then schedule it with host cron (`crontab -e`):
+```
+24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly >> /var/log/mdo-agent.log 2>&1
+27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily  >> /var/log/mdo-agent.log 2>&1
+```
+(01:27 UTC = 06:57 IST — the brief is waiting when you wake up.)
+
+Behaviour: the hourly run files a report **only** when a finding crosses a
+threshold — silence is the healthy state. The daily run always files. Checks
+whose `run_window` excludes the current time (e.g. market checks at night) are
+skipped; checks marked `blocked` are reported as gaps, never guessed at.
+
+Model: set `MDO_AGENT_MODEL` in `.env` to change it (default `claude-sonnet-5`;
+use `claude-opus-5` for deeper strategy work at higher cost).
+
+Watch it: `tail -f /var/log/mdo-agent.log`
+
 ## Data safety
 
 - SQLite lives in the Docker volume `mdo-data` — it survives rebuilds,
