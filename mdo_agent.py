@@ -43,6 +43,24 @@ def api(path: str, method: str = "GET", body: dict | None = None, timeout: int =
         return json.loads(r.read() or b"{}")
 
 
+def wait_for_backend(attempts: int = 12, delay: float = 5.0) -> bool:
+    """The backend may still be booting (container restart, VPS reboot) when
+    cron fires. Wait rather than failing the run."""
+    import time
+    for i in range(1, attempts + 1):
+        try:
+            api("/api/status", timeout=5)
+            if i > 1:
+                log(f"backend ready after {i} attempts")
+            return True
+        except Exception as e:
+            if i == attempts:
+                log(f"backend unreachable after {attempts} attempts: {e}")
+                return False
+            time.sleep(delay)
+    return False
+
+
 def ask_claude(prompt: str, max_tokens: int = 3000) -> str:
     payload = json.dumps({
         "model": MODEL,
@@ -149,6 +167,10 @@ def run(cadence: str) -> int:
         return 2
     if not ANTHROPIC_KEY:
         log("FATAL: ANTHROPIC_API_KEY not set — add it to .env on the VPS")
+        return 2
+
+    if not wait_for_backend():
+        log("FATAL: backend not answering on " + BASE)
         return 2
 
     now_ist = datetime.now(IST)
