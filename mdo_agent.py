@@ -61,7 +61,9 @@ def wait_for_backend(attempts: int = 12, delay: float = 5.0) -> bool:
     return False
 
 
-def ask_claude(prompt: str, max_tokens: int = 3000) -> str:
+def ask_claude(prompt: str, max_tokens: int = 8000) -> str:
+    """Call Claude and return its text. Logs why the text is empty rather than
+    leaving a silent blank (an empty answer used to look like a parse failure)."""
     payload = json.dumps({
         "model": MODEL,
         "max_tokens": max_tokens,
@@ -72,9 +74,16 @@ def ask_claude(prompt: str, max_tokens: int = 3000) -> str:
         headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
                  "Content-Type": "application/json"},
         method="POST")
-    with urllib.request.urlopen(req, timeout=180) as r:
+    with urllib.request.urlopen(req, timeout=300) as r:
         resp = json.loads(r.read())
-    return "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+    text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+    if not text.strip():
+        log("model returned no text — stop_reason=%s blocks=%s usage=%s" % (
+            resp.get("stop_reason"),
+            [b.get("type") for b in resp.get("content", [])],
+            resp.get("usage"),
+        ))
+    return text
 
 
 def in_window(window: str, now_ist: datetime) -> bool:
@@ -203,24 +212,41 @@ def run(cadence: str) -> int:
         + ("\n\nCHECKS WITH NO DATA SOURCE (report the gap, do not guess):\n"
            + json.dumps([{"code": c["code"], "blocker": c["blocker"]} for c in blocked])
            if blocked else "")
-        + "\n\nLIVE DATA:\n" + json.dumps(data, default=str)[:120000]
+        # 120k chars of JSON was ~35k input tokens and left the model no room to
+        # answer; 60k keeps the full picture while guaranteeing an output budget.
+        + "\n\nLIVE DATA:\n" + json.dumps(data, default=str)[:60000]
         + COMMON_RULES
     )
 
+    def attempt(p: str, max_tokens: int):
+        raw = ask_claude(p, max_tokens=max_tokens)
+        s, e = raw.find("{"), raw.rfind("}") + 1
+        if s < 0 or e <= s:
+            return None, raw
+        try:
+            return json.loads(raw[s:e]), raw
+        except json.JSONDecodeError as err:
+            log(f"JSON decode failed: {err}")
+            return None, raw
+
     try:
-        raw = ask_claude(prompt)
+        out, raw = attempt(prompt, 8000)
+        if out is None:
+            # Usually the budget went on reasoning before any text was emitted.
+            # Retry once: less data, more room, and an explicit shape reminder.
+            log(f"retrying with a tighter payload (first attempt returned {len(raw)} chars)")
+            short = prompt[:45000] + (
+                "\n\n[data truncated for retry]\n"
+                "Reply with the JSON object ONLY — no preamble, no explanation, "
+                "no code fence. Start your reply with { and end it with }."
+            )
+            out, raw = attempt(short, 16000)
     except Exception as e:
         log(f"FATAL: Claude call failed: {e}")
         return 3
 
-    start, end = raw.find("{"), raw.rfind("}") + 1
-    if start < 0 or end <= start:
-        log(f"FATAL: no JSON in model output: {raw[:300]}")
-        return 3
-    try:
-        out = json.loads(raw[start:end])
-    except json.JSONDecodeError as e:
-        log(f"FATAL: bad JSON from model: {e}")
+    if out is None:
+        log(f"FATAL: no usable JSON after retry. Model output was: {raw[:400] or '(empty)'}")
         return 3
 
     findings = out.get("findings") or []
