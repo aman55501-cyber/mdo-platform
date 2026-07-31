@@ -233,9 +233,11 @@ ENRICH = {
         "pan": "ACFFA4349B",
         "directors": "Partners: Aman Agrawal, Ashok, Sudha",
         "annual_turnover": "₹85.78 L liquid (19 Apr 2026) · target ₹100 Cr in 2 yrs",
-        "notes": "F1 partnership firm. HDFC Securities a/c #4016900. Pool B vehicle: 200+ NSE "
-                 "equities, F&O (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY), US equity via IndMoney, "
-                 "crypto on SunCrypto + Binance.",
+        "notes": "F1 partnership firm. Trading account: AngelOne #A1504046 (also holds an HDFC "
+                 "Securities account). HDFC Securities #4016900 is Aman's PERSONAL account, not "
+                 "the firm's. Pool B vehicle: 200+ NSE equities, F&O "
+                 "(NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY), US equity via IndMoney, crypto on "
+                 "SunCrypto + Binance.",
     },
     "Ozone Steel & Power Ltd": {
         "pan": "AAACA1111A",

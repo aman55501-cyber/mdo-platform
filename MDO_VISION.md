@@ -66,7 +66,11 @@
 - **Partners:** Aman + Ashok + Sudha
 - **Current balance:** ₹85.78 L (as of 19 Apr 2026)
 - **Target:** ₹100 Cr in 2 years
-- **Broker account:** HDFC Securities #4016900
+- **Trading account:** AngelOne #A1504046 (the firm's trading account)
+  - Aditi also holds an HDFC Securities account (demat/holdings side)
+  - Note: HDFC Securities #4016900 is **Aman's personal** account, not the firm's
+  - Live broker sessions for all accounts run through the sharecfo service on
+    the same VPS; MDO reads them via `/api/capital/summary`
 - **Holdings spread:**
   - 200+ Indian equities
   - F&O on NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY
