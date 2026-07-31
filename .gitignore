@@ -33,3 +33,7 @@ mdo-app/dist-electron/
 # OS
 .DS_Store
 Thumbs.db
+
+# VPN client profiles — contain private keys, never commit
+vpn/*/client.ovpn
+vpn/**/*.ovpn
