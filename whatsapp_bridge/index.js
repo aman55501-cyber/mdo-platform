@@ -5,9 +5,11 @@
  */
 
 const makeWASocket = require("@whiskeysockets/baileys").default
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion,
+        downloadMediaMessage } = require("@whiskeysockets/baileys")
 const express = require("express")
 const QRCode  = require("qrcode")
+const pino    = require("pino")
 const path    = require("path")
 const fs      = require("fs")
 
@@ -174,6 +176,25 @@ async function startWA() {
       "[media]"
     )
 
+    // Images carry the numbers that matter here — weighbridge slips, dispatch
+    // tallies, hotel sales registers. Download and hand them to the backend,
+    // which decides whether to run vision extraction on them.
+    let image_b64 = null, image_mime = null
+    const imgNode = msg.message.imageMessage
+      || (String(msg.message.documentMessage?.mimetype || "").startsWith("image/")
+            ? msg.message.documentMessage : null)
+    if (imgNode && (imgNode.fileLength || 0) <= 8 * 1024 * 1024) {
+      try {
+        const buf = await downloadMediaMessage(msg, "buffer", {}, { logger: pino({ level: "silent" }) })
+        if (buf && buf.length) {
+          image_b64 = buf.toString("base64")
+          image_mime = imgNode.mimetype || "image/jpeg"
+        }
+      } catch (e) {
+        console.log("image download failed:", e.message)
+      }
+    }
+
     const sender = msg.pushName || msg.key.participant || "Unknown"
     const tsNum = Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000)
     const timestamp = new Date(tsNum * 1000).toISOString()
@@ -186,6 +207,7 @@ async function startWA() {
       text: String(text),
       timestamp,
       jid,
+      ...(image_b64 ? { image_b64, image_mime } : {}),
     })
     return true
   }
