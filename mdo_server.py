@@ -238,6 +238,19 @@ CREATE TABLE IF NOT EXISTS agent_reports (
     n_info INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );
+-- What the photos actually said (weighbridge slips, tallies, registers).
+CREATE TABLE IF NOT EXISTS media_extractions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER,
+    group_name TEXT DEFAULT '',
+    sender TEXT DEFAULT '',
+    doc_type TEXT DEFAULT 'other',
+    summary TEXT DEFAULT '',
+    extracted_text TEXT DEFAULT '',
+    fields_json TEXT DEFAULT '{}',
+    timestamp TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS hdfc_session (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     access_token TEXT DEFAULT '',
@@ -1766,6 +1779,113 @@ async def briefing_generate():
 # ── WhatsApp Bridge ──────────────────────────────────────────────────────────
 
 HOTEL_TOTAL_ROOMS = 88  # Hotel ANS International (MDO_VISION §2B)
+
+# ── Vision: read the photos, not just the text ──────────────────────────────
+# ~27% of WhatsApp traffic is images — weighbridge slips, dispatch tallies,
+# hotel sales registers, machine faults. Without this the agents are blind to
+# the numbers that matter most. Vision runs only on groups likely to carry
+# reports (every image would be costly and mostly noise); set VISION_GROUPS=*
+# to process everything.
+VISION_ENABLED = os.environ.get("VISION_ENABLED", "1").strip() not in ("0", "false", "")
+VISION_GROUPS = [g.strip().lower() for g in os.environ.get(
+    "VISION_GROUPS",
+    "daily sales report,night report,dsr,rake,dispatch,weighbridge,w/b,loading,"
+    "loader,machine,civil,washery,report,accounts,payment,purchase,store"
+).split(",") if g.strip()]
+VISION_MODEL = os.environ.get("VISION_MODEL", "claude-sonnet-5")
+
+def _vision_group_match(group: str) -> bool:
+    if not VISION_ENABLED:
+        return False
+    if "*" in VISION_GROUPS:
+        return True
+    g = re.sub(r"[^a-z0-9]+", " ", group.lower())
+    return any(k in g for k in VISION_GROUPS)
+
+def _vision_extract(image_b64: str, mime: str, group: str, caption: str) -> dict:
+    """Ask Claude what the image says. Returns {} on any failure — a missed
+    extraction must never become an invented one."""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return {}
+    prompt = (
+        "This image was posted in the WhatsApp group \"" + group + "\" of an Indian "
+        "industrial group (coal washery + railway siding at Raigarh CG, and an 88-room hotel).\n"
+        + (f"Caption: {caption}\n" if caption and caption != "[media]" else "")
+        + "It is likely one of: a weighbridge slip, a rake/dispatch tally, a daily sales or "
+        "occupancy register, a machine/fault log, an invoice or payment advice, a purchase "
+        "order, or a site photograph.\n\n"
+        "Return ONLY a JSON object:\n"
+        '{"doc_type":"weighbridge_slip|dispatch_report|sales_report|occupancy_report|'
+        'machine_log|invoice|payment|purchase_order|site_photo|other",\n'
+        ' "summary":"one line a busy owner would want",\n'
+        ' "text":"all legible text, preserving numbers and labels",\n'
+        ' "fields":{"any labelled values you can read, e.g. vehicle_no, gross_wt, tare_wt, '
+        'net_wt, rake_no, qty_mt, rooms_sold, occupancy_pct, revenue, amount, date, party"}}\n'
+        "Transcribe only what is actually legible. Never guess a digit — if a value is "
+        "unclear or cut off, omit the field entirely. If the image is a photo with no "
+        "readable data, set doc_type to site_photo and describe it in summary."
+    )
+    try:
+        payload = _json.dumps({
+            "model": VISION_MODEL, "max_tokens": 1500,
+            "messages": [{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_b64}},
+                {"type": "text", "text": prompt},
+            ]}],
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages", data=payload,
+            headers={"x-api-key": key, "anthropic-version": "2023-06-01",
+                     "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=120) as r:
+            resp = _json.loads(r.read())
+        txt = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+        s, e = txt.find("{"), txt.rfind("}") + 1
+        return _json.loads(txt[s:e]) if s >= 0 and e > s else {}
+    except Exception as ex:
+        print("vision failed:", str(ex)[:200])
+        return {}
+
+async def _process_image(msg_id: int, group: str, sender: str, timestamp: str,
+                         image_b64: str, mime: str, caption: str):
+    """Background: extract, store, and let the hotel parser see the result."""
+    import asyncio as _aio
+    out = await _aio.to_thread(_vision_extract, image_b64, mime, group, caption)
+    if not out:
+        return
+    db = await vdb()
+    text = (out.get("text") or "").strip()
+    summary = (out.get("summary") or "").strip()
+    await db.execute(
+        """INSERT INTO media_extractions
+           (message_id, group_name, sender, doc_type, summary, extracted_text, fields_json, timestamp)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (msg_id, group[:200], sender[:100], str(out.get("doc_type", "other"))[:40],
+         summary[:1000], text[:8000], _json.dumps(out.get("fields") or {})[:4000], timestamp[:50]))
+    # Replace the useless "[media]" placeholder so every downstream reader —
+    # agents, briefing, Brain, ops feed — sees the content.
+    if msg_id:
+        await db.execute(
+            "UPDATE whatsapp_messages SET text=? WHERE id=? AND text='[media]'",
+            (("[image] " + (summary or text))[:2000], msg_id))
+    await db.commit()
+
+    combined = " ".join(filter(None, [caption if caption != "[media]" else "", summary, text]))
+    if any(k in re.sub(r"[^a-z0-9]+", " ", group.lower()) for k in HOTEL_REPORT_GROUPS):
+        parsed = _parse_night_report(combined)
+        if parsed:
+            date_str = _night_report_date(timestamp)
+            note = f"auto: WhatsApp image ({sender[:40]})"
+            cur = await db.execute(
+                "UPDATE hotel_daily SET occupied=?, total_rooms=?, occupancy_pct=?, notes=? WHERE date=?",
+                (parsed["occupied"], parsed["total"], parsed["pct"], note, date_str))
+            if cur.rowcount == 0:
+                await db.execute(
+                    "INSERT INTO hotel_daily (date,total_rooms,occupied,occupancy_pct,notes) VALUES (?,?,?,?,?)",
+                    (date_str, parsed["total"], parsed["occupied"], parsed["pct"], note))
+            await db.commit()
+            print(f"vision → hotel_daily {date_str}: {parsed}")
 # WhatsApp groups whose messages carry the hotel's daily figures. Matched on a
 # punctuation-insensitive substring, so "Daily Sales Report" also catches
 # "DAILY SALES REPORT - HOTEL". Confirmed by Aman 31-Jul-2026.
@@ -1823,11 +1943,23 @@ async def whatsapp_message(body: dict):
     group = str(body.get("group", ""))[:200]
     text = str(body.get("text", ""))[:2000]
     timestamp = str(body.get("timestamp", ""))[:50]
+    sender = str(body.get("sender", ""))[:100]
     await db.execute(
         "INSERT INTO whatsapp_messages (group_name, sender, text, timestamp, jid) VALUES (?,?,?,?,?)",
-        (group, str(body.get("sender", ""))[:100], text, timestamp, str(body.get("jid", ""))[:100])
+        (group, sender, text, timestamp, str(body.get("jid", ""))[:100])
     )
     await db.commit()
+    msg_id = None
+    rows = await db.execute_fetchall("SELECT last_insert_rowid() AS id")
+    if rows:
+        msg_id = dict(rows[0])["id"]
+
+    # Image → vision extraction, in the background so the bridge isn't blocked
+    img = body.get("image_b64")
+    if img and _vision_group_match(group):
+        asyncio.create_task(_process_image(
+            msg_id, group, sender, timestamp, img,
+            str(body.get("image_mime") or "image/jpeg"), text))
 
     # Hotel daily/night report → parse occupancy straight into hotel_daily
     _g = re.sub(r"[^a-z0-9]+", " ", group.lower())
@@ -1867,6 +1999,24 @@ async def whatsapp_qr(account: str = "1"):
             return _json.loads(r.read())
     except Exception as e:
         return {"connected": False, "qr": None, "message": str(e)}
+
+@app.get("/api/whatsapp/extractions")
+async def whatsapp_extractions(group: str = "", doc_type: str = "", limit: int = 50):
+    """What the images said — weighbridge slips, tallies, registers, invoices."""
+    db = await vdb()
+    q = "SELECT * FROM media_extractions WHERE 1=1"
+    params: list = []
+    if group:    q += " AND group_name LIKE ?"; params.append(f"%{group}%")
+    if doc_type: q += " AND doc_type=?";        params.append(doc_type)
+    q += " ORDER BY id DESC LIMIT ?"; params.append(min(int(limit), 200))
+    rows = await db.execute_fetchall(q, params)
+    out = [dict(r) for r in rows]
+    for r in out:
+        try:
+            r["fields"] = _json.loads(r.pop("fields_json") or "{}")
+        except Exception:
+            r["fields"] = {}
+    return {"extractions": out, "count": len(out)}
 
 @app.get("/api/whatsapp/messages")
 async def whatsapp_messages(group: str = "", limit: int = 100):
@@ -2732,6 +2882,7 @@ mdo_brain.configure({
     "wa_messages": whatsapp_messages,
     "wa_groups":   whatsapp_groups,
     "capital":     capital_summary,
+    "extractions": whatsapp_extractions,
     "checks":      checks_list,
     "reports":     agent_reports_list,
     "file_report": agent_report,

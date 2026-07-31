@@ -186,6 +186,19 @@ TOOLS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
+        "name": "get_photo_data",
+        "description": "Data read OUT OF PHOTOS posted in WhatsApp groups — weighbridge slips, rake/dispatch tallies, hotel sales and occupancy registers, machine logs, invoices, payment advices. Each entry has doc_type, a summary, the transcribed text and any labelled fields (vehicle_no, net_wt, qty_mt, rooms_sold, revenue...). Use whenever a number might have been sent as an image rather than typed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "group": {"type": "string", "description": "Partial group name filter"},
+                "doc_type": {"type": "string", "description": "weighbridge_slip|dispatch_report|sales_report|occupancy_report|machine_log|invoice|payment|purchase_order|site_photo"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "get_portfolio",
         "description": "LIVE portfolio across all four broker accounts (Aman/HDFC, Sudha/HDFC, Ashok/HDFC, Aditi/Angel) via the sharecfo bridge: net worth, invested vs holdings value, cash, day change, unrealised P&L, sector concentration, net market exposure and tilt, hedge suggestions, and open F&O positions with expiry. Also reports how stale the broker snapshot is. Use for any question about wealth, positions, F&O, exposure or trading P&L — this is real money, never estimate it.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
@@ -310,6 +323,9 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["wa_messages"](group=a.get("group", ""), limit=int(a.get("limit", 100)))
     if name == "list_whatsapp_groups":
         return await tb["wa_groups"]()
+    if name == "get_photo_data":
+        return await tb["extractions"](group=a.get("group", ""), doc_type=a.get("doc_type", ""),
+                                       limit=int(a.get("limit", 30)))
     if name == "get_portfolio":
         return await tb["capital"]()
     if name == "list_checks":
