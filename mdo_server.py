@@ -578,9 +578,9 @@ CHECKS_SEED = [
      "🔴 overdue or due <3 days; 🟡 due 4-14 days", "CA Vimal Agrawal",
      "", "active", "Seeded filing dates are from Apr 2026 — need a refresh pass with CA"),
     ("hotel_daily", "Hotel ANS — sales + occupancy", "daily", "hotel",
-     "Night report WhatsApp group (unidentified) or Staah API",
+     "WhatsApp group 'Daily Sales Report' (auto-parsed into hotel_daily); Staah API as future backup",
      "🔴 occupancy <20% or no report received; 🟡 below trailing 7-day average", "Aman",
-     "", "blocked", "Night-report group not identified; Staah token not fetched; figures may be photos (needs vision)"),
+     "", "active", ""),
     ("projects_update", "Ongoing projects — hotel renovation, washery, siding/civil", "daily", "projects",
      "WhatsApp: Ans Hotel civil, Vedanta washery- Civil Works, ROAD BRIDGE WORK VEDANTA KUNKUNI, VWLR Machine Update",
      "🔴 no update >48h on an active project, or a blocker/stoppage reported", "Aman",
@@ -1659,6 +1659,10 @@ async def briefing_generate():
 # ── WhatsApp Bridge ──────────────────────────────────────────────────────────
 
 HOTEL_TOTAL_ROOMS = 88  # Hotel ANS International (MDO_VISION §2B)
+# WhatsApp groups whose messages carry the hotel's daily figures. Matched on a
+# punctuation-insensitive substring, so "Daily Sales Report" also catches
+# "DAILY SALES REPORT - HOTEL". Confirmed by Aman 31-Jul-2026.
+HOTEL_REPORT_GROUPS = ("daily sales report", "night report", "dsr")
 
 def _parse_night_report(text: str) -> dict | None:
     """Extract occupancy from a hotel night-report WhatsApp message.
@@ -1718,8 +1722,9 @@ async def whatsapp_message(body: dict):
     )
     await db.commit()
 
-    # Hotel night report → parse occupancy straight into hotel_daily
-    if "night report" in re.sub(r"[^a-z0-9]+", " ", group.lower()):
+    # Hotel daily/night report → parse occupancy straight into hotel_daily
+    _g = re.sub(r"[^a-z0-9]+", " ", group.lower())
+    if any(k in _g for k in HOTEL_REPORT_GROUPS):
         parsed = _parse_night_report(text)
         if parsed:
             date_str = _night_report_date(timestamp)
