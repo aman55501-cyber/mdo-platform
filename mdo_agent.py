@@ -124,6 +124,7 @@ def gather(cadence: str) -> dict:
     grab("tenders", "/api/vwlr/pipeline")
     grab("hotel", "/api/hotel/daily?days=7")
     grab("reports", "/api/agent/reports?limit=5")
+    grab("capital", "/api/capital/summary")
     if cadence != "hourly":
         grab("entities", "/api/entities")
         grab("pools", "/api/aditi/pools")
