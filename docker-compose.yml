@@ -23,6 +23,9 @@ services:
       #   docker network connect sharecfo_default mdo-platform-backend-1
       CFO_API_URL: ${CFO_API_URL:-http://sharescfo:8000}
       CFO_API_TOKEN: ${CFO_API_TOKEN:-}
+      # Site networks reached through the VPN sidecars (see vpn/Dockerfile).
+      HOTEL_PROXY_URL: ${HOTEL_PROXY_URL:-http://vpn-hotel:8888}
+      VEDANTA_PROXY_URL: ${VEDANTA_PROXY_URL:-http://vpn-vedanta:8888}
       TZ: Asia/Kolkata
     volumes:
       - mdo-data:/data
@@ -56,6 +59,33 @@ services:
       - wa-auth2:/data
     depends_on:
       - backend
+
+  # ── Site VPN sidecars ───────────────────────────────────────────────────
+  # One container per site: OpenVPN client + HTTP proxy on :8888 (never
+  # published to the host). The tunnel is confined to the container's network
+  # namespace, so the VPS host routing table is untouched and a bad route push
+  # cannot cost you SSH or the website. Rollback is `docker compose stop`.
+  vpn-hotel:
+    build: ./vpn
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun
+    volumes:
+      - ./vpn/hotel/client.ovpn:/etc/openvpn/client.ovpn:ro
+    environment:
+      TZ: Asia/Kolkata
+
+  vpn-vedanta:
+    build: ./vpn
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun
+    volumes:
+      - ./vpn/vedanta/client.ovpn:/etc/openvpn/client.ovpn:ro
+    environment:
+      TZ: Asia/Kolkata
 
   frontend:
     build:
