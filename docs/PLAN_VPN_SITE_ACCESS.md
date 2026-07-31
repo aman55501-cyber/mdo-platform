@@ -40,7 +40,11 @@ Questions spent: 6 of 14.
   - **No `route`, no `redirect-gateway`, no `tls-auth`, no `tls-crypt`** → all routes arrive by server push; no extra HMAC channel protection
   - Gateway is a TP-Link Omada device (certificate subject `O = TP-Link, OU = SMB-OMADA`), client CN `client_server0`
   - Client key is **1024-bit RSA**, certificate valid `2026-07-30` → `2036-07-27`
-- The Vedanta VPN profile has not been provided; three uploads were the same hotel file (verified: identical md5 `1e264a47caca93e89a82eac35b8a0033`).
+- **Vedanta VPN profile** — retrieved from the owner's Google Drive (verified: file `1rhASFPyjsS7o4gwwkXGS8d0Z-vvWEOfd`, mimeType `application/x-openvpn-profile`, 3932 bytes, created 2026-07-31). Its directive section is **identical to the hotel profile except the gateway** (verified: decoded the header):
+  - `client`, `dev tun`, `proto udp`, `float`, `nobind`, `cipher AES-128-CBC`, `comp-lzo no`, `resolv-retry infinite`, `remote-cert-tls server`, `persist-key`, `explicit-exit-notify`
+  - `remote 103.251.31.130 1194` — a different gateway from the hotel's `182.65.204.86`
+  - **No `auth-user-pass`, no `static-challenge`** → certificate-only, so Vedanta is also viable unattended and Phase 6 is a clone rather than a redesign
+  - Its private key has also been exposed (transmitted via Drive and chat) and must be rotated in Phase 6 step 1, exactly as the hotel key is in Phase 1
 - What runs inside the hotel LAN is unknown — no host addresses, no software names, no credentials. Phase 3 discovers this.
 
 ## Scope (v1)
@@ -142,7 +146,7 @@ No schema changes in v1. The discovery inventory is written to `docs/SITE_INVENT
 
 ## Open Items (none blocking)
 
-- Vedanta `.ovpn` profile — proceed with hotel-only; Phase 6 adds Vedanta unchanged if its directives match, or re-plans that phase if they differ.
+- Vedanta profile — RESOLVED: directives verified identical apart from the gateway, so Phase 6 is a clone. Both client certificates still need rotation before use.
 - What the hotel server actually runs — proceed with discovery in Phase 3; the follow-up integration plan is written from its findings.
 - Whether hotel data should replace or supplement the WhatsApp-derived occupancy figures — proceed with supplement, decided in the follow-up plan.
 
@@ -233,8 +237,11 @@ ssh root@72.60.97.133 "echo reachable"
 - [ ] Phase 6: Clone the pattern for Vedanta
       Done when: a `vpn-vedanta` container passes the same R1–R5 checks against the Vedanta network, and `docs/SITE_INVENTORY_VEDANTA.md` exists.
       Steps:
-      - Obtain the Vedanta `.ovpn` and read its directives **before** copying anything — if it uses `auth-user-pass` or `static-challenge`, stop and re-plan this phase, because credential or one-time-code prompts break unattended operation.
-      - Repeat Phases 1 through 4 with `vpn-vedanta`, `VEDANTA_PROXY_URL`, and its own credential directory.
+      - Rotate the Vedanta client certificate in its Omada controller (its key was exposed via Drive and chat), and delete the Drive copy of the profile — it holds an unencrypted private key.
+      - Place the replacement profile at `vpn/vedanta/client.ovpn`, mode `600`, in the already-gitignored `vpn/` directory.
+      - Copy the `vpn-hotel` compose service to `vpn-vedanta` changing only the profile mount and container name — the directives are known identical apart from the gateway (verified: decoded profile header), so no config redesign is needed.
+      - Add `VEDANTA_PROXY_URL=http://vpn-vedanta:8888` to `.env` and the `backend` environment.
+      - Repeat the Phase 2 and Phase 3 checks against gateway `103.251.31.130`, then the Phase 4 proxy check.
       - Verify the two site subnets do not overlap; if they do, confirm the separate containers keep them isolated by testing a known host on each.
       Covers: R1–R5 for the second site; checks: A2, A4, A5, A6
 
