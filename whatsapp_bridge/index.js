@@ -276,6 +276,25 @@ app.get("/api/whatsapp/status", (req, res) => {
   res.json({ connected: isConnected, watched_groups: WATCHED_GROUPS })
 })
 
+// Send a message (used by the backend to push 🔴 alerts to Aman's phone).
+// `to` may be a bare number (917000512030), a full jid, or a group jid.
+app.post("/api/whatsapp/send", async (req, res) => {
+  const { to, text } = req.body || {}
+  if (!to || !text) return res.status(400).json({ ok: false, error: "to and text required" })
+  if (!isConnected || !sock) return res.status(503).json({ ok: false, error: "WhatsApp not connected" })
+  const jid = String(to).includes("@")
+    ? String(to)
+    : String(to).replace(/[^0-9]/g, "") + "@s.whatsapp.net"
+  try {
+    await sock.sendMessage(jid, { text: String(text).slice(0, 4000) })
+    console.log(`sent alert -> ${jid} (${String(text).length} chars)`)
+    res.json({ ok: true, jid })
+  } catch (e) {
+    console.log("send failed:", e.message)
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
 // Health check
 app.get("/health", (req, res) => res.json({ ok: true }))
 

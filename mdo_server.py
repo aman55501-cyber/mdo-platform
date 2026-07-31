@@ -853,6 +853,30 @@ _LEVEL_URGENCY = {"critical": "CRITICAL", "red": "CRITICAL", "🔴": "CRITICAL",
                   "important": "HIGH", "amber": "HIGH", "🟡": "HIGH",
                   "info": "LOW", "green": "LOW", "🟢": "LOW"}
 
+# 🔴 alerts reach Aman's phone through the WhatsApp bridge (self-message), so
+# agents can interrupt him when it matters instead of waiting to be opened.
+ALERT_TO = os.environ.get("ALERT_WHATSAPP_TO", "").strip()
+
+def _send_whatsapp(text: str) -> dict:
+    wa_url = os.environ.get("WA_BRIDGE_URL", "")
+    if not wa_url or not ALERT_TO:
+        return {"sent": False, "reason": "WA_BRIDGE_URL or ALERT_WHATSAPP_TO not set"}
+    try:
+        req = urllib.request.Request(
+            wa_url.rstrip("/") + "/api/whatsapp/send",
+            data=_json.dumps({"to": ALERT_TO, "text": text}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return {"sent": True, **_json.loads(r.read() or b"{}")}
+    except Exception as e:
+        return {"sent": False, "reason": str(e)[:200]}
+
+@app.post("/api/alerts/test")
+async def alerts_test(body: dict | None = None):
+    """Prove the alert path end to end without waiting for a real 🔴."""
+    msg = (body or {}).get("text") or "🔴 MDO test alert — if you can read this, critical findings will reach your phone."
+    return _send_whatsapp(msg)
+
 @app.post("/api/agent/report")
 async def agent_report(body: dict):
     """Agents POST their run here — this is the delivery path that reaches the
@@ -876,6 +900,7 @@ async def agent_report(body: dict):
     )
     # Surface actionable findings in the Intel Centre / briefing
     filed = 0
+    newly_filed: set[str] = set()
     for f in findings:
         urgency = _LEVEL_URGENCY.get(str(f.get("level", "info")).lower().strip(), "LOW")
         if urgency == "LOW":
@@ -899,6 +924,7 @@ async def agent_report(body: dict):
              f.get("due_date") or None),
         )
         filed += 1
+        newly_filed.add(title)
 
     # Stamp the checks this run covered
     for code in (body.get("checks_run") or []):
@@ -908,8 +934,30 @@ async def agent_report(body: dict):
         )
     await db.commit()
     rows = await db.execute_fetchall("SELECT * FROM agent_reports ORDER BY id DESC LIMIT 1")
+
+    # Push 🔴 findings to WhatsApp — only the newly filed ones, so a recurring
+    # problem doesn't re-alert every hour.
+    alert = {"sent": False, "reason": "no new critical findings"}
+    new_crit = [f for f in findings
+                if _LEVEL_URGENCY.get(str(f.get("level", "")).lower().strip()) == "CRITICAL"
+                and str(f.get("title", ""))[:200] in newly_filed]
+    if new_crit:
+        lines = [f"🔴 MDO ALERT — {body.get('cadence', 'agent')} run"]
+        for f in new_crit[:5]:
+            lines.append("")
+            lines.append("• " + str(f.get("title", ""))[:150])
+            if f.get("detail"):
+                lines.append("  " + str(f["detail"])[:300])
+            if f.get("action"):
+                lines.append("  → " + str(f["action"])[:200] +
+                             (f" ({f['owner']})" if f.get("owner") else ""))
+        lines.append("")
+        lines.append("Full report: https://amanagrawal.cloud/reports")
+        alert = _send_whatsapp("\n".join(lines))
+        print("alert push:", alert)
+
     return {"stored": True, "report_id": (dict(rows[0])["id"] if rows else None),
-            "intel_filed": filed, "counts": counts}
+            "intel_filed": filed, "counts": counts, "alert": alert}
 
 @app.get("/api/agent/reports")
 async def agent_reports_list(cadence: str | None = None, limit: int = 20):
