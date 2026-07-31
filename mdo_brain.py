@@ -186,6 +186,11 @@ TOOLS: list[dict] = [
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
+        "name": "get_portfolio",
+        "description": "LIVE portfolio across all four broker accounts (Aman/HDFC, Sudha/HDFC, Ashok/HDFC, Aditi/Angel) via the sharecfo bridge: net worth, invested vs holdings value, cash, day change, unrealised P&L, sector concentration, net market exposure and tilt, hedge suggestions, and open F&O positions with expiry. Also reports how stale the broker snapshot is. Use for any question about wealth, positions, F&O, exposure or trading P&L — this is real money, never estimate it.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
         "name": "list_checks",
         "description": "The standing checks registry — every recurring question the agents answer (hourly/daily/weekly/monthly/quarterly/annual), with its data source, red/amber threshold, owner, run window, and whether it is blocked (data source missing). Use to answer 'what is monitored', 'what ran', or 'what is not covered yet'.",
         "input_schema": {
@@ -305,6 +310,8 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["wa_messages"](group=a.get("group", ""), limit=int(a.get("limit", 100)))
     if name == "list_whatsapp_groups":
         return await tb["wa_groups"]()
+    if name == "get_portfolio":
+        return await tb["capital"]()
     if name == "list_checks":
         return await tb["checks"](cadence=a.get("cadence"), status=a.get("status"),
                                   domain=a.get("domain"))

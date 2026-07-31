@@ -18,6 +18,11 @@ services:
       VEDANTA_DB_PATH: /data/vedanta_crm.db
       WA_BRIDGE_URL: http://whatsapp:3001
       WA_BRIDGE2_URL: http://whatsapp2:3001
+      # sharecfo bridge — live broker sessions for all 4 accounts. Requires the
+      # backend container to share a network with sharecfo:
+      #   docker network connect sharecfo_default mdo-platform-backend-1
+      CFO_API_URL: ${CFO_API_URL:-http://sharescfo:8000}
+      CFO_API_TOKEN: ${CFO_API_TOKEN:-}
       TZ: Asia/Kolkata
     volumes:
       - mdo-data:/data

@@ -548,14 +548,14 @@ CHECKS_SEED = [
      "/api/market/indices, /api/market/watchlist (15 business-context names)",
      "🔴 watchlist name moves >4% or index >1.5%; 🟡 >2% / >0.8%", "Aman",
      MARKET_WINDOW, "active", ""),
-    ("acct_positions", "Account-level positions — Aman + Sudha + Aditi", "hourly", "capital",
-     "HDFC InvestRight API (per-account)",
-     "🔴 single position down >5% or margin utilisation >80%", "Aman",
-     MARKET_WINDOW, "blocked", "HDFC OAuth token exchange incomplete; Sudha needs her own API credentials"),
-    ("fo_update", "F&O positions — Aman + Sudha HDFC", "hourly", "capital",
-     "HDFC InvestRight API — F&O book",
-     "🔴 loss >2% of capital, expiry <2 days unhedged, or daily loss limit 5% hit", "Aman",
-     MARKET_WINDOW, "blocked", "Same HDFC auth blocker; Sudha = second connection"),
+    ("acct_positions", "Portfolio — all 4 accounts (Aman, Sudha, Ashok, Aditi)", "hourly", "capital",
+     "sharecfo bridge /api/capital/summary — HDFC1/2/3 + Angel, live sessions",
+     "🔴 book moves >3% in a day or a position down >5%; 🟡 >2% day move, unrealised <-5%, sector >25%", "Aman",
+     MARKET_WINDOW, "active", ""),
+    ("fo_update", "F&O book — expiry, exposure, hedge", "hourly", "capital",
+     "sharecfo bridge /api/capital/summary (positions/live + exposure)",
+     "🔴 expiry within 2 days, or position down >5%; 🟡 net exposure tilt vs hedge suggestion", "Aman",
+     MARKET_WINDOW, "active", ""),
     ("dispatch_rakes", "Dispatch vs incoming rakes — Vedanta", "hourly", "vwlr",
      "WhatsApp: Vedanta Daily Report, VWLR RAKE PLACEMENT, VWLR - RKM GROUP, LOADER REPORT VWLR",
      "🔴 rake placed with no dispatch movement >6h, or dispatch <70% of placed volume", "Aman",
@@ -795,6 +795,113 @@ async def ops_task_update(task_id: int, body: dict):
         await db.commit()
     rows = await db.execute_fetchall("SELECT * FROM ops_tasks WHERE id=?", (task_id,))
     return dict(rows[0]) if rows else {}
+
+# ── Capital bridge (sharecfo) ───────────────────────────────────────────────
+# sharecfo already holds authenticated sessions for all four broker accounts
+# (Aman/Sudha/Ashok on HDFC, Aditi on Angel). MDO reads through it rather than
+# building a second broker auth path.
+CFO_URL = os.environ.get("CFO_API_URL", "").strip().rstrip("/")
+CFO_TOKEN = os.environ.get("CFO_API_TOKEN", "").strip()
+
+def _cfo_get(path: str, timeout: int = 25) -> dict:
+    if not CFO_URL or not CFO_TOKEN:
+        return {"error": "CFO_API_URL / CFO_API_TOKEN not configured"}
+    try:
+        url = f"{CFO_URL}{path}?token={urllib.parse.quote(CFO_TOKEN)}"
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=timeout) as r:
+            return _json.loads(r.read() or b"{}")
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+def _stale_hours(as_of: str | None) -> float | None:
+    if not as_of:
+        return None
+    try:
+        from datetime import datetime, timezone
+        t = datetime.fromisoformat(str(as_of).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return round((datetime.now(timezone.utc) - t).total_seconds() / 3600, 1)
+    except Exception:
+        return None
+
+@app.get("/api/capital/summary")
+async def capital_summary():
+    """Portfolio, exposure and F&O positions across all broker accounts, with
+    threshold flags computed. Staleness is reported, never hidden."""
+    pf = _cfo_get("/portfolio")
+    ex = _cfo_get("/exposure")
+    pos = _cfo_get("/positions/live")
+    if pf.get("error"):
+        return {"connected": False, "error": pf["error"]}
+
+    positions = pos.get("positions") or []
+    as_of = pf.get("as_of")
+    stale = _stale_hours(as_of)
+
+    flags: list[dict] = []
+    if stale is not None and stale > 24:
+        flags.append({"level": "important",
+                      "text": f"Broker data is {stale}h old (as_of {as_of}) — sharecfo may not be refreshing"})
+    dpct = pf.get("day_change_pct")
+    if isinstance(dpct, (int, float)) and abs(dpct) >= 0.02:
+        flags.append({"level": "critical" if abs(dpct) >= 0.03 else "important",
+                      "text": f"Book moved {dpct*100:.2f}% today ({pf.get('day_change')})"})
+    upct = pf.get("unrealised_pnl_pct")
+    if isinstance(upct, (int, float)) and upct <= -0.05:
+        flags.append({"level": "important",
+                      "text": f"Unrealised P&L {upct*100:.1f}% vs invested"})
+    # F&O: expiry pressure and per-position drawdown
+    from datetime import date, datetime as _dtc
+    for p in positions:
+        if p.get("kind") in ("future", "option") or p.get("opt"):
+            pnl_pct = p.get("pnl_pct")
+            if isinstance(pnl_pct, (int, float)) and pnl_pct <= -5:
+                flags.append({"level": "critical",
+                              "text": f"{p.get('holder')} {p.get('label')}: {pnl_pct}% ({p.get('pnl')})"})
+            exp = str(p.get("expiry") or "")
+            if exp:
+                try:
+                    d = _dtc.strptime(exp, "%d-%b-%y").date()
+                    days = (d - date.today()).days
+                    if 0 <= days <= 2:
+                        flags.append({"level": "critical",
+                                      "text": f"{p.get('holder')} {p.get('label')} expires in {days}d — decide roll/close"})
+                    elif days < 0:
+                        flags.append({"level": "important",
+                                      "text": f"{p.get('holder')} {p.get('label')} shows expiry {exp} (past) — stale position data"})
+                except Exception:
+                    pass
+    # concentration
+    for s in (pf.get("sector_concentration") or [])[:3]:
+        if isinstance(s.get("pct"), (int, float)) and s["pct"] >= 0.25:
+            flags.append({"level": "important",
+                          "text": f"Sector concentration: {s.get('sector')} {s['pct']*100:.0f}% of book"})
+
+    return {
+        "connected": True,
+        "as_of": as_of,
+        "stale_hours": stale,
+        "net_worth": pf.get("net_worth"),
+        "holdings_value": pf.get("holdings_value"),
+        "invested_value": pf.get("invested_value"),
+        "cash": pf.get("cash"),
+        "unrealised_pnl": pf.get("unrealised_pnl"),
+        "unrealised_pnl_pct": pf.get("unrealised_pnl_pct"),
+        "day_change": pf.get("day_change"),
+        "day_change_pct": pf.get("day_change_pct"),
+        "sector_concentration": (pf.get("sector_concentration") or [])[:6],
+        "exposure": ex.get("net_exposure") if not ex.get("error") else {"error": ex.get("error")},
+        "tilt": (ex.get("net_exposure") or {}).get("tilt") if not ex.get("error") else None,
+        "hedge_suggestions": ex.get("hedge_suggestions") if not ex.get("error") else None,
+        "fno_positions": [p for p in positions if p.get("kind") in ("future", "option") or p.get("opt")],
+        "position_count": len(positions),
+        "flags": flags,
+    }
+
+@app.get("/api/capital/accounts")
+async def capital_accounts():
+    return _cfo_get("/accounts")
 
 # ── Checks registry ─────────────────────────────────────────────────────────
 @app.get("/api/checks")
@@ -2624,6 +2731,7 @@ mdo_brain.configure({
     "lifemap":     lifemap,
     "wa_messages": whatsapp_messages,
     "wa_groups":   whatsapp_groups,
+    "capital":     capital_summary,
     "checks":      checks_list,
     "reports":     agent_reports_list,
     "file_report": agent_report,
