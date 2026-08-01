@@ -13,6 +13,23 @@ if [ ! -f "$CONFIG" ]; then
   exit 2
 fi
 
+# Existence is not enough. A half-finished paste leaves an empty or truncated file,
+# and OpenVPN's complaint about that is obscure ("TLS key negotiation failed") and
+# sends you hunting for a network fault that isn't there. Say what is actually wrong.
+if [ ! -s "$CONFIG" ]; then
+  echo "FATAL: $CONFIG is empty — the profile did not transfer." >&2
+  echo "       Expected ~3.9 KB starting with 'client' and ending with '</key>'." >&2
+  exit 2
+fi
+for marker in '^remote ' '<ca>' '<cert>' '<key>' '</key>'; do
+  if ! grep -q "$marker" "$CONFIG"; then
+    echo "FATAL: $CONFIG looks truncated — no '$marker' found." >&2
+    echo "       Size is $(wc -c < "$CONFIG") bytes; a complete profile is ~3.9 KB." >&2
+    exit 2
+  fi
+done
+echo "[vpn] profile looks complete ($(wc -c < "$CONFIG") bytes)"
+
 echo "[vpn] starting tinyproxy on :8888"
 tinyproxy -c /etc/tinyproxy/tinyproxy.conf
 
