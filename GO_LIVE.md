@@ -8,7 +8,25 @@ Times are rough. Nothing here needs a developer.
 
 ---
 
-## A. Deploy the merged stack — 20 min, blocks everything
+## A. Deploy the merged stack — one command
+
+```bash
+cd /docker/sharecfo/mdo-platform
+git fetch origin claude/sharecfo-life-llm-merge-8www96
+git checkout claude/sharecfo-life-llm-merge-8www96
+git pull origin claude/sharecfo-life-llm-merge-8www96
+
+./deploy.sh --check    # changes nothing, tells you what is wrong
+./deploy.sh            # migrate volumes, swap stacks, verify
+```
+
+`deploy.sh` performs everything in A1–A5 below and refuses to start anything if a
+precondition fails, so a half-configured deploy is not possible. It is safe to re-run:
+each step checks whether it is already done.
+
+The rest of this section explains what it does and why, for when a check fails.
+
+---
 
 The branch `claude/sharecfo-life-llm-merge-8www96` has both halves merged. Right now the
 VPS is still running them as two stacks. Three things will collide if you just bring the
