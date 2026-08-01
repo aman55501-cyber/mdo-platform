@@ -90,18 +90,30 @@ done
 
 step "3. VPN profiles (optional — site data only)"
 
+VPN_OK=""
 for site in hotel vedanta; do
   f="vpn/$site/client.ovpn"
-  if [ ! -f "$f" ]; then
+  # Docker creates a DIRECTORY at a bind-mount path that doesn't exist, which then
+  # fails in a far more confusing way than a missing file. Keep a placeholder file.
+  [ -e "$f" ] || { mkdir -p "vpn/$site"; : > "$f"; }
+  if [ ! -s "$f" ] && [ ! -f "$f" ]; then
     warn "$f missing — $site site data unavailable (everything else still works)"
   elif [ ! -s "$f" ]; then
-    bad "$f is EMPTY — the transfer did not complete"
+    # Not fatal: site data is optional, and the sidecar refuses to start on its own
+    # with a clear message. Blocking the whole deploy on it would be worse.
+    warn "$f is EMPTY — transfer did not complete; $site sidecar will not start"
   elif ! grep -q '</key>' "$f" || ! grep -q '^remote ' "$f"; then
-    bad "$f looks truncated ($(wc -c < "$f") bytes; expected ~3.9 KB)"
+    warn "$f looks truncated ($(wc -c < "$f") bytes; expected ~3.9 KB); $site sidecar will not start"
   else
     ok "$f complete ($(wc -c < "$f") bytes)"
+    VPN_OK="$VPN_OK vpn-$site"
   fi
 done
+
+# Only start a sidecar whose profile is usable. Starting one without a profile just
+# gives you a container that exits and is restarted forever, filling the logs.
+SERVICES="backend sharescfo frontend caddy whatsapp whatsapp2 autoheal$VPN_OK"
+[ -z "$VPN_OK" ] && warn "no usable VPN profile — starting without the site sidecars"
 
 step "4. Shares CFO data volumes"
 
@@ -133,6 +145,17 @@ for vol in sharescfo_state sharescfo_screener sharescfo_mprofit; do
   fi
 done
 
+# The fatal gate sits BEFORE anything is stopped. An earlier version stopped the old
+# stack and only then discovered a blocking problem, which left the capital surface
+# down with nothing running in its place. Never take something offline that this run
+# is not going to replace.
+if [ "$FAILED" = "1" ]; then
+  echo
+  echo "${RED}Stopping — fix the FAIL lines above and run again.${OFF}"
+  echo "Nothing was changed or stopped; whatever is running stays running."
+  exit 1
+fi
+
 step "5. Port conflicts"
 
 for p in 80 443; do
@@ -154,13 +177,6 @@ for p in 80 443; do
   fi
 done
 
-if [ "$FAILED" = "1" ]; then
-  echo
-  echo "${RED}Stopping — fix the FAIL lines above and run again.${OFF}"
-  echo "Nothing was started."
-  exit 1
-fi
-
 if [ "$CHECK_ONLY" = "1" ]; then
   echo
   echo "${GRN}Checks passed.${OFF} Run ./deploy.sh to deploy."
@@ -169,7 +185,9 @@ fi
 
 step "6. Build and start"
 
-docker compose up -d --build || { echo "${RED}compose up failed${OFF}"; exit 1; }
+echo "        services: $SERVICES"
+# shellcheck disable=SC2086
+docker compose up -d --build $SERVICES || { echo "${RED}compose up failed${OFF}"; exit 1; }
 echo
 docker compose ps
 
