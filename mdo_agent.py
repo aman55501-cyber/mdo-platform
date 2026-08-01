@@ -288,7 +288,24 @@ def run(cadence: str) -> int:
         return 4
 
     publish_to_feed(actionable, cadence)
+    check_broker_sessions()
     return 0
+
+
+def check_broker_sessions() -> None:
+    """Broker logins expire daily and fail silently — the capital side just goes empty.
+    Checked every cycle so the gap announces itself instead of being discovered."""
+    try:
+        res = api("/api/feed/check-sessions", "POST", {})
+        n = res.get("published", 0)
+        if n:
+            log(f"broker sessions: {n} finding(s) published to the feed")
+        else:
+            accounts = res.get("accounts", [])
+            log(f"broker sessions: all {len(accounts)} logged in" if accounts
+                else "broker sessions: nothing to report")
+    except Exception as e:
+        log(f"broker session check failed: {str(e)[:150]}")
 
 
 # Severity mapping [A4] — matches the n_critical/n_important/n_info counters the

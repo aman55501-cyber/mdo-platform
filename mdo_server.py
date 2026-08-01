@@ -1117,9 +1117,18 @@ async def _act_whatsapp_message(payload: dict) -> dict:
         return {"sent": True, "to": to, **_json.loads(r.read() or b"{}")}
 
 
-mdo_feed.register_action("add_task", "internal", _act_add_task)
-mdo_feed.register_action("file_intel", "internal", _act_file_intel)
-mdo_feed.register_action("whatsapp_message", "outward", _act_whatsapp_message)
+def register_feed_actions() -> dict:
+    """Bind the action handlers to the feed. Idempotent and callable again — the
+    registry is process-global, so anything that resets it (a test, a reload) can
+    restore the real handlers by calling this rather than leaving approvals to fail
+    with 'no handler registered'."""
+    mdo_feed.register_action("add_task", "internal", _act_add_task)
+    mdo_feed.register_action("file_intel", "internal", _act_file_intel)
+    mdo_feed.register_action("whatsapp_message", "outward", _act_whatsapp_message)
+    return mdo_feed.registered_actions()
+
+
+register_feed_actions()
 
 
 # ── Decision Feed routes ───────────────────────────────────────────────────
@@ -1212,6 +1221,73 @@ async def feed_notify_pending():
         await mdo_feed.mark_notified(db, it["id"], _json.dumps(result)[:400])
         sent.append({"id": it["id"], "title": it["title"], "result": result})
     return {"notified": len(sent), "items": sent}
+
+
+@app.post("/api/feed/check-sessions")
+async def feed_check_sessions():
+    """Broker logins expire daily, and a logged-out account fails silently: the app
+    still renders, it just has no capital in it. That is the worst kind of failure —
+    it looks like calm. So the absence is published as a finding in its own right.
+
+    Runs on the agent's cadence. `add_task` is drafted rather than executed, because
+    re-authenticating needs a browser and a phone, not a server."""
+    db = await vdb()
+    published, checked = [], []
+
+    acc = await asyncio.to_thread(_cfo_get, "/accounts")
+    if acc.get("error"):
+        item = await mdo_feed.publish(
+            db, key="capital.bridge.down",
+            title="Capital bridge unreachable — no broker data at all",
+            severity="critical", source="session-check", domain="capital",
+            body=("The Shares CFO service is not answering, so every capital number in "
+                  "the feed and the briefing is missing rather than stale. "
+                  f"Detail: {acc['error']}"),
+            evidence=[{"endpoint": "/accounts", "error": acc["error"]}])
+        if item:
+            published.append(item)
+    else:
+        accounts = acc.get("accounts", [])
+        out = [a for a in accounts if not a.get("logged_in")]
+        checked = [{"key": a.get("key"), "label": a.get("label"),
+                    "logged_in": bool(a.get("logged_in"))} for a in accounts]
+        if out:
+            names = ", ".join(f"{a.get('label') or a.get('key')}" for a in out)
+            item = await mdo_feed.publish(
+                db, key="capital.session.stale",
+                title=f"Broker login expired — {len(out)} of {len(accounts)} accounts logged out",
+                severity="important", source="session-check", domain="capital",
+                body=(f"Logged out: {names}. Until these are re-authenticated the capital "
+                      f"side of the feed is blind — it will look empty rather than broken. "
+                      f"HDFC needs browser 2FA (scripts/hdfc_login.py); it expires daily."),
+                evidence=[checked],
+                action_type="add_task",
+                action_payload={
+                    "title": f"Re-run broker login ({names})",
+                    "description": "HDFC needs daily browser 2FA via scripts/hdfc_login.py.",
+                    "priority": "high", "category": "capital"})
+            if item:
+                published.append(item)
+
+    # Separately: the bridge can be up and authenticated while the snapshot rots.
+    summary = await capital_summary()
+    stale = summary.get("stale_hours") if isinstance(summary, dict) else None
+    if isinstance(stale, (int, float)) and stale > 24:
+        item = await mdo_feed.publish(
+            db, key="capital.snapshot.stale",
+            title=f"Broker snapshot is {stale}h old",
+            severity="important", source="session-check", domain="capital",
+            body="Logins look fine but the data behind them is not refreshing.",
+            evidence=[{"stale_hours": stale}])
+        if item:
+            published.append(item)
+
+    for item in published:
+        if item["notify_policy"] == "push":
+            result = _notify_all(item)
+            await mdo_feed.mark_notified(db, item["id"], _json.dumps(result)[:400])
+
+    return {"accounts": checked, "published": len(published), "items": published}
 
 
 # ── Site access over the VPN sidecars ──────────────────────────────────────
