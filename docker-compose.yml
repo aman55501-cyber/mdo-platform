@@ -121,6 +121,11 @@ services:
       - ./vpn/hotel/client.ovpn:/etc/openvpn/client.ovpn:ro
     environment:
       TZ: Asia/Kolkata
+      # The hotel runs IDS Next FortuneNext — a SQL Server app, so its data is on
+      # 1433 rather than behind an HTTP endpoint. Format: listen:host:port, comma
+      # separated. Fill in the real LAN address after the discovery scan.
+      #   HOTEL_TCP_FORWARDS=1433:10.0.0.5:1433
+      TCP_FORWARDS: ${HOTEL_TCP_FORWARDS:-}
 
   vpn-vedanta:
     build: ./vpn
@@ -132,6 +137,7 @@ services:
       - ./vpn/vedanta/client.ovpn:/etc/openvpn/client.ovpn:ro
     environment:
       TZ: Asia/Kolkata
+      TCP_FORWARDS: ${VEDANTA_TCP_FORWARDS:-}
 
   # ── MDO frontend ────────────────────────────────────────────────────────
   frontend:

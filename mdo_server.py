@@ -1305,7 +1305,9 @@ async def site_read(site: str):
     """Live readings from one site, each carrying where it came from and when."""
     if site not in mdo_sites.SITES:
         raise HTTPException(status_code=404, detail=f"unknown site {site!r}")
-    return {"tunnel": mdo_sites.tunnel_status(site), **mdo_sites.read_site(site)}
+    return {"tunnel": mdo_sites.tunnel_status(site),
+            "tcp_forwards": mdo_sites.tcp_status(site),
+            **mdo_sites.read_site(site)}
 
 
 @app.post("/api/sites/check")

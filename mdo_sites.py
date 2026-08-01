@@ -252,6 +252,59 @@ def all_tunnels() -> dict:
             "checked_at": _now().isoformat(timespec="seconds")}
 
 
+# ── Raw TCP reachability ───────────────────────────────────────────────────
+# Not every site system speaks HTTP. The hotel runs IDS Next FortuneNext, a SQL
+# Server application, so its data lives behind TCP/1433 — an HTTP proxy cannot
+# carry that. The sidecar publishes plain TCP forwards for those cases; this
+# checks whether one is actually answering.
+
+def tcp_reachable(host: str, port: int, timeout: float = 5.0) -> dict:
+    """Can we open a TCP connection? Says nothing about auth or contents."""
+    import socket
+    started = _now()
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return {"ok": True, "host": host, "port": int(port),
+                    "checked_at": started.isoformat(timespec="seconds")}
+    except Exception as e:
+        return {"ok": False, "host": host, "port": int(port),
+                "error": f"{type(e).__name__}: {e}"[:200],
+                "checked_at": started.isoformat(timespec="seconds")}
+
+
+def tcp_forwards(site: str) -> list[dict]:
+    """Forwards configured for a site, parsed from the same listen:host:port string
+    the sidecar is given, so the two can never drift apart."""
+    raw = os.environ.get(f"{site.upper()}_TCP_FORWARDS", "").strip()
+    out = []
+    for rule in [r.strip() for r in raw.split(",") if r.strip()]:
+        parts = rule.split(":")
+        if len(parts) != 3 or not parts[0].isdigit() or not parts[2].isdigit():
+            out.append({"rule": rule, "valid": False,
+                        "error": "expected listen:host:port"})
+            continue
+        out.append({"rule": rule, "valid": True, "listen_port": int(parts[0]),
+                    "target_host": parts[1], "target_port": int(parts[2])})
+    return out
+
+
+def tcp_status(site: str) -> list[dict]:
+    """Probe every configured forward for a site through its sidecar."""
+    cfg = SITES.get(site)
+    if not cfg:
+        return []
+    # The sidecar hostname is the proxy URL's host, minus the HTTP port.
+    host = proxy_url(site).split("://", 1)[-1].partition(":")[0]
+    results = []
+    for fwd in tcp_forwards(site):
+        if not fwd.get("valid"):
+            results.append({**fwd, "ok": False})
+            continue
+        probe = tcp_reachable(host, fwd["listen_port"])
+        results.append({**fwd, **probe, "via": f"{host}:{fwd['listen_port']}"})
+    return results
+
+
 # ── Feed integration ───────────────────────────────────────────────────────
 
 async def publish_tunnel_alerts(db, feed) -> list[dict]:
