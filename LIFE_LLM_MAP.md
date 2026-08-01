@@ -36,6 +36,14 @@ flying blind. The map makes those gaps visible.
 2. ✅ `/lifemap` UI — layered columns, connection lines, click-to-edit, add nodes/edges
 3. ✅ Seeded from MDO_VISION.md / MDO_INTEL.md
 
+### Phase 1b — Fold the capital surface in (done)
+Shares CFO was a second codebase on a second Docker stack. It now lives in this
+repo at `shares_cfo/` and runs as the `sharescfo` service in the same compose
+file. That closes the Layer 3 gap for the Wealth OS domain: the broker
+connectors, the consolidated book and the execution engine are no longer behind
+a cross-stack bridge — the MDO backend reads them at `http://sharescfo:8000`
+over the shared network. See `README.md` for the merged tree.
+
 ### Phase 2 — Close the connector gaps (highest leverage per hour)
 1. **HDFC OAuth callback** → register the VPS/domain URL, run the OTP test (unblocks live execution)
 2. **Staah token** → hotel occupancy becomes a live feed instead of manual entry

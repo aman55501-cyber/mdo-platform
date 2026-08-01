@@ -1,12 +1,22 @@
-# MDO Platform — single-VPS deployment (Hostinger KVM or any Docker host)
+# MDO Platform — one stack, one VPS (Hostinger KVM or any Docker host).
 #
-#   cp .env.example .env   → set NEXT_PUBLIC_API_URL + API keys
+# This file merges what used to be two separate deployments:
+#   • MDO      — the operating surface (backend + Next.js app + WhatsApp + VPN sidecars)
+#   • Shares CFO — the capital surface (live broker sessions, execution, analysis)
+#
+# Because both now live on the same compose network, the MDO backend reaches
+# Shares CFO directly at http://sharescfo:8000. The old cross-stack hack
+# (`docker network connect sharecfo_default mdo-platform-backend-1`) is gone.
+#
+#   cp .env.example .env   → set NEXT_PUBLIC_API_URL, DOMAIN + API keys
 #   docker compose up -d --build
 #
 # Frontend → http://<VPS_IP>:3000   Backend → http://<VPS_IP>:8501
+# Shares CFO → https://$DOMAIN (via Caddy, automatic Let's Encrypt cert)
 # SQLite lives in the named volume `mdo-data` — survives rebuilds/redeploys.
 
 services:
+  # ── MDO backend ─────────────────────────────────────────────────────────
   backend:
     build: .
     restart: unless-stopped
@@ -18,9 +28,7 @@ services:
       VEDANTA_DB_PATH: /data/vedanta_crm.db
       WA_BRIDGE_URL: http://whatsapp:3001
       WA_BRIDGE2_URL: http://whatsapp2:3001
-      # sharecfo bridge — live broker sessions for all 4 accounts. Requires the
-      # backend container to share a network with sharecfo:
-      #   docker network connect sharecfo_default mdo-platform-backend-1
+      # Capital bridge — the Shares CFO service below, same network, same stack.
       CFO_API_URL: ${CFO_API_URL:-http://sharescfo:8000}
       CFO_API_TOKEN: ${CFO_API_TOKEN:-}
       # Site networks reached through the VPN sidecars (see vpn/Dockerfile).
@@ -29,9 +37,44 @@ services:
       TZ: Asia/Kolkata
     volumes:
       - mdo-data:/data
+    depends_on:
+      - sharescfo
 
-  # WhatsApp ops-groups bridge (Baileys — no Chromium). After `up`, open the
-  # app's VWLR Ops Feed page and scan the QR once; session persists in wa-auth.
+  # ── Shares CFO — capital surface ────────────────────────────────────────
+  # Live broker sessions (HDFC1/HDFC2/Angel), execution engine, analysis stack.
+  # Read by the MDO backend through CFO_API_URL / CFO_API_TOKEN.
+  sharescfo:
+    build:
+      context: .
+      dockerfile: Dockerfile.sharescfo
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"        # autoheal restarts this container if it turns unhealthy
+    healthcheck:
+      # liveness only (no auth, no data) — if the app wedges, this fails and autoheal restarts it
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 25s
+    environment:
+      - PORT=8000
+      - TZ=Asia/Kolkata
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    volumes:
+      # persist snapshots + audit log across rebuilds (sector map stays baked in image)
+      - sharescfo_state:/app/shares_cfo/data/state
+      # persist uploaded Screener Premium exports across rebuilds
+      - sharescfo_screener:/app/shares_cfo/data/screener
+      # persist uploaded MProfit exports across rebuilds
+      - sharescfo_mprofit:/app/shares_cfo/data/mprofit
+
+  # ── WhatsApp ops-groups bridge ──────────────────────────────────────────
+  # Baileys — no Chromium. After `up`, open the app's VWLR Ops Feed page and
+  # scan the QR once; session persists in wa-auth.
   whatsapp:
     build: ./whatsapp_bridge
     restart: unless-stopped
@@ -87,6 +130,7 @@ services:
     environment:
       TZ: Asia/Kolkata
 
+  # ── MDO frontend ────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./mdo-app
@@ -100,7 +144,45 @@ services:
     depends_on:
       - backend
 
+  # ── Edge: TLS + routing ─────────────────────────────────────────────────
+  # Caddy terminates TLS and fetches/renews free Let's Encrypt certs. See
+  # Caddyfile for which hostname maps to which service.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - MDO_DOMAIN=${MDO_DOMAIN:-mdo.localhost}
+      - MDO_API_DOMAIN=${MDO_API_DOMAIN:-api.localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - sharescfo
+      - frontend
+      - backend
+
+  # Watches healthchecks and restarts any container labeled autoheal=true if it
+  # goes unhealthy (a hung app that never crashes). Completes the "never offline" story.
+  autoheal:
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=15
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   mdo-data:
   wa-auth:
   wa-auth2:
+  caddy_data:
+  caddy_config:
+  sharescfo_state:
+  sharescfo_screener:
+  sharescfo_mprofit:

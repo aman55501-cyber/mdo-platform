@@ -1,0 +1,20 @@
+# Caddy reverse proxy with automatic HTTPS for the merged MDO + Shares CFO stack.
+# Hostnames come from the .env file. Caddy fetches and renews free Let's Encrypt
+# certificates automatically for any real domain; the `.localhost` defaults stay
+# internal (no cert requested), so leaving the MDO hostnames unset is safe.
+#
+#   DOMAIN=cfo.example.com          → Shares CFO (capital surface)
+#   MDO_DOMAIN=mdo.example.com      → MDO app    (operating surface)
+#   MDO_API_DOMAIN=api.example.com  → MDO backend API
+
+{$DOMAIN} {
+	reverse_proxy sharescfo:8000
+}
+
+{$MDO_DOMAIN:mdo.localhost} {
+	reverse_proxy frontend:3000
+}
+
+{$MDO_API_DOMAIN:api.localhost} {
+	reverse_proxy backend:8501
+}

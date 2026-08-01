@@ -92,45 +92,36 @@ daily, and rotate the secret if it ever leaks.
 cd mdo-platform && git pull && docker compose up -d --build
 ```
 
-## 7a. Custom domain via an EXISTING Caddy on the same VPS
+## 7a. Custom domains via the stack's own Caddy
 
-If another compose stack on this VPS already runs Caddy on 80/443 (e.g.
-sharecfo), route MDO through it instead of starting a second proxy:
+Since the MDO and Shares CFO stacks were merged, **Caddy ships inside this
+compose file** — there is no second proxy to join, and no
+`docker network connect` step. Three hostnames route to three services
+(see `Caddyfile`); set the ones you want in `.env` and Caddy fetches the
+certificates itself.
 
-1. **DNS (Hostinger hPanel → Domains → your domain → DNS):**
-   - `A` record, name `@`, value = VPS IP
-   - `A` record, name `api`, value = VPS IP
-2. **Join Caddy to MDO's docker network** so it can reach the containers:
+1. **DNS (Hostinger hPanel → Domains → your domain → DNS)** — one `A` record
+   per hostname you plan to use, each pointing at the VPS IP:
+   - `cfo` → VPS IP (Shares CFO — the capital surface)
+   - `mdo` → VPS IP (MDO app — the operating surface)
+   - `api` → VPS IP (MDO backend API)
+2. **Name them in `.env`:**
+   ```
+   DOMAIN=cfo.yourdomain.example
+   MDO_DOMAIN=mdo.yourdomain.example
+   MDO_API_DOMAIN=api.yourdomain.example
+   ```
+   `MDO_DOMAIN` / `MDO_API_DOMAIN` are optional — left blank they fall back to
+   internal `.localhost` names and no certificate is requested, so you can add
+   the MDO hostnames later without touching the Shares CFO one.
+3. **Point the frontend at the HTTPS API** (browsers block an https page
+   calling an http API) and reload:
    ```bash
-   docker network connect mdo-platform_default sharecfo-caddy-1
-   ```
-   (Re-run this if the Caddy container is ever recreated — or add the
-   `mdo-platform_default` network to the Caddy service in that stack's
-   compose file to make it permanent.)
-3. **Append site blocks to that stack's Caddyfile** (find its path with
-   `grep -B2 -A6 'caddy' /docker/sharecfo/docker-compose.yml` — look for the
-   volume mounted at `/etc/caddy/Caddyfile`), e.g.:
-   ```
-   yourdomain.example {
-       reverse_proxy frontend:3000
-   }
-   api.yourdomain.example {
-       reverse_proxy backend:8501
-   }
-   ```
-   `frontend` / `backend` resolve via the shared docker network. Then:
-   ```bash
-   docker restart sharecfo-caddy-1
-   ```
-   Caddy fetches HTTPS certificates automatically once DNS resolves.
-4. **Rebuild the frontend against the HTTPS API** (browsers block an https
-   page calling an http API):
-   ```bash
-   cd /docker/sharecfo/mdo-platform
    sed -i 's|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=https://api.yourdomain.example|' .env
    sed -i 's|^HDFC_REDIRECT_URL=.*|HDFC_REDIRECT_URL=https://api.yourdomain.example/api/hdfc/callback|' .env
-   docker compose up -d --build frontend
+   docker compose up -d --build frontend caddy
    ```
+   Caddy issues the certificates automatically once DNS resolves.
 5. New addresses: app `https://yourdomain.example`, MCP connector
    `https://api.yourdomain.example/mcp/<MDO_MCP_SECRET>/mcp`. You can then
    close ports 3000/8501 in the firewall if you want domain-only access.
