@@ -120,16 +120,32 @@ step "4. Shares CFO data volumes"
 # Docker prefixes volume names with the project directory. Coming from the old
 # split stacks, the merged project creates EMPTY volumes and the uploaded Screener
 # and MProfit exports look deleted. Copy them across before first start.
-PROJECT=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+# Ask compose for its real project name rather than guessing it. Deriving it by
+# sanitising the directory name got this wrong once — it stripped the hyphen from
+# "mdo-platform", so data was copied into mdoplatform_* while the stack read
+# mdo-platform_*, and the migration silently achieved nothing.
+PROJECT=$(docker compose config --format json 2>/dev/null \
+          | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)
+if [ -z "$PROJECT" ]; then
+  # Compose's own rule: lowercase, keep [a-z0-9_-], drop the rest.
+  PROJECT=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
+  warn "could not read the compose project name; assuming '$PROJECT'"
+else
+  echo "        compose project: $PROJECT"
+fi
 for vol in sharescfo_state sharescfo_screener sharescfo_mprofit; do
   NEW="${PROJECT}_${vol}"
-  if docker volume inspect "$NEW" >/dev/null 2>&1; then
-    ok "$NEW exists"
-    continue
-  fi
+  # Existence is NOT the test — compose creates the volume empty on first start, so
+  # "it exists" and "it has your data" are different questions. Only content counts.
   OLD=$(docker volume ls -q | grep -E "_${vol}$" | grep -v "^${PROJECT}_" | head -1)
   if [ -z "$OLD" ]; then
     echo "        ${DIM}$NEW will be created empty (no prior volume found)${OFF}"
+    continue
+  fi
+  # A volume can exist and still be empty — that is the state a mis-named earlier
+  # migration leaves behind, and it looks identical to success from the outside.
+  if [ -n "$(docker run --rm -v "$NEW":/v alpine sh -c 'ls -A /v 2>/dev/null' 2>/dev/null)" ]; then
+    ok "$NEW already has data"
     continue
   fi
   if [ "$CHECK_ONLY" = "1" ]; then
