@@ -46,7 +46,11 @@ over the shared network. See `README.md` for the merged tree.
 
 ### Phase 2 — Close the connector gaps (highest leverage per hour)
 1. **HDFC OAuth callback** → register the VPS/domain URL, run the OTP test (unblocks live execution)
-2. **Staah token** → hotel occupancy becomes a live feed instead of manual entry
+2. ~~**Staah token**~~ → **parked (2026-08-01)**. Only an ID/password exists, no API
+   token. Staah is a cloud service, so the hotel VPN cannot reach it, and driving the
+   portal with credentials means a headless browser on the VPS — fragile, and it breaks
+   whenever they reskin the page. Hotel occupancy now comes from the site's **own server
+   over the hotel VPN** (`mdo_sites.py`). Revisit only if Staah issues an API token.
 3. **MCP servers** → connect Gmail / Calendar / Drive / Notion to the agent runtime —
    zero scraping, instant coverage of the Legacy/personal domains
 4. **WhatsApp**: decide Meta Business API vs Tasker-webhook (Chromium bridge stays parked)

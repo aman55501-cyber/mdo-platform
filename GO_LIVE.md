@@ -184,6 +184,12 @@ docker compose exec vpn-hotel nmap -p 80,443,8080,8000,3000 --open -oG - 10.0.0.
 
 **Paste that output to me** and I'll write the source config and any parsing needed.
 
+> **Note on the hotel path (decided 2026-08-01):** occupancy comes from the site's own
+> server over this tunnel, *not* Staah. You have a Staah ID and password but no API
+> token, and Staah is a cloud service the VPN cannot reach — so the tunnel is now the
+> primary path, not a backup. The WhatsApp "Daily Sales Report" parsing keeps running
+> underneath as the manual fallback.
+
 ### C3. Tell me what software runs at each site
 
 The scan gives me addresses; it doesn't tell me what's behind them. Far more useful:

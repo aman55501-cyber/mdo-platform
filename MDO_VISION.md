@@ -451,6 +451,11 @@ Every alert MUST include:
 | 2026-04-25 | Rename VEGA → Capital → MDO | MDO = Management Decision Office (more general) |
 | 2026-04-26 | Park WhatsApp bridge | Free tier Chromium crash; not blocker for Monday |
 | 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on Railway; manual is reliable |
+| 2026-08-01 | Merge Shares CFO into MDO — one repo, one stack | Two codebases, two front doors, two brains; the capital surface was behind a cross-stack bridge |
+| 2026-08-01 | Decision Feed is the product surface | One queue of what needs Aman, pushed to phone, with the action drafted for one-tap approval |
+| 2026-08-01 | Money actions never execute from an approval tap | Real money, four live accounts; refusal is enforced on the approval path, not by omitting a button |
+| 2026-08-01 | Hotel occupancy comes from the site server over VPN, not Staah | Only an ID/password exists, no API token; Staah is cloud so the VPN cannot reach it, and credentialed portal scraping is fragile |
+| 2026-08-01 | One hostname (`srv1641037.hstgr.cloud`) routed by path | HDFC's registered redirect is the fixed point; `/hdfc/*` must reach Shares CFO or the daily login breaks silently |
 
 *[EDIT — append new decisions as you make them]*
 
