@@ -228,6 +228,76 @@ TOOLS: list[dict] = [
             "additionalProperties": False,
         },
     },
+    # ── Capital depth ────────────────────────────────────────────────────
+    # get_portfolio above is a summary keyhole. These reach the Shares CFO service
+    # directly (same compose network) so capital questions get the same depth the
+    # capital surface has, instead of an answer hedged by missing detail.
+    {
+        "name": "capital_positions",
+        "description": "LIVE open positions with per-position P&L, LTP and expiry across all broker accounts, deeper than get_portfolio's summary. Use for 'what am I holding', 'which position is bleeding', F&O expiry questions.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "capital_exposure",
+        "description": "Net market exposure, directional tilt, sector concentration and hedge suggestions. Use for 'how exposed am I', 'am I over-concentrated', risk-posture questions.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "capital_reconcile",
+        "description": "Reconciliation across brokers — what the books say vs what the brokers report, and any mismatch. Use when a number is disputed or a holding looks wrong.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "capital_market_regime",
+        "description": "Current market regime read (trend/volatility state) plus index levels. Use to frame any 'should I act now' capital question.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "capital_ideas",
+        "description": "High-conviction ideas the capital engine currently ranks, with their basis. These are candidates for discussion, never instructions — nothing executes from this tool.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "capital_fundamentals",
+        "description": "Fundamentals for one ticker from the Screener universe (valuation, growth, quality). Use for any 'is X a good business' question.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"symbol": {"type": "string", "description": "NSE symbol, e.g. RELIANCE"}},
+            "required": ["symbol"], "additionalProperties": False,
+        },
+    },
+    {
+        "name": "capital_execution_status",
+        "description": "Whether live trading is armed, which guardrails are set, and what preflight says is missing. Use before discussing any action that would move money — and to explain why an order cannot be placed.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    # ── Site networks (over the VPN sidecars) ────────────────────────────
+    {
+        "name": "get_site_data",
+        "description": "LIVE readings from a site's own servers, reached over that site's VPN tunnel (hotel = Hotel ANS International, vedanta = the VWLR washery). Every reading carries its source URL and fetch time. If the tunnel is down or nothing is configured to be read, this says so — treat that as a gap, never fill it with an estimate.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"site": {"type": "string", "enum": ["hotel", "vedanta"]}},
+            "required": ["site"], "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_site_links",
+        "description": "Health of both site VPN tunnels — up/down, the proxy each uses, and what is configured to be read through them. Use to answer 'is the site data current' or to explain a missing number.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "get_decision_feed",
+        "description": "The Decision Feed — everything currently waiting on Aman across all domains, critical first, with any drafted action attached. Use for 'what needs me', 'what's pending', or to avoid repeating a finding already queued.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "severity": {"type": "string", "enum": ["critical", "important", "info"]},
+                "domain": {"type": "string", "description": "market|capital|vwlr|hotel|compliance|projects|banking"},
+            },
+            "additionalProperties": False,
+        },
+    },
     {
         "name": "add_task",
         "description": "WRITE: add a task to Aman's ops board. Use when he asks you to track something or a finding demands follow-up.",
@@ -328,6 +398,28 @@ async def _dispatch(name: str, a: dict) -> Any:
                                        limit=int(a.get("limit", 30)))
     if name == "get_portfolio":
         return await tb["capital"]()
+    # Capital depth — straight through the Shares CFO bridge.
+    if name == "capital_positions":
+        return await tb["cfo"]("/positions/live")
+    if name == "capital_exposure":
+        return await tb["cfo"]("/exposure")
+    if name == "capital_reconcile":
+        return await tb["cfo"]("/reconcile")
+    if name == "capital_market_regime":
+        return await tb["cfo"]("/market/regime")
+    if name == "capital_ideas":
+        return await tb["cfo"]("/ideas/high-conviction")
+    if name == "capital_fundamentals":
+        return await tb["cfo"](f"/fundamentals/{a['symbol'].strip().upper()}")
+    if name == "capital_execution_status":
+        return await tb["cfo"]("/execution/preflight")
+    # Site networks, over the VPN sidecars.
+    if name == "get_site_data":
+        return await tb["site_read"](a["site"])
+    if name == "get_site_links":
+        return await tb["site_links"]()
+    if name == "get_decision_feed":
+        return await tb["feed"](severity=a.get("severity"), domain=a.get("domain"))
     if name == "list_checks":
         return await tb["checks"](cadence=a.get("cadence"), status=a.get("status"),
                                   domain=a.get("domain"))

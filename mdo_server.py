@@ -30,6 +30,9 @@ except ImportError:
 
 import aiosqlite
 import uvicorn
+
+import mdo_feed
+import mdo_sites
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -320,6 +323,8 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
 );
 """)
     await db.commit()
+    # Decision Feed tables (feed_items, feed_audit) — owned by mdo_feed.
+    await mdo_feed.ensure_schema(db)
     # Seed competitors if table is empty
     async with db.execute("SELECT COUNT(*) as n FROM vwlr_competitors") as cur:
         row = await cur.fetchone()
@@ -996,6 +1001,248 @@ async def alerts_test(body: dict | None = None):
     """Prove the alert path end to end without waiting for a real 🔴."""
     msg = (body or {}).get("text") or "🔴 MDO test alert — if you can read this, critical findings will reach your phone."
     return _send_whatsapp(msg)
+
+
+# ── One notifier ───────────────────────────────────────────────────────────
+# Both halves grew their own push path: WhatsApp here, ntfy/Telegram in
+# shares_cfo/notify.py. The Decision Feed sends through all of them best-effort so a
+# finding is not lost because one channel is unconfigured. [A1]
+
+MDO_APP_URL = os.environ.get("MDO_APP_URL", "").strip().rstrip("/")
+
+
+def _deep_link(item_id: int) -> str:
+    """Where the tap lands. Approval happens in the app, not in the notification."""
+    return f"{MDO_APP_URL}/feed/{item_id}" if MDO_APP_URL else ""
+
+
+def _send_ntfy(title: str, text: str, link: str = "") -> dict:
+    topic = os.environ.get("CFO_NTFY_TOPIC", "").strip()
+    if not topic:
+        return {"sent": False, "reason": "CFO_NTFY_TOPIC not set"}
+    try:
+        headers = {"Title": title[:200].encode("ascii", "ignore").decode() or "MDO"}
+        if link:
+            headers["Click"] = link
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{urllib.parse.quote(topic)}",
+            data=text.encode(), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10):
+            return {"sent": True}
+    except Exception as e:
+        return {"sent": False, "reason": str(e)[:200]}
+
+
+def _send_telegram(text: str) -> dict:
+    token = os.environ.get("CFO_TELEGRAM_BOT_TOKEN", "").strip() or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat = os.environ.get("CFO_TELEGRAM_CHAT_ID", "").strip() or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat:
+        return {"sent": False, "reason": "telegram token/chat not set"}
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=_json.dumps({"chat_id": chat, "text": text[:4000],
+                              "disable_web_page_preview": True}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10):
+            return {"sent": True}
+    except Exception as e:
+        return {"sent": False, "reason": str(e)[:200]}
+
+
+def _notify_all(item: dict) -> dict:
+    """Push one feed item to every configured channel. Never raises."""
+    icon = {"critical": "🔴", "important": "🟡"}.get(item["severity"], "🟢")
+    link = _deep_link(item["id"])
+    lines = [f"{icon} {item['title']}"]
+    if item.get("body"):
+        lines.append(item["body"][:600])
+    if item.get("action_type"):
+        lines.append(f"→ proposed: {item['action_type']} (approve in the app)")
+    if link:
+        lines.append(link)
+    else:
+        # [A5] fallback — without a public app URL the push still carries the substance.
+        lines.append("(set MDO_APP_URL to get a one-tap link)")
+    text = "\n".join(lines)
+    results = {"whatsapp": _send_whatsapp(text), "ntfy": _send_ntfy(item["title"], text, link),
+               "telegram": _send_telegram(text)}
+    results["any_sent"] = any(r.get("sent") for r in results.values() if isinstance(r, dict))
+    return results
+
+
+# ── Decision Feed actions ──────────────────────────────────────────────────
+# Registered once at import. The *kind* is what the approval path enforces:
+# internal changes only our data, outward reaches a real person, money is refused.
+
+async def _act_add_task(payload: dict) -> dict:
+    db = await vdb()
+    cur = await db.execute(
+        "INSERT INTO ops_tasks (title, description, entity, priority, category, due_date)"
+        " VALUES (?,?,?,?,?,?)",
+        (payload.get("title", "Untitled"), payload.get("description", ""),
+         payload.get("entity", ""), payload.get("priority", "medium"),
+         payload.get("category", "general"), payload.get("due_date")))
+    await db.commit()
+    return {"task_id": cur.lastrowid, "title": payload.get("title")}
+
+
+async def _act_file_intel(payload: dict) -> dict:
+    db = await vdb()
+    cur = await db.execute(
+        "INSERT INTO intel_items (category, source, urgency, entity, title, body, due_date)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (payload.get("category", "general"), payload.get("source", "decision-feed"),
+         payload.get("urgency", "MEDIUM"), payload.get("entity", ""),
+         payload.get("title", "Untitled"), payload.get("body", ""), payload.get("due_date")))
+    await db.commit()
+    return {"intel_id": cur.lastrowid}
+
+
+async def _act_whatsapp_message(payload: dict) -> dict:
+    """Reaches a real person — hence kind 'outward'. The full text is shown on the
+    confirm screen before approval, and every send is audited by the feed."""
+    to = payload.get("to") or ALERT_TO
+    text = payload.get("text", "")
+    if not text:
+        raise ValueError("refusing to send an empty message")
+    wa_url = os.environ.get("WA_BRIDGE_URL", "")
+    if not wa_url or not to:
+        raise RuntimeError("WA_BRIDGE_URL or recipient not configured")
+    req = urllib.request.Request(
+        wa_url.rstrip("/") + "/api/whatsapp/send",
+        data=_json.dumps({"to": to, "text": text}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return {"sent": True, "to": to, **_json.loads(r.read() or b"{}")}
+
+
+mdo_feed.register_action("add_task", "internal", _act_add_task)
+mdo_feed.register_action("file_intel", "internal", _act_file_intel)
+mdo_feed.register_action("whatsapp_message", "outward", _act_whatsapp_message)
+
+
+# ── Decision Feed routes ───────────────────────────────────────────────────
+
+@app.get("/api/feed")
+async def feed_list(status: str = None, severity: str = None, domain: str = None,
+                    pending: bool = True, limit: int = 100):
+    """The one feed. Critical first, then newest."""
+    db = await vdb()
+    await mdo_feed.expire_stale(db)
+    items = await mdo_feed.list_items(db, status=status, severity=severity,
+                                      domain=domain, pending_only=pending and not status,
+                                      limit=limit)
+    return {"items": items, "counts": await mdo_feed.counts(db),
+            "actions": mdo_feed.registered_actions(),
+            "money_actions_enabled": mdo_feed.money_actions_enabled()}
+
+
+@app.get("/api/feed/digest")
+async def feed_digest():
+    """What is waiting, grouped — the batched view for 'important' items."""
+    db = await vdb()
+    items = await mdo_feed.list_items(db, pending_only=True, limit=200)
+    by_domain: dict = {}
+    for it in items:
+        by_domain.setdefault(it["domain"], []).append(
+            {"id": it["id"], "severity": it["severity"], "title": it["title"],
+             "action_type": it["action_type"]})
+    return {"counts": await mdo_feed.counts(db), "by_domain": by_domain}
+
+
+@app.get("/api/feed/{item_id}")
+async def feed_get(item_id: int):
+    db = await vdb()
+    item = await mdo_feed.get_item(db, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="no such feed item")
+    return {**item, "audit": await mdo_feed.audit_trail(db, item_id)}
+
+
+@app.post("/api/feed/publish")
+async def feed_publish(body: dict):
+    """Producers file findings here. Dedup, cooldown and severity routing are applied
+    inside publish() so no producer can bypass them."""
+    db = await vdb()
+    try:
+        item = await mdo_feed.publish(
+            db,
+            key=body["key"], title=body["title"],
+            severity=body.get("severity", "info"),
+            source=body.get("source", ""), domain=body.get("domain", "general"),
+            body=body.get("body", ""), evidence=body.get("evidence"),
+            action_type=body.get("action_type", ""),
+            action_payload=body.get("action_payload"))
+    except (KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if item is None:
+        return {"published": False, "reason": "suppressed by cooldown"}
+    if item["notify_policy"] == "push":
+        result = _notify_all(item)
+        await mdo_feed.mark_notified(db, item["id"], _json.dumps(result)[:400])
+        item = await mdo_feed.get_item(db, item["id"])
+    return {"published": True, "item": item}
+
+
+@app.post("/api/feed/{item_id}/approve")
+async def feed_approve(item_id: int, body: dict | None = None):
+    """One tap. Money actions are refused here by policy, not by omission."""
+    db = await vdb()
+    return await mdo_feed.decide(db, item_id, "approve",
+                                 actor=(body or {}).get("actor", "aman"))
+
+
+@app.post("/api/feed/{item_id}/reject")
+async def feed_reject(item_id: int, body: dict | None = None):
+    db = await vdb()
+    return await mdo_feed.decide(db, item_id, "reject",
+                                 actor=(body or {}).get("actor", "aman"))
+
+
+@app.post("/api/feed/notify-pending")
+async def feed_notify_pending():
+    """Push anything critical that has not been notified yet (e.g. published while a
+    channel was down). Safe to call repeatedly — already-notified items are skipped."""
+    db = await vdb()
+    items = await mdo_feed.list_items(db, status="new", severity="critical", limit=20)
+    sent = []
+    for it in items:
+        result = _notify_all(it)
+        await mdo_feed.mark_notified(db, it["id"], _json.dumps(result)[:400])
+        sent.append({"id": it["id"], "title": it["title"], "result": result})
+    return {"notified": len(sent), "items": sent}
+
+
+# ── Site access over the VPN sidecars ──────────────────────────────────────
+
+@app.get("/api/sites")
+async def sites_overview():
+    """Both site links and what is configured to be read through them."""
+    return {"tunnels": mdo_sites.all_tunnels(),
+            "sources": mdo_sites.load_sources(),
+            "read_only": True}
+
+
+@app.get("/api/sites/{site}")
+async def site_read(site: str):
+    """Live readings from one site, each carrying where it came from and when."""
+    if site not in mdo_sites.SITES:
+        raise HTTPException(status_code=404, detail=f"unknown site {site!r}")
+    return {"tunnel": mdo_sites.tunnel_status(site), **mdo_sites.read_site(site)}
+
+
+@app.post("/api/sites/check")
+async def sites_check():
+    """Probe both tunnels; publish a critical finding for any that is down while
+    something is configured to be read through it."""
+    db = await vdb()
+    published = await mdo_sites.publish_tunnel_alerts(db, mdo_feed)
+    for item in published:
+        result = _notify_all(item)
+        await mdo_feed.mark_notified(db, item["id"], _json.dumps(result)[:400])
+    return {"tunnels": mdo_sites.all_tunnels(), "published": len(published),
+            "items": published}
 
 @app.post("/api/agent/report")
 async def agent_report(body: dict):
@@ -2886,6 +3133,13 @@ mdo_brain.configure({
     "checks":      checks_list,
     "reports":     agent_reports_list,
     "file_report": agent_report,
+    # Capital depth: the brain used to see all of this through get_portfolio alone.
+    "cfo":         lambda path: asyncio.to_thread(_cfo_get, path),
+    # Site networks over the VPN sidecars, and the Decision Feed.
+    "site_read":   lambda site: asyncio.to_thread(
+                       lambda: {"tunnel": mdo_sites.tunnel_status(site), **mdo_sites.read_site(site)}),
+    "site_links":  lambda: asyncio.to_thread(mdo_sites.all_tunnels),
+    "feed":        feed_list,
 })
 
 @app.post("/api/brain/ask")

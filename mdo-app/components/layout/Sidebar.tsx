@@ -6,7 +6,7 @@ import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Brain, TrendingUp, MessageSquare, ShieldAlert,
   Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun, Network,
-  Menu, X, Sparkles, FileText,
+  Menu, X, Sparkles, FileText, Inbox,
 } from "lucide-react"
 import { useLiveStore } from "@/lib/store"
 import { NextStepsMini } from "@/components/RemainingSteps"
@@ -16,6 +16,7 @@ const NAV_SECTIONS = [
     label: "Command",
     items: [
       { href: "/",           icon: LayoutDashboard, label: "Dashboard"        },
+      { href: "/feed",       icon: Inbox,           label: "Decision Feed"    },
       { href: "/lifemap",    icon: Network,         label: "Life LLM Map"     },
       { href: "/briefing",   icon: ShieldAlert,     label: "Daily Briefing"   },
       { href: "/reports",    icon: FileText,        label: "Agent Reports"    },

@@ -125,6 +125,13 @@ def gather(cadence: str) -> dict:
     grab("hotel", "/api/hotel/daily?days=7")
     grab("reports", "/api/agent/reports?limit=5")
     grab("capital", "/api/capital/summary")
+    # Site servers, read over the VPN sidecars. A down tunnel arrives as an explicit
+    # error here, so the agent reports a gap instead of reasoning over silence.
+    grab("sites", "/api/sites")
+    grab("site_hotel", "/api/sites/hotel")
+    grab("site_vedanta", "/api/sites/vedanta")
+    # What is already queued for him — so the agent doesn't re-raise a live item.
+    grab("decision_feed", "/api/feed?limit=40")
     if cadence != "hourly":
         grab("entities", "/api/entities")
         grab("pools", "/api/aditi/pools")
@@ -279,7 +286,62 @@ def run(cadence: str) -> int:
     except Exception as e:
         log(f"FATAL: could not file report: {e}")
         return 4
+
+    publish_to_feed(actionable, cadence)
     return 0
+
+
+# Severity mapping [A4] — matches the n_critical/n_important/n_info counters the
+# reports table already uses, so one vocabulary runs end to end.
+_LEVEL_TO_SEVERITY = {"critical": "critical", "important": "important"}
+
+
+def publish_to_feed(findings: list, cadence: str) -> int:
+    """Route the agent's actionable findings into the Decision Feed.
+
+    The report stays where it was — this is additive. Dedup, cooldown and severity
+    routing all happen inside the feed's publish(), so a finding repeated hour after
+    hour interrupts once, not every hour. A finding that proposes a follow-up arrives
+    with the task already drafted for one-tap approval.
+    """
+    published = 0
+    for f in findings:
+        level = str(f.get("level", "")).lower()
+        severity = _LEVEL_TO_SEVERITY.get(level)
+        if not severity:
+            continue
+        title = str(f.get("title") or "").strip()
+        if not title:
+            continue
+        # Stable dedup identity: same check + same headline = the same finding.
+        code = str(f.get("code") or f.get("check") or "").strip()
+        key = f"agent.{code or title.lower()[:60]}"
+        payload = {
+            "key": key, "title": title[:200], "severity": severity,
+            "source": f"{cadence}-agent", "domain": str(f.get("domain") or "general"),
+            "body": str(f.get("detail") or ""),
+            "evidence": [{"cadence": cadence, "level": level,
+                          "owner": f.get("owner"), "entity": f.get("entity")}],
+        }
+        # The agent names an action -> draft it as a task he can approve with one tap.
+        if f.get("action"):
+            payload["action_type"] = "add_task"
+            payload["action_payload"] = {
+                "title": str(f["action"])[:200],
+                "description": str(f.get("detail") or ""),
+                "priority": "critical" if severity == "critical" else "high",
+                "entity": f.get("entity") or "",
+            }
+        try:
+            res = api("/api/feed/publish", "POST", payload)
+            if res.get("published"):
+                published += 1
+        except Exception as e:
+            # Never let feed publication break a report that already filed.
+            log(f"feed publish failed for {key}: {str(e)[:150]}")
+    log(f"decision feed: {published} of {len(findings)} findings published "
+        f"({len(findings) - published} suppressed as duplicates or unmapped)")
+    return published
 
 
 if __name__ == "__main__":
