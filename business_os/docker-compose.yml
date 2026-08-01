@@ -1,0 +1,20 @@
+# Business OS — Docker on a Hostinger VPS.
+#   cp business_os/.env.example business_os/.env   # fill in secrets
+#   docker compose -f business_os/docker-compose.yml up -d --build
+services:
+  business-os:
+    build:
+      context: ..
+      dockerfile: business_os/Dockerfile
+    image: business-os:latest
+    container_name: business-os
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8600:8600"
+    volumes:
+      - businessos_data:/data/state/business
+
+volumes:
+  businessos_data:

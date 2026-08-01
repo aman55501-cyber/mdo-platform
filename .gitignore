@@ -3,6 +3,10 @@
 .env.local
 .env*.local
 
+# Business OS — dataset JSON is user data on the persistent volume
+data/state/business/*.json
+data/state/business/*.json.tmp
+
 # Python
 __pycache__/
 *.pyc
