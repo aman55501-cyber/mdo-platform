@@ -2752,9 +2752,28 @@ async def hdfc_auth_callback(body: dict):
 @app.get("/api/hdfc/callback")
 async def hdfc_oauth_redirect(request: Request, code: str = "", request_token: str = "",
                               requestToken: str = "", tokenid: str = "", tokenId: str = ""):
-    """Browser lands here after HDFC login + OTP. Exempt from the access key."""
-    from starlette.responses import HTMLResponse
+    """Browser lands here after HDFC login + OTP. Exempt from the access key.
+
+    Since the merge there are two callback handlers, and they arm different things:
+    this one writes MDO's own `hdfc_session` table (used by /api/hdfc/funds), while
+    Shares CFO's /hdfc/callback arms `token_store` — the store that makes /accounts
+    report logged_in and every capital number flow.
+
+    Registering the wrong one fails silently in the nastiest way: this page paints a
+    green tick while the broker sessions stay logged out. So when a public Shares CFO
+    URL is configured we hand the request token straight over rather than spending it
+    here — the token is single-use, so it must be exchanged exactly once, by the
+    service that actually needs the session.
+    """
+    from starlette.responses import HTMLResponse, RedirectResponse
     print("HDFC callback query:", str(request.query_params))  # shows the real param name in logs
+
+    cfo_public = os.environ.get("CFO_PUBLIC_URL", "").strip().rstrip("/")
+    if cfo_public:
+        qs = str(request.url.query)
+        return RedirectResponse(
+            f"{cfo_public}/hdfc/callback" + (f"?{qs}" if qs else ""), status_code=307)
+
     tok = code or request_token or requestToken or tokenid or tokenId
     if not tok and len(request.query_params) == 1:
         tok = next(iter(request.query_params.values()))  # single unknown param — take it
@@ -2770,7 +2789,12 @@ async def hdfc_oauth_redirect(request: Request, code: str = "", request_token: s
         return HTMLResponse(page.format(inner=(
             "<h2 style='color:#34d399'>✓ HDFC connected</h2>"
             f"<p>Token valid until {res.get('expiry','')}</p>"
-            "<p>Return to the MDO app → Morning Setup. Funds and execution are live.</p>"
+            "<p>Return to the MDO app → Morning Setup.</p>"
+            "<p style='color:#fbbf24;max-width:460px;font-size:14px'>Note: this armed "
+            "MDO's own session only. The consolidated book, positions and exposure read "
+            "from Shares CFO, which was not armed by this callback. Set "
+            "<code>CFO_PUBLIC_URL</code> so this redirect hands over to it, or register "
+            "<code>&lt;shares-cfo-host&gt;/hdfc/callback</code> in the HDFC portal instead.</p>"
         )))
     except Exception as e:
         return HTMLResponse(page.format(inner=(

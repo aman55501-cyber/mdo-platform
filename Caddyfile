@@ -1,20 +1,55 @@
-# Caddy reverse proxy with automatic HTTPS for the merged MDO + Shares CFO stack.
-# Hostnames come from the .env file. Caddy fetches and renews free Let's Encrypt
-# certificates automatically for any real domain; the `.localhost` defaults stay
-# internal (no cert requested), so leaving the MDO hostnames unset is safe.
+# Caddy — automatic HTTPS for the merged MDO + Shares CFO stack.
 #
-#   DOMAIN=cfo.example.com          → Shares CFO (capital surface)
-#   MDO_DOMAIN=mdo.example.com      → MDO app    (operating surface)
-#   MDO_API_DOMAIN=api.example.com  → MDO backend API
+# ONE hostname serves everything, routed by path. This is deliberate: the VPS has a
+# single name (e.g. srv1641037.hstgr.cloud), and the HDFC developer portal has a
+# redirect URL registered against it. That registration is the fixed point everything
+# else is arranged around — HDFC only calls back to the exact URL on file, so
+# /hdfc/* MUST reach Shares CFO, which is where the broker session is armed.
+#
+#   /api/*    → MDO backend      (every MDO route lives under /api)
+#   /mcp/*    → MDO backend      (the Claude connector endpoint)
+#   /hdfc/*   → Shares CFO       ← the registered OAuth redirect lands here
+#   /*        → MDO app          (the Decision Feed and every other page)
+#
+# Shares CFO's own terminal UI is published directly on port 8000 rather than nested
+# under a path prefix: its pages link to absolute paths (/portfolio, /accounts, …)
+# which would collide with the MDO app if mounted under one.
+#
+# Set in .env:  DOMAIN=srv1641037.hstgr.cloud
 
 {$DOMAIN} {
-	reverse_proxy sharescfo:8000
+	# Order matters — Caddy matches the most specific path first, but being explicit
+	# keeps this readable for whoever edits it next.
+	handle /api/* {
+		reverse_proxy backend:8501
+	}
+
+	handle /mcp/* {
+		reverse_proxy backend:8501
+	}
+
+	# The HDFC OAuth callback and the phone-login redirect. Registered at
+	# developer.hdfcsec.com as https://$DOMAIN/hdfc/callback — do not move this
+	# without changing it there too, or daily login breaks with no error.
+	handle /hdfc/* {
+		reverse_proxy sharescfo:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
 }
 
+# Optional split-hostname setup. If you later add separate names, set these and they
+# take precedence for their own hostnames; the single-domain block above keeps working.
 {$MDO_DOMAIN:mdo.localhost} {
 	reverse_proxy frontend:3000
 }
 
 {$MDO_API_DOMAIN:api.localhost} {
 	reverse_proxy backend:8501
+}
+
+{$CFO_DOMAIN:cfo.localhost} {
+	reverse_proxy sharescfo:8000
 }

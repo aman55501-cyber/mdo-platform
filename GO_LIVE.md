@@ -83,6 +83,34 @@ live and the merge did its job.
 
 ---
 
+### A5. The hostname is already decided for you
+
+`srv1641037.hstgr.cloud` is registered at developer.hdfcsec.com as the HDFC redirect
+(`https://srv1641037.hstgr.cloud/hdfc/callback`). That registration is the fixed point —
+HDFC only ever calls back to the exact URL on file, so the Caddyfile now routes **one
+hostname by path** to satisfy it:
+
+| Path | Goes to | Why |
+|---|---|---|
+| `/api/*` | MDO backend | every MDO route lives under `/api` |
+| `/mcp/*` | MDO backend | the Claude connector endpoint |
+| `/hdfc/*` | **Shares CFO** | ← the registered OAuth callback must land here |
+| `/*` | MDO app | the Decision Feed and every other page |
+
+`.env.example` already carries the right values — `DOMAIN`, `MDO_APP_URL`,
+`NEXT_PUBLIC_API_URL` and `HDFC_HDFC1_REDIRECT_URL` are all set to this hostname.
+Copy them across when you merge your `.env` in A1.
+
+Shares CFO's own terminal UI stays on `http://<VPS_IP>:8000` (now published) rather than
+nested under a path — its pages link to absolute paths like `/portfolio` that would
+collide with the MDO app.
+
+> ⚠️ If you ever change the domain, change it at developer.hdfcsec.com **in the same
+> sitting**. A stale redirect URL doesn't error — the login page just never completes,
+> and the capital side goes quietly blind.
+
+---
+
 ## B. Turn on phone push — 15 min, this is the whole point
 
 The feed is built but silent until a channel is configured. **ntfy is the fastest** —
@@ -95,7 +123,7 @@ no bot, no account, no approval process.
 4. In `.env`:
    ```
    CFO_NTFY_TOPIC=<the random string>
-   MDO_APP_URL=https://mdo.yourdomain.example    # the app's public URL — makes the tap work
+   MDO_APP_URL=https://srv1641037.hstgr.cloud
    ALERT_WHATSAPP_TO=917000512030                # optional: WhatsApp self-message too
    ```
 5. `docker compose up -d backend` then:
@@ -115,9 +143,8 @@ no bot, no account, no approval process.
    Your phone buzzes → tap the link → it opens `/feed/<id>` → tap **Approve & run** →
    the task appears on your Task Board. That's the product working.
 
-> `MDO_APP_URL` needs to be reachable **from your phone**, not just the VPS. If you
-> haven't set up domains yet, `DEPLOY_HOSTINGER.md §7a` walks through it — or use
-> `http://<VPS_IP>:3000` temporarily.
+> `MDO_APP_URL` is already the hostname HDFC calls back to, so it is public and
+> reachable from your phone the moment Caddy has a certificate for it.
 
 ---
 

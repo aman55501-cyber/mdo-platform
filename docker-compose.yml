@@ -62,8 +62,11 @@ services:
       - TZ=Asia/Kolkata
     env_file:
       - .env
-    expose:
-      - "8000"
+    ports:
+      # Published so the Shares CFO terminal UI stays reachable directly. Its pages
+      # link to absolute paths (/portfolio, /accounts, …), which would collide with
+      # the MDO app if it were nested under a path prefix on the shared hostname.
+      - "8000:8000"
     volumes:
       # persist snapshots + audit log across rebuilds (sector map stays baked in image)
       - sharescfo_state:/app/shares_cfo/data/state
@@ -157,6 +160,7 @@ services:
       - DOMAIN=${DOMAIN}
       - MDO_DOMAIN=${MDO_DOMAIN:-mdo.localhost}
       - MDO_API_DOMAIN=${MDO_API_DOMAIN:-api.localhost}
+      - CFO_DOMAIN=${CFO_DOMAIN:-cfo.localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
