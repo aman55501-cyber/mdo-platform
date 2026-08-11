@@ -165,10 +165,18 @@ Intel Centre immediately.
 
 Then schedule it with host cron (`crontab -e`):
 ```
-24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly >> /var/log/mdo-agent.log 2>&1
-27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily  >> /var/log/mdo-agent.log 2>&1
+24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly    >> /var/log/mdo-agent.log 2>&1
+27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily     >> /var/log/mdo-agent.log 2>&1
+40 1 1 * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py monthly   >> /var/log/mdo-agent.log 2>&1
+50 1 1 1,4,7,10 * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py quarterly >> /var/log/mdo-agent.log 2>&1
 ```
 (01:27 UTC = 06:57 IST — the brief is waiting when you wake up.)
+
+The monthly and quarterly lines drive the personal-risk and net-worth checks
+(insurance renewals, LIC premiums, vehicle documents, EMIs, true net worth).
+Until their registers in `LIFE_LLM/domains/` are filled in, those checks are
+`blocked` — the run will report the gap rather than invent a number, which is
+the point: the reminder arrives every month until the register exists.
 
 Behaviour: the hourly run files a report **only** when a finding crosses a
 threshold — silence is the healthy state. The daily run always files. Checks

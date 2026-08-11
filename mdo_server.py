@@ -335,22 +335,20 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
             "INSERT OR IGNORE INTO vwlr_competitors (name) VALUES (?)", competitors
         )
         await db.commit()
-    # Seed Life LLM Map if empty
-    async with db.execute("SELECT COUNT(*) as n FROM life_map_nodes") as cur:
-        row = await cur.fetchone()
-    if row["n"] == 0:
-        await _seed_life_map(db)
-    # Seed the checks registry (Aman's standing cadence list) if empty
-    async with db.execute("SELECT COUNT(*) as n FROM checks") as cur:
-        row = await cur.fetchone()
-    if row["n"] == 0:
-        await db.executemany(
-            """INSERT OR IGNORE INTO checks
-               (code,title,cadence,domain,sources,threshold,owner,run_window,status,blocker)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            CHECKS_SEED,
-        )
-        await db.commit()
+    # Life LLM Map + checks registry: top up on EVERY boot, not just when the
+    # table is empty. Both keys are unique (life_map_nodes.id, checks.code) and
+    # INSERT OR IGNORE never overwrites a row edited in the UI — so new seed
+    # entries reach the live VPS database, which an only-if-empty seed could
+    # never do (it had already run months ago). Trade-off: a seeded row you
+    # delete comes back on the next restart; pause it instead of deleting it.
+    await _seed_life_map(db)
+    await db.executemany(
+        """INSERT OR IGNORE INTO checks
+           (code,title,cadence,domain,sources,threshold,owner,run_window,status,blocker)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        CHECKS_SEED,
+    )
+    await db.commit()
     # Seed build roadmap (shown as "Remaining Steps" on /lifemap + sidebar) if empty
     async with db.execute("SELECT COUNT(*) as n FROM ops_tasks WHERE category='roadmap'") as cur:
         row = await cur.fetchone()
@@ -422,6 +420,10 @@ LIFE_MAP_SEED_NODES = [
      "Tier 4 skills: newborn-legacy-structure, family-financial-review.", 5),
     ("dom_health", "domains", "Health & Personal OS", "Health protocol + personal discipline", "planned", "domain", "🫀",
      "Tier 4: health-protocol.", 6),
+    ("dom_personal", "domains", "Personal Risk & Cover", "Insurance · LIC · vehicles · liabilities", "planned", "domain", "🛡️",
+     "The blind side: car insurance, LIC, health cover, loans, EMIs and personal guarantees are "
+     "entirely uncounted today. Registers live in LIFE_LLM/domains/personal-assets-liabilities.md; "
+     "checks insurance_cover / lic_policies / vehicle_fleet / liabilities_emi are blocked until filled.", 7),
 
     # ── Data sources ──
     ("src_tender247", "sources", "Tender247", "Tender listings — RCR / loading / rakes", "live", "source", "📋",
@@ -441,6 +443,12 @@ LIFE_MAP_SEED_NODES = [
      "Needs session-cookie handling or a paid data provider.", 7),
     ("src_gsuite", "sources", "Gmail · Calendar · Drive", "Mail, meetings, documents", "planned", "source", "📧",
      "Best reached via MCP connectors — no scraping needed.", 8),
+    ("src_policies", "sources", "Policy & Loan Documents", "Insurance schedules, LIC, sanction letters, RCs", "planned", "source", "📄",
+     "Paper today. Route: photograph/scan → Drive → the existing vision pipeline reads them into the "
+     "registers. This is the cheapest unblock in the whole system — no API, no vendor, no login.", 9),
+    ("src_banks", "sources", "Bank & Loan Statements", "Balances, EMI debits, OD utilisation", "planned", "source", "🏦",
+     "Unblocks bank_balances AND liabilities_emi together. Emailed statements via Gmail MCP is the "
+     "lowest-friction channel — no bank API negotiation.", 10),
 
     # ── Connectors ──
     ("con_backend", "connectors", "MDO Backend (FastAPI)", "Hostinger VPS 24/7 · Docker · proxy for all feeds", "live", "api", "⚙️",
@@ -456,6 +464,13 @@ LIFE_MAP_SEED_NODES = [
      "Unblocked by Hostinger VPS RAM — ready for live test.", 5),
     ("con_wa_bridge", "connectors", "WhatsApp Bridge", "Baileys — no Chromium needed", "building", "bridge", "🌉",
      "Rewritten on Baileys (WebSocket) — runs as a compose service on the VPS.", 6),
+    ("con_sharecfo", "connectors", "sharecfo — Capital Organ", "Live broker sessions · 4 accounts · /api/capital/summary", "live", "bridge", "💼",
+     "A separate stack on the same VPS, joined by `docker network connect sharecfo_default`. Holds the "
+     "authenticated sessions (Aman/Sudha/Ashok on HDFC, Aditi on Angel) so MDO never builds a second "
+     "broker auth path. Read-only, token-gated, staleness always reported. See LIFE_LLM/sharecfo/.", 7),
+    ("con_vpn", "connectors", "Site VPN Sidecars", "OpenVPN + proxy — one container per site", "building", "bridge", "🔒",
+     "Compose services and Dockerfile are committed; the tunnel has never been brought up. "
+     "Blocked on Phase 1: rotating the two exposed client certificates. See docs/PLAN_VPN_SITE_ACCESS.md.", 8),
 
     # ── LLM core & agents ──
     ("core_brain", "core", "MDO Brain", "LLM with 18 live tools over the whole backend", "live", "engine", "🧠",
@@ -497,7 +512,7 @@ LIFE_MAP_SEED_EDGES = [
     # principal → domains
     ("principal", "dom_vwlr", ""), ("principal", "dom_aditi", ""), ("principal", "dom_hotel", ""),
     ("principal", "dom_compliance", ""), ("principal", "dom_wealth", ""), ("principal", "dom_legacy", ""),
-    ("principal", "dom_health", ""),
+    ("principal", "dom_health", ""), ("principal", "dom_personal", ""),
     # domains → sources they emit/need
     ("dom_vwlr", "src_tender247", "tenders"), ("dom_vwlr", "src_whatsapp", "site ops"),
     ("dom_aditi", "src_zee", "signals"), ("dom_aditi", "src_hdfc", "broker"),
@@ -505,11 +520,18 @@ LIFE_MAP_SEED_EDGES = [
     ("dom_hotel", "src_staah", "occupancy"),
     ("dom_compliance", "src_mca", "filings"),
     ("dom_legacy", "src_gsuite", "docs"), ("dom_wealth", "src_hdfc", "portfolio"),
+    # personal risk + true net worth — both currently source-less by omission
+    ("dom_personal", "src_policies", "cover"), ("dom_personal", "src_banks", "premiums"),
+    ("dom_wealth", "src_banks", "liabilities"), ("dom_wealth", "src_policies", "loan terms"),
+    ("dom_aditi", "con_sharecfo", "live book"), ("dom_wealth", "con_sharecfo", "liquid pool"),
+    ("dom_hotel", "con_vpn", "site LAN"), ("dom_vwlr", "con_vpn", "site LAN"),
     # sources → connectors
     ("src_tender247", "con_backend", ""), ("src_yahoo", "con_backend", ""),
     ("src_staah", "con_backend", ""), ("src_mca", "con_backend", ""), ("src_nse", "con_backend", ""),
     ("src_whatsapp", "con_wa_bridge", ""), ("src_zee", "con_ytdlp", ""),
     ("src_hdfc", "con_hdfc_api", ""), ("src_gsuite", "con_mcp", ""),
+    ("src_policies", "con_mcp", "Drive + vision"), ("src_banks", "con_mcp", "Gmail"),
+    ("src_hdfc", "con_sharecfo", "sessions"),
     # connectors → core
     ("con_backend", "core_briefing", ""), ("con_grok", "core_grok_qa", ""),
     ("con_grok", "core_singhvi", ""), ("con_ytdlp", "core_singhvi", ""),
@@ -518,6 +540,8 @@ LIFE_MAP_SEED_EDGES = [
     ("con_mcp", "agent_biz", ""), ("con_mcp", "agent_compliance", ""),
     ("con_backend", "agent_biz", ""), ("con_backend", "agent_capital", ""),
     ("con_hdfc_api", "agent_capital", ""),
+    ("con_sharecfo", "agent_capital", "positions"), ("con_sharecfo", "core_brain", "net worth tool"),
+    ("con_vpn", "agent_biz", "site systems"), ("con_vpn", "core_brain", ""),
     # brain wiring
     ("con_backend", "core_brain", ""), ("con_claude", "core_brain", ""),
     ("con_grok", "core_brain", ""), ("con_wa_bridge", "core_brain", "ops feed"),
@@ -527,6 +551,10 @@ LIFE_MAP_SEED_EDGES = [
     ("agent_capital", "skill_t3", ""), ("agent_compliance", "skill_t1", ""),
     ("core_briefing", "skill_t5", ""), ("core_singhvi", "skill_t3", ""),
     ("agent_biz", "skill_t4", ""),
+    # personal risk reaches Aman through the same red-alert path as everything else
+    ("dom_personal", "skill_t4", "cover review"), ("skill_t4", "surf_push", "renewals"),
+    ("dom_health", "skill_t4", "health protocol"),
+    ("dom_personal", "surf_briefing", "lapses"),
     # core/skills → surfaces
     ("core_briefing", "surf_briefing", ""), ("core_singhvi", "surf_morning", ""),
     ("core_grok_qa", "surf_app", ""),
@@ -602,6 +630,35 @@ CHECKS_SEED = [
      "None connected yet (options: emailed statements via Gmail, bank API, manual entry)",
      "🔴 any account below its working-capital floor; 🟡 large unexplained debit", "Aman",
      "", "blocked", "No bank feed exists — decide channel: emailed statements, API, or manual"),
+    # ── personal, cover & liabilities — the Life LLM's blind side ────────────
+    # The stated goal is EVERY aspect: business and personal, assets and
+    # liabilities. Today the system sees the liquid book (sharecfo) and nothing
+    # else Aman owns or owes. These are seeded 'blocked' on purpose — the agent
+    # reports the gap every cycle instead of letting the premium, the EMI and
+    # the maturity quietly not exist. Each one clears the moment its register
+    # in LIFE_LLM/domains/ is filled in.
+    ("insurance_cover", "Insurance — vehicle, health, fire, marine, plant", "monthly", "personal",
+     "None connected yet — LIFE_LLM/domains/personal-assets-liabilities.md is the register; "
+     "policy PDFs via Drive + the vision pipeline, or insurer renewal mail via Gmail MCP",
+     "🔴 any policy lapsed, or renewing <7 days; 🟡 renewing 8-30 days; 🔴 an asset carrying no cover at all", "Aman",
+     "", "blocked", "No policy register exists — fill LIFE_LLM/domains/personal-assets-liabilities.md §1"),
+    ("lic_policies", "LIC & life cover — premiums due, sum assured vs actual need", "quarterly", "personal",
+     "None connected yet — LIC policy schedules; premium debits visible in bank statements once bank_balances clears",
+     "🔴 premium due <7 days or a policy lapsed; 🟡 total life cover below the dependants' need calculation", "Aman",
+     "", "blocked", "No LIC register — fill LIFE_LLM/domains/personal-assets-liabilities.md §2 (a lapsed policy is unrecoverable value)"),
+    ("vehicle_fleet", "Vehicles — insurance, PUC, fitness, permit, road tax", "monthly", "personal",
+     "None connected yet — vehicle register incl. VWLR tippers/loaders and personal cars; Vahan portal is the authoritative source",
+     "🔴 any vehicle uninsured or expired document while in use; 🟡 anything expiring <30 days", "Aman",
+     "", "blocked", "No vehicle register — fill LIFE_LLM/domains/personal-assets-liabilities.md §3"),
+    ("liabilities_emi", "Liabilities — loans, EMIs, OD/CC limits, personal guarantees", "monthly", "wealth",
+     "None connected yet — sanction letters and repayment schedules; drawdowns visible once bank_balances clears",
+     "🔴 an EMI or interest servicing missed, or OD utilisation >90%; 🟡 a personal guarantee with no matching asset cover", "Aman",
+     "", "blocked", "No liability register — fill LIFE_LLM/domains/personal-assets-liabilities.md §4; personal guarantees are the highest-risk unknown in the group"),
+    ("networth_rollup", "True net worth — all assets minus all liabilities, all 26 entities", "quarterly", "wealth",
+     "sharecfo /api/capital/summary covers the liquid book ONLY; property, unlisted equity, plant, "
+     "receivables and every liability above are still uncounted",
+     "🔴 net worth cannot be stated because a pool has no number; 🟡 Pool C/D still TBD", "Aman",
+     "", "blocked", "Pools C and D have never been sized — the system can state the liquid book but not the net worth"),
 ]
 
 def vedanta_conn() -> sqlite3.Connection:

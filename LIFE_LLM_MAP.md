@@ -1,5 +1,12 @@
 # Life LLM Map — Architecture & Build Roadmap
 
+> **See also `LIFE_LLM/`** (added 11 Aug 2026) — the umbrella folder for the whole
+> system. This file describes the *architecture map*; that folder holds the current
+> [status ledger](LIFE_LLM/STATUS.md), the [build guide](LIFE_LLM/GUIDE.md), the
+> [sharecfo capital organ](LIFE_LLM/sharecfo/README.md) and the
+> [personal registers](LIFE_LLM/domains/personal-assets-liabilities.md) covering
+> insurance, LIC, vehicles and liabilities. After time away, read `LIFE_LLM/STATUS.md` first.
+
 **What this is:** a live, editable map of the whole "Life LLM" system — every layer
 from Aman's life domains down to the surfaces where decisions arrive. It lives at
 `/lifemap` in the MDO app, backed by `life_map_nodes` / `life_map_edges` in SQLite.
