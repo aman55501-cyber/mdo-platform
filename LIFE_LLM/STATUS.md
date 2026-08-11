@@ -82,12 +82,16 @@ Ordered by what it costs you to keep not doing.
 
 ### 🔴 Blocked on you personally — nobody else can clear these
 
+> **Descoped 11 Aug 2026 on Aman's instruction:** Ozone Steel §454(8) and Rashi Steel
+> (CJM Bilaspur 3616/2026). Both are out of the ledger and out of the CA email. Not
+> resolved — deliberately not being worked on. Re-add them here if that changes.
+
 | # | Item | Why it is stuck | The one action |
 |---|---|---|---|
-| 1 | **Ozone Steel §454(8)** — ITR not filed as PDF, strike-off risk | Open since April. Four months of elapsed exposure. | Call CA Vimal. This is a company being struck off, not a filing. |
-| 2 | **Rashi Steel** — CJM Bilaspur 3616/2026 | Advocate still not engaged | Engage an advocate this week. A criminal matter with no counsel is the worst item on this page. |
-| 3 | **Hotel ANS AOC-4 + MGT-7** | Filing currency still "unknown" since April | One question to the CA — the briefing doc is already written |
-| 4 | **Compliance dates are stale** | Seeded April 2026; the daily check flags its own unreliability | Send the CA briefing email (drafted at `docs/CA_VIMAL_BRIEFING.md`), reconcile all 26 entities |
+| 1 | **ITR for FY2025-26 — deadline passed** | 31 July fell while you were away. Aman (individual, with F&O/crypto capital gains), Aditi Investments, ANS Group HUF. | Confirm with the CA whether each was filed. If not, late fee and interest are accruing now. |
+| 2 | **Compliance dates are stale** | Seeded April 2026; the daily check flags its own unreliability | Reconcile all 26 entities with the CA — email drafted at `docs/CA_VIMAL_BRIEFING.md` |
+| 3 | **Hotel ANS AOC-4 + MGT-7** | Filing currency still "unknown" since April | One question to the CA — already in the drafted email |
+| 4 | **Entity register unverified** | ~12 of 26 entity names cannot be sourced from any document | Rebuild the register from the CA's records rather than guessing |
 | 5 | **VPN Phase 1 — rotate both certificates** | Both client private keys were transmitted in chat/Drive. Everything else is blocked behind this. | Revoke and reissue in the Omada controllers; delete the Drive copy |
 | 6 | **HDFC OAuth OTP test** | Auth wired since April, never run once | 10 minutes, once, on a weekday morning |
 | 7 | **Staah token** | Never fetched from the dashboard | Copy from Staah → `.env` |
@@ -148,8 +152,9 @@ phone camera — the vision pipeline already reads documents.
 
 ## 5. If you do only three things this week
 
-1. **Call the CA and the advocate.** Items 1–4 above are four months old and are the
-   only ones on this page with a legal counterparty and a clock.
+1. **Get the compliance reconciliation moving.** Items 1–4 above are the only ones on
+   this page with a counterparty and a clock — and item 1's deadline has already
+   passed. Route: Jahnavi reviews, then it goes to CA Vimal.
 2. **Photograph every policy, RC and sanction letter into a Drive folder.** That single
    act unblocks four of the six blocked checks, and the vision pipeline already exists
    to read them.
