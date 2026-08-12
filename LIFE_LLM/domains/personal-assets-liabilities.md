@@ -21,6 +21,32 @@ not — those live in Drive.
 
 ---
 
+### Drive audit — 12 Aug 2026
+
+Checked before asking Aman for anything. The folders exist; the documents mostly do not.
+
+| Folder | Owner | Created | Contents |
+|---|---|---|---|
+| `AMAN — MASTER / 06 — INSURANCE & LIC` | aman.55501 | 25 Mar 2026 | **empty** |
+| `AMAN — MASTER / 07 — VEHICLES` | aman.55501 | 25 Mar 2026 | **empty** |
+| `LIC POLICY` | amanjahnavi1617 | 1 Apr 2024 | **empty** |
+| `MEDICLAIMS` | amanjahnavi1617 | 1 Apr 2024 | **empty** |
+| `INSURANCE POLICY` | aman.55501 | 29 Aug 2020 | 1 file — `INSURANCE POLICIES.docx` |
+
+`AMAN — MASTER` is a full ten-folder numbered scaffold built 25 Mar 2026 (00 Master
+Prompt → 09 Personal). The structure was created and never filled — the same pattern as
+the `[EDIT]` markers in `MDO_VISION.md` §3. Worth noting because it means the answer is
+not "build a filing system"; the filing system exists and is empty.
+
+**Nothing anywhere in Drive for:** mediclaim / health cover (folder empty), vehicle RCs
+or insurance (folder empty), fire/marine/plant cover, loans or sanction letters.
+
+**Recommendation:** put the photographs into `AMAN — MASTER / 06 — INSURANCE & LIC` and
+`07 — VEHICLES` rather than making a new folder. They are already the right shape, and
+`09 — PERSONAL` and `05 — REAL ESTATE` are waiting for §4 and §5.
+
+---
+
 ## §1 — General Insurance
 
 Every asset that would hurt to lose, and whether it is actually covered.
@@ -40,9 +66,41 @@ asset in the register carrying no cover at all · 🟡 renewing in 8–30 days.
 
 ## §2 — Life Cover / LIC
 
-| Policy | Insurer | Policy no. | Sum assured | Premium | Frequency | Due date | Maturity | Nominee |
-|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | |
+> ⚠️ **EVERY ROW BELOW IS UNVERIFIED 2020 DATA.** Source: `INSURANCE POLICIES.docx`,
+> Drive folder "INSURANCE POLICY", last modified **22 Aug 2020** — six years old.
+> It is seeded here so verification starts from a list instead of a blank page. Do not
+> report any of it as current. The `lic_policies` check stays **blocked** until the
+> Verified column reads yes.
+
+| Policy holder | Insurer | Policy no. | Sum assured | Premium (₹/yr) | Frequency | Due date | Maturity | Nominee | Verified |
+|---|---|---|---|---|---|---|---|---|---|
+| Aman Agrawal | LIC (assumed) | 359187183 | **unknown** | 1,63,084 | unknown | unknown | unknown | **unknown** | ✗ 2020 |
+| Aditi Agrawal | LIC (assumed) | 385541590 | **unknown** | — | — | — | marked "Matured", **date blank** | **unknown** | ✗ 2020 |
+| Ashok Kumar Agrawal | LIC (assumed) | 383158397 | **unknown** | 1,34,623 | unknown | unknown | unknown | **unknown** | ✗ 2020 |
+| Ashok Kumar Agrawal | LIC (assumed) | 381722038 | **unknown** | — | — | — | marked "Matured", **date blank** | **unknown** | ✗ 2020 |
+| Ashok Kumar Agrawal | LIC (assumed) | 359187474 | **unknown** | **blank** | unknown | unknown | unknown | **unknown** | ✗ 2020 |
+| Sudha Agrawal | LIC (assumed) | 382669415 | **unknown** | 28,617 | unknown | unknown | unknown | **unknown** | ✗ 2020 |
+| Sudha Agrawal | LIC (assumed) | 382373979 | **unknown** | 36,650 | unknown | unknown | unknown | **unknown** | ✗ 2020 |
+
+Known premium across the four policies that state one: **₹3,62,974/year**. That is a
+floor, not a total — one policy's premium was blank even in 2020.
+
+**What this list is missing, per policy:** sum assured (not one is recorded, so total
+cover is unknown), premium due date and frequency, and nominee. Those four columns are
+the entire point of the register — the policy numbers alone cannot answer "am I covered
+enough" or "is anything about to lapse".
+
+**Three things the 2020 list itself flags:**
+
+1. **Two policies say "Matured" with the maturity date left blank.** If they matured,
+   proceeds were payable — confirm they were actually received, and where they went.
+   If they were *about* to mature in 2020, they have since. Either way this is money
+   that may be sitting unclaimed.
+2. **Jahnavi does not appear anywhere on it.** The list predates the marriage. Your
+   spouse having no policy — and, more urgently, likely not being the nominee on
+   yours — is the single most consequential gap in this file.
+3. **The newborn does not appear either**, which is expected, but resets the cover
+   calculation below to its maximum.
 
 **Also record, once:** total cover across all policies, and the actual need — the
 honest version being roughly (dependants' annual need × years to independence) + all
