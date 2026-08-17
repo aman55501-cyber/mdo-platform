@@ -73,6 +73,18 @@ you personally own or owe.
 - ✅ Seeds now **top up on every boot** instead of only when the table is empty. This was a real bug: the tables were seeded months ago, so any new check or map node added since then would never have appeared on the live VPS.
 - ✅ `sharecfo` and the VPN sidecars now appear on the life map — both were live or built and neither was on it.
 - ✅ Monthly/quarterly cron lines added to the deploy doc (those cadences had no way to fire).
+- ✅ **Broker account registry** — `broker_accounts`, seeded with all nine accounts Aman
+  named on 17 Aug. `/networth` now reports coverage as **3 of 9** with the missing
+  accounts listed, so a partial book cannot read as a total. Freshness and coverage are
+  tracked separately: a partial book can still be live, so it does not switch LIVE off.
+- ✅ **Combined trade book** — `trade_book` table, `/api/capital/tradebook/import`
+  (fingerprint dedupe, per-row rejection with reasons), plus list and summary endpoints.
+  The summary names accounts with **no** trades imported, which is the reconciliation
+  gap that matters. Ready for Aman's broker registers.
+- ✅ **08:30 pre-market roundup** — new `premarket` cadence in `mdo_agent.py`: previous
+  Indian close, overnight global, crude, currency, flows, news. Always reports, and uses
+  Anthropic server-side web search because MDO has no feed at all for crude, DXY or
+  global closes. Degrades to no-search with a logged warning rather than failing.
 - ✅ **Live net-worth tracker** — `/networth` page + `networth_snapshots` table + an
   in-process poller through market hours (09:00–15:45 IST Mon–Fri). Stores a point only
   when sharecfo's own `as_of` advances, and reports the **measured** refresh cadence so
@@ -94,11 +106,11 @@ Ordered by what it costs you to keep not doing.
 
 | # | Item | Why it is stuck | The one action |
 |---|---|---|---|
-| 1 | **ITR for FY2025-26 — deadline passed** | 31 July fell while you were away. Aman (individual, with F&O/crypto capital gains), Aditi Investments, ANS Group HUF. | Confirm with the CA whether each was filed. If not, late fee and interest are accruing now. |
+| 1 | ~~**ITR for FY2025-26**~~ — **CLOSED 17 Aug**: filed for all individuals and Aditi Investments (Aman). | — | **ANS Group HUF still unconfirmed** — it is not an individual and was not named. One question to the CA. |
 | 2 | **Compliance dates are stale** | Seeded April 2026; the daily check flags its own unreliability | Reconcile all 26 entities with the CA — email drafted at `docs/CA_VIMAL_BRIEFING.md` |
 | 3 | **Hotel ANS AOC-4 + MGT-7** | Filing currency still "unknown" since April | One question to the CA — already in the drafted email |
 | 4 | **Entity register unverified** | ~12 of 26 entity names cannot be sourced from any document | Rebuild the register from the CA's records rather than guessing |
-| 5 | **VPN Phase 1 — rotate both certificates** | Both client private keys were transmitted in chat/Drive. Everything else is blocked behind this. | Revoke and reissue in the Omada controllers; delete the Drive copy |
+| 5 | ~~**VPN Phase 1 — rotate certificates**~~ — **SUPERSEDED 17 Aug**: Tailscale chosen instead. | — | Still delete the exposed `.ovpn` files from Drive — the keys are live regardless of which tunnel you use. |
 | 6 | **HDFC OAuth OTP test** | Auth wired since April, never run once. See the correction below — auth is only half the gap. | 10 minutes, once, on a weekday morning |
 | 7 | **Staah token** | Never fetched from the dashboard | Copy from Staah → `.env` |
 

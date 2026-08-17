@@ -3,7 +3,76 @@
 **Written 17 Aug 2026**, on receiving the *MD's Office — Operating Map* (dated 18 Jul 2026).
 **This document supersedes several conclusions in [STATUS.md](STATUS.md) and [GUIDE.md](GUIDE.md).**
 
-> ## ⚠️ ANALYSIS ONLY — NOTHING HERE IS DECIDED OR APPLIED
+> ## ✅ DECIDED 17 Aug 2026 — see "Decisions" below
+>
+> Aman answered three of the four contradictions and corrected the fourth's premise.
+> The banner below is kept for the record of how this document was first written.
+> **Read the Decisions section first — it overrides the recommendations in the body.**
+
+---
+
+## Decisions — Aman, 17 Aug 2026
+
+**1. Broker accounts — the premise was wrong, and reality is bigger than either
+system.** Not 3, not 4. **Six broker accounts across five holders, plus three more
+platforms:**
+
+| Holder | Platform | Wired to sharecfo? |
+|---|---|---|
+| Aman | HDFC Securities (#4016900) | yes — HDFC1 |
+| Ashok | HDFC Securities | yes — HDFC2 *(assumed; confirm it is Ashok not Sudha)* |
+| Sudha | HDFC Securities | **no** |
+| Aditi *(the person)* | HDFC Securities | **no** — MDO never knew this existed |
+| Jahnavi | HDFC Securities | **no** — MDO never knew this existed |
+| Aditi Investments *(firm)* | Angel One (#A1504046) | yes — ANGEL1 |
+| Aman | INDmoney (US equity) | **no** |
+| Aman | SunCrypto (crypto) | **no** |
+| Aman | "Infinity" | **no** — *ambiguous, see below* |
+
+Consequence: **any net-worth figure covers 3 of 9 accounts.** This is now enforced
+in code rather than left as a caveat — `broker_accounts` carries a `wired` flag and
+`/networth` reports "3 of 9" with the missing accounts named. A partial book can no
+longer be mistaken for a total.
+
+Two open items: which physical account `HDFC2` actually is, and **what "Infinity"
+is** — Aman listed it among his platforms, but "Infinity" is also the hotel/weighbridge
+software in the MD's Office map. It is seeded as `asset_class='unknown'` and flagged
+until confirmed.
+
+**2. Morning surface — RESOLVED, and neither option won.** Aman: *"forget morning
+report, first report I want is at 8:30 am giving market roundup of previous day."*
+So the 06:30-vs-06:57 argument is moot. Built: a new `premarket` cadence at **08:30
+IST**, before the 09:15 open and before the Singhvi window — previous Indian close,
+overnight global, crude, currency, flows, news. It always reports (a briefing, not
+an exception alert) and uses live web search, because MDO has no feed whatsoever for
+crude, DXY or global closes.
+
+**3. MDO briefing — DEMOTED.** Approved. The operational daily brief stays at 06:57
+as a secondary; the 08:30 roundup is the day's first surface.
+
+**4. Site access — TAILSCALE.** Approved. The OpenVPN sidecars are superseded. They
+remain committed and in `docker-compose.yml` for now; retiring them is a separate,
+reversible step, and the isolation reasoning in `docs/PLAN_VPN_SITE_ACCESS.md`
+carries over to Tailscale unchanged.
+
+**5. Memory — DESIGN FIRST.** Aman: set it up, but not until he reviews it. Design
+is at [MEMORY_DESIGN.md](MEMORY_DESIGN.md); **nothing built**.
+
+**6. Personal registers — DEFERRED** in favour of the combined trade book. The
+registers stay in the repo and their five checks stay `blocked`; they are simply not
+the current priority.
+
+**7. ITR — FILED** for all individuals and Aditi Investments. Removed from the
+ledger. *Still unconfirmed: ANS Group HUF, which is not an individual and was not
+named.*
+
+**Still open — contradiction 4 of the original four:** where financial truth lives.
+MDO still seeds April figures into SQLite while `PNL_FY2021-26_MASTER.xlsx` and
+MProfit are the real records. Unresolved.
+
+---
+
+> ## ⚠️ ORIGINAL BANNER — ANALYSIS ONLY (superseded by the Decisions above)
 >
 > Aman asked to analyse before changing. So this document is committed as a **record of
 > findings**, and nothing in it has been acted on:

@@ -261,6 +261,54 @@ CREATE TABLE IF NOT EXISTS hdfc_session (
     connected INTEGER DEFAULT 0,
     last_updated TEXT DEFAULT (datetime('now'))
 );
+-- Every account that holds money in a market, and whether the system can SEE it.
+-- Aman named these on 17 Aug 2026: five HDFC Securities accounts across five
+-- holders, the firm's Angel One, plus three platforms of his own. MDO previously
+-- described four and sharecfo serves three — so any "net worth" figure was a
+-- partial book presented as a total. `wired` is what makes that visible instead
+-- of silently wrong: /networth reports coverage as N of M.
+CREATE TABLE IF NOT EXISTS broker_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    holder TEXT NOT NULL,                   -- Aman | Ashok | Sudha | Aditi | Jahnavi | Aditi Investments
+    holder_kind TEXT DEFAULT 'individual',  -- individual | firm
+    platform TEXT NOT NULL,                 -- HDFC Securities | Angel One | INDmoney | SunCrypto | Infinity
+    account_no TEXT DEFAULT '',
+    asset_class TEXT DEFAULT 'equity',      -- equity | equity+fno | us_equity | crypto | unknown
+    wired INTEGER DEFAULT 0,                -- 1 = sharecfo holds a live session for it
+    sharecfo_key TEXT DEFAULT '',           -- what sharecfo calls it, e.g. HDFC1 / ANGEL1
+    notes TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(holder, platform)
+);
+-- The combined trade book: every executed trade from every account in one place,
+-- normalised. Imported from broker-supplied registers, then reconciled against
+-- them. `source` and `source_ref` keep provenance so a disputed row can always be
+-- traced back to the document it came from.
+CREATE TABLE IF NOT EXISTS trade_book (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    holder TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    trade_date TEXT NOT NULL,               -- ISO yyyy-mm-dd
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,                     -- buy | sell
+    instrument TEXT DEFAULT 'equity',       -- equity | future | option | crypto | mf
+    quantity REAL,
+    price REAL,
+    gross_amount REAL,
+    charges REAL DEFAULT 0,
+    net_amount REAL,
+    order_id TEXT DEFAULT '',
+    expiry TEXT DEFAULT '',                 -- F&O only
+    strike REAL,
+    opt_type TEXT DEFAULT '',               -- CE | PE
+    source TEXT DEFAULT 'broker_register',  -- broker_register | sharecfo | manual
+    source_ref TEXT DEFAULT '',             -- file name / statement id the row came from
+    fingerprint TEXT UNIQUE,                -- dedupe key; re-importing a file is safe
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tb_date ON trade_book(trade_date);
+CREATE INDEX IF NOT EXISTS idx_tb_holder ON trade_book(holder, platform);
+CREATE INDEX IF NOT EXISTS idx_tb_symbol ON trade_book(symbol);
 -- Intraday net-worth track. One row per DISTINCT broker snapshot, never one row
 -- per poll: `broker_as_of` is UNIQUE so a poll that finds sharecfo unchanged is
 -- discarded instead of drawing a fake tick on the chart. That makes the stored
@@ -370,6 +418,12 @@ CREATE TABLE IF NOT EXISTS life_map_edges (
            (code,title,cadence,domain,sources,threshold,owner,run_window,status,blocker)
            VALUES (?,?,?,?,?,?,?,?,?,?)""",
         CHECKS_SEED,
+    )
+    await db.executemany(
+        """INSERT OR IGNORE INTO broker_accounts
+           (holder,holder_kind,platform,account_no,asset_class,wired,sharecfo_key,notes)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        BROKER_ACCOUNTS_SEED,
     )
     await db.commit()
     # Seed build roadmap (shown as "Remaining Steps" on /lifemap + sidebar) if empty
@@ -628,6 +682,20 @@ CHECKS_SEED = [
      "Public portals (SECL/WCL/CIL/GeM/CPPP) + web search; Tender247 is manual login",
      "🔴 eligible tender closing <72h; 🟡 new eligible tender in target categories", "Aman",
      "", "active", "Tender247 has no API — public sources only"),
+    # ── premarket 08:30 IST — the FIRST report of the day ───────────────────
+    # Aman, 17 Aug 2026: this replaces the morning brief as the day's opening
+    # surface. It lands before the 09:15 bell and before the Singhvi window, so
+    # it must be a roundup of what has ALREADY happened — yesterday's Indian
+    # close plus the overnight global session — not a forecast.
+    ("premkt_roundup", "Market roundup — previous day + overnight global", "premarket", "market",
+     "/api/market/indices, /api/market/watchlist, /api/news/portfolio (Yahoo RSS), "
+     "Grok web_search + x_search for crude, DXY, USDINR, US/Asia closes, FII/DII, "
+     "commodities and overnight news",
+     "Always reports — this is a briefing, not an exception alert. 🔴 anything that "
+     "breaks a watchlist thesis or moves a holding >4%; 🟡 sector or index moves >2%", "Aman",
+     "08:00-09:10 IST Mon-Fri", "active",
+     "FII/DII and NSE block deals have no reliable source — the roundup must say so "
+     "rather than omitting the line silently"),
     # ── daily ───────────────────────────────────────────────────────────────
     ("dispatch_trend", "Dispatch report — day vs week vs month", "daily", "vwlr",
      "whatsapp_messages history (rake/dispatch groups)",
@@ -682,6 +750,37 @@ CHECKS_SEED = [
      "receivables and every liability above are still uncounted",
      "🔴 net worth cannot be stated because a pool has no number; 🟡 Pool C/D still TBD", "Aman",
      "", "blocked", "Pools C and D have never been sized — the system can state the liquid book but not the net worth"),
+]
+
+# ── Broker account registry seed ─────────────────────────────────────────────
+# Named by Aman, 17 Aug 2026. `wired` reflects what sharecfo actually serves
+# (HDFC1/HDFC2/ANGEL1 per the MD's Office map) — NOT what we wish it served.
+# Which physical account each sharecfo key maps to is still unconfirmed, so the
+# three wired rows carry the key and say so. Everything else is unwired: real
+# money the system cannot see.
+# (holder, holder_kind, platform, account_no, asset_class, wired, sharecfo_key, notes)
+BROKER_ACCOUNTS_SEED = [
+    ("Aman", "individual", "HDFC Securities", "4016900", "equity+fno", 1, "HDFC1",
+     "Aman's personal account. Confirmed account no. from MDO_VISION §2C."),
+    ("Ashok", "individual", "HDFC Securities", "", "equity", 1, "HDFC2",
+     "sharecfo key assumed — confirm whether HDFC2 is Ashok or Sudha."),
+    ("Sudha", "individual", "HDFC Securities", "", "equity", 0, "",
+     "Named by Aman 17 Aug. Not confirmed as served by sharecfo (only HDFC1/HDFC2 exist there)."),
+    ("Aditi", "individual", "HDFC Securities", "", "equity", 0, "",
+     "Aditi Agrawal the person — distinct from the Aditi Investments firm below. "
+     "Newly disclosed 17 Aug; MDO never knew of it."),
+    ("Jahnavi", "individual", "HDFC Securities", "", "equity", 0, "",
+     "Newly disclosed 17 Aug; MDO never knew of it."),
+    ("Aditi Investments", "firm", "Angel One", "A1504046", "equity+fno", 1, "ANGEL1",
+     "The partnership firm's trading account (Aman + Ashok + Sudha)."),
+    ("Aman", "individual", "INDmoney", "", "us_equity", 0, "",
+     "US equity. No connector of any kind exists."),
+    ("Aman", "individual", "SunCrypto", "", "crypto", 0, "",
+     "Crypto. No connector. Feeds the ITR capital-gains question every year."),
+    ("Aman", "individual", "Infinity", "", "unknown", 0, "",
+     "AMBIGUOUS — Aman listed 'infinity' among his platforms, but 'Infinity' is also "
+     "the hotel/weighbridge software in the MD's Office map. Confirm which this is and "
+     "what it holds before any figure from it is trusted."),
 ]
 
 def vedanta_conn() -> sqlite3.Connection:
@@ -1099,6 +1198,29 @@ def _observed_interval(rows: list) -> dict:
             "note": f"sharecfo produces a new figure about every {round(med/60,1)} min; "
                     f"polling faster than that re-reads the same number"}
 
+@app.get("/api/capital/accounts/registry")
+async def broker_registry():
+    """Every account that holds money in a market, and whether MDO can see it."""
+    db = await vdb()
+    rows = [dict(r) for r in await db.execute_fetchall(
+        "SELECT * FROM broker_accounts ORDER BY wired DESC, holder_kind, holder, platform")]
+    return {"accounts": rows, "coverage": _coverage(rows)}
+
+def _coverage(rows: list) -> dict:
+    """How much of the real book the live figure actually covers. Reported on the
+    net-worth surface so a partial total is never mistaken for a complete one."""
+    wired = [r for r in rows if r.get("wired")]
+    missing = [f"{r['holder']} · {r['platform']}" for r in rows if not r.get("wired")]
+    return {
+        "accounts_total": len(rows),
+        "accounts_wired": len(wired),
+        "complete": len(missing) == 0,
+        "unwired": missing,
+        "note": (f"Live figure covers {len(wired)} of {len(rows)} known accounts. "
+                 f"Not counted: {', '.join(missing)}." if missing
+                 else "All known accounts are wired."),
+    }
+
 @app.get("/api/capital/networth/live")
 async def networth_live():
     """The current number, how old it really is, and the day's track."""
@@ -1129,21 +1251,36 @@ async def networth_live():
                   for r in rows],
         "observed_refresh": _observed_interval([dict(r) for r in rows]),
     }
-    # Say plainly when the "live" number is not live.
-    warnings = []
+    acc = [dict(r) for r in await db.execute_fetchall("SELECT * FROM broker_accounts")]
+    out["coverage"] = _coverage(acc)
+    # Two independent questions, deliberately not conflated:
+    #   freshness — is this figure current? (drives is_live)
+    #   coverage  — is this figure the whole book? (drives is_complete)
+    # A partial book can still be perfectly live, so coverage must not switch the
+    # LIVE badge off; it gets its own warning and its own flag.
+    freshness: list[str] = []
     if cur is None:
-        warnings.append("No snapshot has ever been stored — check sharecfo is reachable "
-                        "and CFO_API_URL / CFO_API_TOKEN are set.")
+        freshness.append("No snapshot has ever been stored — check sharecfo is reachable "
+                         "and CFO_API_URL / CFO_API_TOKEN are set.")
     else:
         sh = out["stale_hours"]
         if open_now and isinstance(sh, (int, float)) and sh > 1:
-            warnings.append(f"Market is open but the broker figure is {sh}h old — "
-                            "this is NOT live. sharecfo is not refreshing.")
+            freshness.append(f"Market is open but the broker figure is {sh}h old — "
+                             "this is NOT live. sharecfo is not refreshing.")
         if open_now and len(rows) <= 1:
-            warnings.append("Only one point today — the tracker is not accumulating; "
-                            "sharecfo is returning the same as_of each poll.")
-    out["warnings"] = warnings
-    out["is_live"] = bool(cur and open_now and not warnings)
+            freshness.append("Only one point today — the tracker is not accumulating; "
+                             "sharecfo is returning the same as_of each poll.")
+    coverage_warnings: list[str] = []
+    if not out["coverage"]["complete"]:
+        coverage_warnings.append(
+            f"PARTIAL BOOK — {out['coverage']['accounts_wired']} of "
+            f"{out['coverage']['accounts_total']} known accounts are wired. This is not "
+            f"your whole market exposure. Not counted: {', '.join(out['coverage']['unwired'])}.")
+    out["freshness_warnings"] = freshness
+    out["coverage_warnings"] = coverage_warnings
+    out["warnings"] = freshness + coverage_warnings      # kept for the existing UI
+    out["is_live"] = bool(cur and open_now and not freshness)
+    out["is_complete"] = out["coverage"]["complete"]
     return out
 
 @app.get("/api/capital/networth/history")
@@ -1166,6 +1303,105 @@ async def networth_history(days: int = 30):
 async def networth_capture_now():
     """Force a read — used by the page's manual refresh."""
     return await _networth_capture()
+
+# ── Combined trade book ─────────────────────────────────────────────────────
+# One book across every account. Rows arrive from broker-supplied registers and
+# are deduped on a fingerprint, so re-importing the same file is harmless and an
+# overlapping export does not double-count.
+def _trade_fingerprint(t: dict) -> str:
+    import hashlib
+    key = "|".join(str(t.get(k, "")).strip().lower() for k in (
+        "holder", "platform", "trade_date", "symbol", "side", "instrument",
+        "quantity", "price", "expiry", "strike", "opt_type", "order_id"))
+    return hashlib.sha1(key.encode()).hexdigest()
+
+@app.post("/api/capital/tradebook/import")
+async def tradebook_import(body: dict):
+    """Import normalised trades. Body: {"source_ref": "...", "trades": [ ... ]}.
+
+    Rejects a row rather than guessing when a required field is missing — a
+    silently mangled trade is worse than a failed import."""
+    trades = body.get("trades") or []
+    if not isinstance(trades, list) or not trades:
+        raise HTTPException(400, "body.trades must be a non-empty list")
+    source_ref = str(body.get("source_ref") or "")[:200]
+    source = str(body.get("source") or "broker_register")[:40]
+    db = await vdb()
+    inserted = dupes = 0
+    rejected: list[dict] = []
+    for i, t in enumerate(trades):
+        if not isinstance(t, dict):
+            rejected.append({"row": i, "why": "not an object"}); continue
+        missing = [k for k in ("holder", "platform", "trade_date", "symbol", "side")
+                   if not str(t.get(k, "")).strip()]
+        if missing:
+            rejected.append({"row": i, "why": "missing " + ", ".join(missing)}); continue
+        side = str(t["side"]).strip().lower()
+        if side not in ("buy", "sell"):
+            rejected.append({"row": i, "why": f"side must be buy|sell, got {t['side']!r}"}); continue
+        rec = {**t, "side": side}
+        fp = _trade_fingerprint(rec)
+        cur = await db.execute(
+            """INSERT OR IGNORE INTO trade_book
+               (holder,platform,trade_date,symbol,side,instrument,quantity,price,
+                gross_amount,charges,net_amount,order_id,expiry,strike,opt_type,
+                source,source_ref,fingerprint)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (rec["holder"], rec["platform"], rec["trade_date"], rec["symbol"], side,
+             rec.get("instrument", "equity"), rec.get("quantity"), rec.get("price"),
+             rec.get("gross_amount"), rec.get("charges", 0), rec.get("net_amount"),
+             str(rec.get("order_id", "")), str(rec.get("expiry", "")), rec.get("strike"),
+             str(rec.get("opt_type", "")), source, source_ref, fp))
+        if cur.rowcount:
+            inserted += 1
+        else:
+            dupes += 1
+    await db.commit()
+    return {"inserted": inserted, "duplicates_skipped": dupes,
+            "rejected": rejected, "rejected_count": len(rejected),
+            "source_ref": source_ref}
+
+@app.get("/api/capital/tradebook")
+async def tradebook_list(holder: str | None = None, platform: str | None = None,
+                         symbol: str | None = None, since: str | None = None,
+                         limit: int = 500):
+    db = await vdb()
+    where, params = [], []
+    for col, val in (("holder", holder), ("platform", platform), ("symbol", symbol)):
+        if val:
+            where.append(f"{col}=?"); params.append(val)
+    if since:
+        where.append("trade_date>=?"); params.append(since)
+    sql = "SELECT * FROM trade_book"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY trade_date DESC, id DESC LIMIT ?"
+    params.append(max(1, min(limit, 5000)))
+    return {"trades": [dict(r) for r in await db.execute_fetchall(sql, params)]}
+
+@app.get("/api/capital/tradebook/summary")
+async def tradebook_summary():
+    """What the book contains, per account — the first thing to check when
+    reconciling against a broker register: are the counts and date ranges right?"""
+    db = await vdb()
+    per = [dict(r) for r in await db.execute_fetchall(
+        """SELECT holder, platform, COUNT(*) AS trades,
+                  MIN(trade_date) AS first_trade, MAX(trade_date) AS last_trade,
+                  SUM(CASE WHEN side='buy'  THEN 1 ELSE 0 END) AS buys,
+                  SUM(CASE WHEN side='sell' THEN 1 ELSE 0 END) AS sells,
+                  COUNT(DISTINCT symbol) AS symbols
+           FROM trade_book GROUP BY holder, platform ORDER BY holder, platform""")]
+    acc = [dict(r) for r in await db.execute_fetchall("SELECT * FROM broker_accounts")]
+    have = {(p["holder"], p["platform"]) for p in per}
+    # An account with no trades imported is the reconciliation gap that matters.
+    no_trades = [f"{a['holder']} · {a['platform']}"
+                 for a in acc if (a["holder"], a["platform"]) not in have]
+    total = sum(p["trades"] for p in per)
+    return {"per_account": per, "total_trades": total,
+            "accounts_with_no_trades": no_trades,
+            "note": (f"{total} trades across {len(per)} of {len(acc)} accounts. "
+                     f"No trades yet for: {', '.join(no_trades)}." if no_trades
+                     else f"{total} trades; every known account has data.")}
 
 # ── Checks registry ─────────────────────────────────────────────────────────
 @app.get("/api/checks")

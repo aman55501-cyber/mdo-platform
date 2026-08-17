@@ -165,12 +165,14 @@ Intel Centre immediately.
 
 Then schedule it with host cron (`crontab -e`):
 ```
+0 3 * * 1-5 cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py premarket >> /var/log/mdo-agent.log 2>&1
 24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly    >> /var/log/mdo-agent.log 2>&1
 27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily     >> /var/log/mdo-agent.log 2>&1
 40 1 1 * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py monthly   >> /var/log/mdo-agent.log 2>&1
 50 1 1 1,4,7,10 * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py quarterly >> /var/log/mdo-agent.log 2>&1
 ```
-(01:27 UTC = 06:57 IST — the brief is waiting when you wake up.)
+(03:00 UTC = 08:30 IST — the market roundup, the day's FIRST report, lands before
+the 09:15 open. 01:27 UTC = 06:57 IST for the operational daily brief.)
 
 The monthly and quarterly lines drive the personal-risk and net-worth checks
 (insurance renewals, LIC premiums, vehicle documents, EMIs, true net worth).

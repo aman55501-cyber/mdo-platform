@@ -6,18 +6,25 @@ key, the database, and network access to the backend. Cloud-scheduled agents
 kept firing and delivering nothing, with no visible failure.
 
 Usage (inside the backend container):
+    python mdo_agent.py premarket   # 08:30 IST market roundup — the day's first report
     python mdo_agent.py hourly
     python mdo_agent.py daily
 
-Cron on the host (see DEPLOY_HOSTINGER.md §8):
-    24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly  >> /var/log/mdo-agent.log 2>&1
-    27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily   >> /var/log/mdo-agent.log 2>&1
+Cadences differ in posture: `premarket` ALWAYS reports (it is a briefing, and uses
+live web search for crude/currency/global closes, which MDO has no feed for);
+`hourly` reports only on a threshold breach; `daily` always reports.
+
+Cron on the host (see DEPLOY_HOSTINGER.md §8) — times are UTC, IST = UTC+5:30:
+    0  3 * * 1-5 cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py premarket >> /var/log/mdo-agent.log 2>&1
+    24 * * * *   cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly    >> /var/log/mdo-agent.log 2>&1
+    27 1 * * *   cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily     >> /var/log/mdo-agent.log 2>&1
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -61,21 +68,62 @@ def wait_for_backend(attempts: int = 12, delay: float = 5.0) -> bool:
     return False
 
 
-def ask_claude(prompt: str, max_tokens: int = 8000) -> str:
-    """Call Claude and return its text. Logs why the text is empty rather than
-    leaving a silent blank (an empty answer used to look like a parse failure)."""
-    payload = json.dumps({
-        "model": MODEL,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode()
+# Anthropic's server-side web search. MDO has no source at all for crude, DXY,
+# USDINR or the overnight global closes, so the 08:30 roundup cannot be written
+# from the database alone. Server-side means the API runs the searches and returns
+# finished text — no client-side tool loop needed. The identifier is versioned and
+# may change; WEB_SEARCH_TOOL overrides it, and ask_claude degrades to no-search
+# rather than failing the whole report.
+WEB_SEARCH_TOOL = os.environ.get("WEB_SEARCH_TOOL", "web_search_20250305")
+WEB_SEARCH_MAX_USES = int(os.environ.get("WEB_SEARCH_MAX_USES", "8"))
+
+
+def _post_messages(payload: dict, timeout: int = 300) -> dict:
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages", data=payload,
+        "https://api.anthropic.com/v1/messages", data=json.dumps(payload).encode(),
         headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
                  "Content-Type": "application/json"},
         method="POST")
-    with urllib.request.urlopen(req, timeout=300) as r:
-        resp = json.loads(r.read())
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def ask_claude(prompt: str, max_tokens: int = 8000, web_search: bool = False) -> str:
+    """Call Claude and return its text. Logs why the text is empty rather than
+    leaving a silent blank (an empty answer used to look like a parse failure).
+
+    With web_search=True the model may search the live web. If the API rejects the
+    tool (wrong version, not enabled on the account), we retry WITHOUT it and say
+    so in the log — a roundup missing its global section beats no roundup, and the
+    prompt already requires the model to mark unverifiable figures rather than
+    invent them."""
+    payload = {
+        "model": MODEL,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if web_search:
+        payload["tools"] = [{"type": WEB_SEARCH_TOOL, "name": "web_search",
+                             "max_uses": WEB_SEARCH_MAX_USES}]
+    try:
+        resp = _post_messages(payload)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode()[:300]
+        except Exception:
+            pass
+        if web_search and e.code in (400, 403, 404):
+            log(f"web search unavailable ({e.code}: {body}) — retrying without it. "
+                "Global/commodity figures will be missing from this report.")
+            payload.pop("tools", None)
+            resp = _post_messages(payload)
+        else:
+            raise
+    searches = sum(1 for b in resp.get("content", [])
+                   if b.get("type") in ("web_search_tool_result", "server_tool_use"))
+    if web_search:
+        log(f"web search blocks in response: {searches}")
     text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
     if not text.strip():
         log("model returned no text — stop_reason=%s blocks=%s usage=%s" % (
@@ -115,6 +163,15 @@ def gather(cadence: str) -> dict:
         except Exception as e:
             d[key] = {"error": str(e)[:200]}
 
+    if cadence == "premarket":
+        # A market roundup does not need site chatter; it needs prices and news.
+        grab("indices", "/api/market/indices")
+        grab("watchlist", "/api/market/watchlist")
+        grab("news", "/api/news/portfolio?limit=40")
+        grab("capital", "/api/capital/networth/live")
+        grab("singhvi", "/api/singhvi/today")
+        return d
+
     grab("wa_activity", "/api/whatsapp/groups")
     grab("wa_recent", "/api/whatsapp/messages?limit=" + ("120" if cadence == "hourly" else "300"))
     grab("intel", "/api/intel?urgency=CRITICAL")
@@ -141,6 +198,41 @@ site stoppages, equipment faults, rakes idle with no dispatch movement, safety i
 payment failures, a tender deadline inside 72 hours, or a compliance item turning overdue.
 Ignore chit-chat, greetings, photos with no context, and anything already reported in
 the recent agent reports below."""
+
+PREMARKET_RULES = """You are the MDO Market Roundup for Aman Agrawal, delivered at
+08:30 IST — the FIRST thing he reads each day, before the 09:15 open and before the
+Zee Business/Singhvi window.
+
+This is a BRIEFING, NOT an exception alert. Unlike the hourly watcher, you ALWAYS
+report. Silence here is a failure, not health.
+
+Cover what has ALREADY happened. Do not forecast, do not recommend trades:
+1. INDIA — previous session's close: NIFTY, SENSEX, BANKNIFTY with levels and %;
+   advance/decline and market breadth; best and worst sectors; anything that moved
+   his 15-name watchlist, especially the CG industrial cluster (COALINDIA, NTPC,
+   JSPL, SAIL, NALCO, VEDL), power (ADANIPOWER, JSWENERGY) and holdings (HAL,
+   TATAMOTORS, MSTC, IRCON, RITES).
+2. GLOBAL OVERNIGHT — US closes (S&P, Nasdaq, Dow), Asia this morning (Nikkei,
+   Hang Seng, Shanghai), and Europe's previous close. Say what drove them.
+3. COMMODITIES — Brent and WTI crude with the move and why; gold; and where it is
+   relevant, coal/coking coal and steel, because they hit VWLR and the buyers.
+4. CURRENCY & RATES — USDINR, DXY, US 10-year. Note any RBI or Fed signal.
+5. FLOWS — FII and DII activity if a figure is genuinely available. If not, write
+   "FII/DII: no reliable source wired" — never estimate it.
+6. NEWS THAT MATTERS TO HIM — results, regulatory news, sector policy, coal or
+   railway announcements, and anything touching a watchlist thesis or a holding.
+7. WHAT TO WATCH TODAY — factual only: results due, expiry, data releases,
+   ex-dates. Not predictions.
+
+Rules specific to this report:
+- Every number must come from the live data or a search result. Attribute anything
+  from search. If a figure cannot be verified, say so on its own line.
+- Lead with what changed most, not with a fixed running order.
+- Indian amounts in lakh/crore; index levels as points plus %.
+- The summary field is the phone notification: 3-5 lines, the most consequential
+  facts only. Put the full roundup in body as markdown with clear headings.
+- Findings are for items needing action or carrying real risk — a routine index
+  move is body content, not a finding."""
 
 DAILY_RULES = """You are the MDO Daily Brief for Aman Agrawal (ANS Group, Raigarh CG):
 VWLR coal washery (Kharsia, ~50% commissioning, Rs 34.55 Cr service pipeline),
@@ -205,7 +297,8 @@ def run(cadence: str) -> int:
 
     data = gather(cadence)
     prompt = (
-        (HOURLY_RULES if cadence == "hourly" else DAILY_RULES)
+        (PREMARKET_RULES if cadence == "premarket"
+         else HOURLY_RULES if cadence == "hourly" else DAILY_RULES)
         + "\n\nNOW: " + now_ist.strftime("%A %d %B %Y, %H:%M IST")
         + "\n\nCHECKS YOU MUST RUN (each carries its own red/amber threshold):\n"
         + json.dumps([{k: c[k] for k in ("code", "title", "sources", "threshold", "owner")}
@@ -219,8 +312,10 @@ def run(cadence: str) -> int:
         + COMMON_RULES
     )
 
+    want_search = cadence == "premarket"
+
     def attempt(p: str, max_tokens: int):
-        raw = ask_claude(p, max_tokens=max_tokens)
+        raw = ask_claude(p, max_tokens=max_tokens, web_search=want_search)
         s, e = raw.find("{"), raw.rfind("}") + 1
         if s < 0 or e <= s:
             return None, raw
@@ -284,7 +379,8 @@ def run(cadence: str) -> int:
 
 if __name__ == "__main__":
     cad = (sys.argv[1] if len(sys.argv) > 1 else "daily").lower()
-    if cad not in ("hourly", "daily", "weekly", "monthly", "quarterly", "annual"):
+    if cad not in ("premarket", "hourly", "daily", "weekly", "monthly",
+                   "quarterly", "annual"):
         print(__doc__)
         sys.exit(1)
     sys.exit(run(cad))
