@@ -6,7 +6,7 @@ import { useState, useEffect } from "react"
 import {
   LayoutDashboard, Brain, TrendingUp, MessageSquare, ShieldAlert,
   Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun, Network,
-  Menu, X, Sparkles, FileText,
+  Menu, X, Sparkles, FileText, Wallet,
 } from "lucide-react"
 import { useLiveStore } from "@/lib/store"
 import { NextStepsMini } from "@/components/RemainingSteps"
@@ -42,6 +42,7 @@ const NAV_SECTIONS = [
   {
     label: "Capital",
     items: [
+      { href: "/networth",   icon: Wallet,          label: "Live Net Worth"   },
       { href: "/morning",    icon: Sun,             label: "Morning Setup"    },
       { href: "/aditi",      icon: TrendingUp,      label: "Aditi Investments"},
     ]

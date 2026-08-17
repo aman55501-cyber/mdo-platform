@@ -1,6 +1,6 @@
 # Two Systems, One Life — Reconciliation
 
-**Written 12 Aug 2026**, on receiving the *MD's Office — Operating Map* (dated 18 Jul 2026).
+**Written 17 Aug 2026**, on receiving the *MD's Office — Operating Map* (dated 18 Jul 2026).
 **This document supersedes several conclusions in [STATUS.md](STATUS.md) and [GUIDE.md](GUIDE.md).**
 
 > ## ⚠️ ANALYSIS ONLY — NOTHING HERE IS DECIDED OR APPLIED
@@ -171,7 +171,7 @@ The deployment tree and the doctrine tree now agree on the same shape.
 
 ## Staleness note
 
-The operating map is dated **18 Jul 2026** — 3½ weeks old, and its "Active work" lists
+The operating map is dated **18 Jul 2026** — a month old, and its "Active work" lists
 have partly moved on. Known since:
 
 - *"Send widened Vimal mail (delete old Aditi-only draft)"* — **done 26 Jul**, and

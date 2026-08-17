@@ -1,6 +1,6 @@
 # How to build the Life LLM
 
-*Written 11 Aug 2026, against the system as it actually stands.*
+*Written 11 Aug 2026, against the system as it actually stands. Revised 17 Aug 2026.*
 
 ---
 

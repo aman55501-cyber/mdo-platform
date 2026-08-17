@@ -19,6 +19,7 @@ import urllib.request
 import urllib.parse
 import json as _json
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Load .env for local dev — Railway injects env vars directly, this is a no-op there
@@ -260,6 +261,28 @@ CREATE TABLE IF NOT EXISTS hdfc_session (
     connected INTEGER DEFAULT 0,
     last_updated TEXT DEFAULT (datetime('now'))
 );
+-- Intraday net-worth track. One row per DISTINCT broker snapshot, never one row
+-- per poll: `broker_as_of` is UNIQUE so a poll that finds sharecfo unchanged is
+-- discarded instead of drawing a fake tick on the chart. That makes the stored
+-- gaps the broker's real refresh cadence, which is what /networth/live reports
+-- back as the observed feasible interval.
+CREATE TABLE IF NOT EXISTS networth_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_as_of TEXT NOT NULL UNIQUE,      -- sharecfo's own timestamp, not ours
+    captured_at TEXT DEFAULT (datetime('now')),
+    net_worth REAL,
+    holdings_value REAL,
+    invested_value REAL,
+    cash REAL,
+    unrealised_pnl REAL,
+    unrealised_pnl_pct REAL,
+    day_change REAL,
+    day_change_pct REAL,
+    position_count INTEGER DEFAULT 0,
+    market_open INTEGER DEFAULT 0,
+    source TEXT DEFAULT 'sharecfo'
+);
+CREATE INDEX IF NOT EXISTS idx_nw_captured ON networth_snapshots(captured_at);
 CREATE TABLE IF NOT EXISTS vwlr_competitors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -680,14 +703,25 @@ async def lifespan(app: FastAPI):
     print(f"\n___ MDO Server running at http://localhost:{PORT}")
     print(f"   VEGA DB:    {VEGA_DB}")
     print(f"   Vedanta DB: {VEDANTA_DB}\n")
-    if _mcp_manager is not None:
-        print(f"   MCP server mounted at /mcp/{MCP_SECRET}/mcp\n")
-        async with _mcp_manager.run():
+    # Live net-worth tracker. Runs in-process because the backend is already up
+    # 24/7 — cron cannot poll at sub-minute granularity anyway.
+    nw_task = asyncio.create_task(_networth_poller())
+    print(f"   Net-worth poller every {NETWORTH_POLL_SECONDS}s during market hours\n")
+    try:
+        if _mcp_manager is not None:
+            print(f"   MCP server mounted at /mcp/{MCP_SECRET}/mcp\n")
+            async with _mcp_manager.run():
+                yield
+        else:
             yield
-    else:
-        yield
-    if _vdb:
-        await _vdb.close()
+    finally:
+        nw_task.cancel()
+        try:
+            await nw_task
+        except asyncio.CancelledError:
+            pass
+        if _vdb:
+            await _vdb.close()
 
 app = FastAPI(title="ANS MDO Server", version="1.0.0", lifespan=lifespan)
 
@@ -972,6 +1006,166 @@ async def capital_summary():
 @app.get("/api/capital/accounts")
 async def capital_accounts():
     return _cfo_get("/accounts")
+
+# ── Live net worth ──────────────────────────────────────────────────────────
+# A background poller tracks net worth through the session so the number on the
+# phone is current rather than a figure from this morning's batch.
+#
+# The honest constraint: MDO does not talk to the brokers, sharecfo does. So the
+# real refresh ceiling is however often sharecfo re-authenticates and re-reads,
+# which MDO cannot control and does not assume. The poller therefore stores a
+# point only when sharecfo's OWN `as_of` advances, and /networth/live reports the
+# observed gap between those points. That measured number — not a guess — is the
+# answer to "what interval is feasible".
+IST = timezone(timedelta(hours=5, minutes=30))
+NETWORTH_POLL_SECONDS = max(30, int(os.environ.get("NETWORTH_POLL_SECONDS", "300")))
+# Slightly wider than 09:15–15:30 so the opening print and the closing mark are
+# both captured.
+NW_OPEN_MIN, NW_CLOSE_MIN = 9 * 60, 15 * 60 + 45
+
+def _market_open_ist(now: datetime | None = None) -> bool:
+    n = now or datetime.now(IST)
+    if n.weekday() > 4:          # NSE is closed at weekends. Holidays are not
+        return False             # modelled — a holiday simply yields no new as_of.
+    return NW_OPEN_MIN <= n.hour * 60 + n.minute <= NW_CLOSE_MIN
+
+async def _networth_capture() -> dict:
+    """Read sharecfo and store a snapshot if it is genuinely new.
+    Returns {"stored": bool, "reason": str, ...}."""
+    # _cfo_get uses blocking urllib; keep it off the event loop.
+    pf = await asyncio.to_thread(_cfo_get, "/portfolio")
+    if pf.get("error"):
+        return {"stored": False, "reason": "sharecfo unreachable: " + str(pf["error"])[:120]}
+    as_of = pf.get("as_of")
+    if not as_of:
+        return {"stored": False, "reason": "sharecfo returned no as_of — cannot tell new data from old"}
+    pos = await asyncio.to_thread(_cfo_get, "/positions/live")
+    db = await vdb()
+    cur = await db.execute(
+        """INSERT OR IGNORE INTO networth_snapshots
+           (broker_as_of, net_worth, holdings_value, invested_value, cash,
+            unrealised_pnl, unrealised_pnl_pct, day_change, day_change_pct,
+            position_count, market_open)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (as_of, pf.get("net_worth"), pf.get("holdings_value"), pf.get("invested_value"),
+         pf.get("cash"), pf.get("unrealised_pnl"), pf.get("unrealised_pnl_pct"),
+         pf.get("day_change"), pf.get("day_change_pct"),
+         len((pos.get("positions") or []) if not pos.get("error") else []),
+         1 if _market_open_ist() else 0),
+    )
+    await db.commit()
+    if cur.rowcount == 0:
+        return {"stored": False, "reason": f"sharecfo has not refreshed since {as_of}", "as_of": as_of}
+    return {"stored": True, "as_of": as_of, "net_worth": pf.get("net_worth")}
+
+async def _networth_poller():
+    """Poll through market hours; idle cheaply outside them. Never dies on an
+    error — a broker outage must not take the tracker down for the day."""
+    await asyncio.sleep(20)          # let the backend finish booting
+    while True:
+        try:
+            if _market_open_ist():
+                res = await _networth_capture()
+                if not res.get("stored"):
+                    print(f"[networth] no point: {res.get('reason')}", flush=True)
+                delay = NETWORTH_POLL_SECONDS
+            else:
+                delay = 300          # closed: just check every 5 min for the open
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[networth] poll failed: {e}", flush=True)
+            delay = NETWORTH_POLL_SECONDS
+        await asyncio.sleep(delay)
+
+def _observed_interval(rows: list) -> dict:
+    """How often sharecfo ACTUALLY produces a new figure, measured from stored
+    points. This is the feasible refresh interval; anything faster is polling
+    the same number twice."""
+    stamps = []
+    for r in rows:
+        try:
+            stamps.append(datetime.fromisoformat(str(r["captured_at"]).replace("Z", "+00:00")))
+        except Exception:
+            pass
+    if len(stamps) < 3:
+        return {"samples": len(stamps), "median_seconds": None,
+                "note": "not enough distinct broker snapshots yet to measure"}
+    stamps.sort()
+    gaps = sorted((stamps[i] - stamps[i - 1]).total_seconds() for i in range(1, len(stamps)))
+    med = gaps[len(gaps) // 2]
+    return {"samples": len(stamps), "median_seconds": round(med),
+            "fastest_seconds": round(gaps[0]), "slowest_seconds": round(gaps[-1]),
+            "note": f"sharecfo produces a new figure about every {round(med/60,1)} min; "
+                    f"polling faster than that re-reads the same number"}
+
+@app.get("/api/capital/networth/live")
+async def networth_live():
+    """The current number, how old it really is, and the day's track."""
+    db = await vdb()
+    today_ist = datetime.now(IST).date().isoformat()
+    rows = await db.execute_fetchall(
+        "SELECT * FROM networth_snapshots WHERE date(captured_at)>=date(?) ORDER BY captured_at",
+        (today_ist,))
+    latest = await db.execute_fetchall(
+        "SELECT * FROM networth_snapshots ORDER BY captured_at DESC LIMIT 1")
+    cur = dict(latest[0]) if latest else None
+    open_now = _market_open_ist()
+    out = {
+        "market_open": open_now,
+        "poll_seconds": NETWORTH_POLL_SECONDS,
+        "as_of": cur["broker_as_of"] if cur else None,
+        "stale_hours": _stale_hours(cur["broker_as_of"]) if cur else None,
+        "net_worth": cur["net_worth"] if cur else None,
+        "day_change": cur["day_change"] if cur else None,
+        "day_change_pct": cur["day_change_pct"] if cur else None,
+        "holdings_value": cur["holdings_value"] if cur else None,
+        "invested_value": cur["invested_value"] if cur else None,
+        "cash": cur["cash"] if cur else None,
+        "unrealised_pnl": cur["unrealised_pnl"] if cur else None,
+        "points_today": len(rows),
+        "track": [{"t": r["captured_at"], "as_of": r["broker_as_of"],
+                   "net_worth": r["net_worth"], "day_change_pct": r["day_change_pct"]}
+                  for r in rows],
+        "observed_refresh": _observed_interval([dict(r) for r in rows]),
+    }
+    # Say plainly when the "live" number is not live.
+    warnings = []
+    if cur is None:
+        warnings.append("No snapshot has ever been stored — check sharecfo is reachable "
+                        "and CFO_API_URL / CFO_API_TOKEN are set.")
+    else:
+        sh = out["stale_hours"]
+        if open_now and isinstance(sh, (int, float)) and sh > 1:
+            warnings.append(f"Market is open but the broker figure is {sh}h old — "
+                            "this is NOT live. sharecfo is not refreshing.")
+        if open_now and len(rows) <= 1:
+            warnings.append("Only one point today — the tracker is not accumulating; "
+                            "sharecfo is returning the same as_of each poll.")
+    out["warnings"] = warnings
+    out["is_live"] = bool(cur and open_now and not warnings)
+    return out
+
+@app.get("/api/capital/networth/history")
+async def networth_history(days: int = 30):
+    db = await vdb()
+    rows = await db.execute_fetchall(
+        """SELECT date(captured_at) AS d,
+                  MIN(net_worth) AS low, MAX(net_worth) AS high,
+                  COUNT(*) AS points,
+                  (SELECT net_worth FROM networth_snapshots s2
+                    WHERE date(s2.captured_at)=date(s1.captured_at)
+                    ORDER BY s2.captured_at DESC LIMIT 1) AS close
+           FROM networth_snapshots s1
+           WHERE captured_at >= datetime('now', ?)
+           GROUP BY date(captured_at) ORDER BY d""",
+        (f"-{max(1, min(days, 365))} days",))
+    return {"days": [dict(r) for r in rows]}
+
+@app.post("/api/capital/networth/capture")
+async def networth_capture_now():
+    """Force a read — used by the page's manual refresh."""
+    return await _networth_capture()
 
 # ── Checks registry ─────────────────────────────────────────────────────────
 @app.get("/api/checks")

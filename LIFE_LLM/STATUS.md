@@ -1,7 +1,7 @@
 # Life LLM — Status Ledger
 
-**As of:** 11 Aug 2026 · **Last commit before this one:** 31 Jul 2026 (`d6b584b`)
-**Gap:** 11 days with no commits — matches the time away from the laptop.
+**As of:** 17 Aug 2026 · **Last feature commit before this work:** 31 Jul 2026 (`d6b584b`)
+**Gap:** 17 days with no feature commits — the time away from the laptop.
 
 > **Verification note.** Everything marked ✅ below is verified by reading the code in
 > this repo. What I could **not** verify from this sandbox is whether the VPS itself
@@ -73,6 +73,12 @@ you personally own or owe.
 - ✅ Seeds now **top up on every boot** instead of only when the table is empty. This was a real bug: the tables were seeded months ago, so any new check or map node added since then would never have appeared on the live VPS.
 - ✅ `sharecfo` and the VPN sidecars now appear on the life map — both were live or built and neither was on it.
 - ✅ Monthly/quarterly cron lines added to the deploy doc (those cadences had no way to fire).
+- ✅ **Live net-worth tracker** — `/networth` page + `networth_snapshots` table + an
+  in-process poller through market hours (09:00–15:45 IST Mon–Fri). Stores a point only
+  when sharecfo's own `as_of` advances, and reports the **measured** refresh cadence so
+  the feasible interval is a number rather than a guess. Verified: `tsc` clean, Next
+  build passes, backend boots, all three endpoints answer and degrade honestly when
+  sharecfo is absent.
 
 ---
 
@@ -82,7 +88,7 @@ Ordered by what it costs you to keep not doing.
 
 ### 🔴 Blocked on you personally — nobody else can clear these
 
-> **Descoped 11 Aug 2026 on Aman's instruction:** Ozone Steel §454(8) and Rashi Steel
+> **Descoped 17 Aug 2026 on Aman's instruction:** Ozone Steel §454(8) and Rashi Steel
 > (CJM Bilaspur 3616/2026). Both are out of the ledger and out of the CA email. Not
 > resolved — deliberately not being worked on. Re-add them here if that changes.
 
@@ -93,7 +99,7 @@ Ordered by what it costs you to keep not doing.
 | 3 | **Hotel ANS AOC-4 + MGT-7** | Filing currency still "unknown" since April | One question to the CA — already in the drafted email |
 | 4 | **Entity register unverified** | ~12 of 26 entity names cannot be sourced from any document | Rebuild the register from the CA's records rather than guessing |
 | 5 | **VPN Phase 1 — rotate both certificates** | Both client private keys were transmitted in chat/Drive. Everything else is blocked behind this. | Revoke and reissue in the Omada controllers; delete the Drive copy |
-| 6 | **HDFC OAuth OTP test** | Auth wired since April, never run once | 10 minutes, once, on a weekday morning |
+| 6 | **HDFC OAuth OTP test** | Auth wired since April, never run once. See the correction below — auth is only half the gap. | 10 minutes, once, on a weekday morning |
 | 7 | **Staah token** | Never fetched from the dashboard | Copy from Staah → `.env` |
 
 ### 🟡 Built but never switched on
@@ -103,6 +109,30 @@ Ordered by what it costs you to keep not doing.
 | **VPN tunnels (Phases 2–6)** | Compose services, Dockerfile and entrypoint committed 31 Jul. The tunnel has never been raised, the hotel LAN never scanned, `SITE_INVENTORY_HOTEL.md` does not exist. Blocked behind Phase 1. |
 | **Singhvi extractor** | Built in April, never live-tested. The VPS has the RAM the free tier lacked — the original blocker is gone and the test still has not happened. |
 | **Monthly/quarterly checks** | Cadences accepted by the runner; cron lines added today but not yet installed on the VPS. |
+
+### 🔴 Correction — there is no trade execution to switch on
+
+I described this on 11 Aug as "auth wired, untested". That was too generous, and I only
+found the truth when asked to connect it. **No order-placement code exists anywhere in
+the repo.**
+
+- `/api/singhvi/execute` moves approved calls from `singhvi_calls` into
+  `trading_signals` with `status='pending'`. It never contacts HDFC.
+- `/api/trading/signals/{id}/execute` is *bookkeeping*: its own docstring says
+  "Called by Capital engine when order is placed" — it records an `executed_price` and
+  `order_id` that something else was supposed to have obtained.
+- Nothing in the codebase calls an HDFC orders endpoint. `MDO_VISION.md` §12's
+  "9:15 AM: Hit **Execute** — orders placed at market open" describes an intention.
+
+So the gap is not one OTP test. It is: (a) get OAuth to succeed once, which is the only
+way to learn the real API shapes — note `_hdfc_try_exchange` already tries **four**
+different token-exchange payload shapes, which is what code written against unconfirmed
+docs looks like; (b) write order placement against the shape that actually worked;
+(c) put a dry-run and a confirmation gate in front of it.
+
+**Deliberately not written blind.** An untested order path against a guessed API, moving
+real money, is the exact thing the house rule *"money / signature / regulator = Aman's
+click"* exists to prevent. Step (a) needs Aman's OTP and cannot be done for him.
 
 ### 🟡 Structurally incomplete
 

@@ -5,12 +5,12 @@ been reconciled. Until this is done, the daily agent cannot tell "overdue" from
 "already filed", so it flags stale items and dilutes the alerts that matter.
 One session with CA Vimal Agrawal (9755220259, vimal500321@gmail.com) fixes it.
 
-**Routing (set 11 Aug 2026):** Jahnavi reviews first, then it goes to CA Vimal —
+**Routing (set 17 Aug 2026):** Jahnavi reviews first, then it goes to CA Vimal —
 the same loop used for the 26 July CA package. A draft addressed to Jahnavi is
 staged in Gmail drafts. Record his answers back into MDO afterwards (Compliance
 page, or paste his reply here and it will be entered).
 
-**Descoped 11 Aug 2026 on Aman's instruction:** the Ozone Steel §454(8) and Rashi
+**Descoped 17 Aug 2026 on Aman's instruction:** the Ozone Steel §454(8) and Rashi
 Steel (CJM Bilaspur 3616/2026) sections have been removed from this email. Neither
 is resolved — they are deliberately not being pursued. Restore them here if that
 changes.
