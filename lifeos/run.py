@@ -20,11 +20,14 @@ from .config import IST
 from .render import render_console
 from .sources import Result, guarded
 from .sources import self_check
+from .sources import deal_room
 
-# The source registry. Phase 0 has one; Phases 1-2 append Notion, Gmail, Calendar,
-# Supabase tenders, scheduled-task health, brokers and per-entity ERP export parsers.
-# Each entry is (name, fetch_callable). Order here is display order on the page.
+# The source registry. Each entry is (name, fetch_callable); order here is display
+# order on the page. Phases 2+ append Gmail, Calendar, Supabase tenders,
+# scheduled-task health, brokers and per-entity ERP export parsers.
 SOURCES: list[tuple[str, callable]] = [
+    ("deal_room_actions", deal_room.fetch_actions),
+    ("deal_room_counterparties", deal_room.fetch_counterparties),
     ("self_check", self_check.fetch),
 ]
 

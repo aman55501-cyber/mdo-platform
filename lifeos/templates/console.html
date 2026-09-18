@@ -71,6 +71,17 @@ body{font-family:var(--fb);font-size:15px;line-height:1.5;
 .panel p{margin-top:6px;font-size:14px;color:var(--ink)}
 .panel .meta{margin-top:6px;font-family:var(--fm);font-size:11px;color:var(--ink-3)}
 
+/* row list — left gutter carries the days-late figure; stripe carries severity */
+.rows{margin-top:10px;border-top:1px solid var(--line)}
+.row{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
+.row .g{flex:0 0 auto;width:48px;text-align:right;font-family:var(--fm);
+  font-size:11.5px;font-variant-numeric:tabular-nums}
+.row .g.critical{color:var(--critical)} .row .g.warning{color:var(--warning)}
+.row .g.quiet{color:var(--ink-3)}
+.row .b{flex:1;min-width:0}
+.row .b .t{font-size:14px;color:var(--ink)}
+.row .b .m{font-family:var(--fm);font-size:11px;color:var(--ink-3);margin-top:2px}
+
 .note{margin:18px 0;color:var(--ink-3);font-size:12.5px;line-height:1.7}
 .note code{font-family:var(--fm)}
 
@@ -113,6 +124,20 @@ body{font-family:var(--fb);font-size:15px;line-height:1.5;
       <p>UNREACHABLE — {{ r.name }} — {{ r.reason }}</p>
     {% else %}
       <p>{{ r.summary }}</p>
+    {% endif %}
+    {% set rows = r.extra.get('rows') if r.extra else None %}
+    {% if rows %}
+    <div class="rows">
+      {% for row in rows %}
+      <div class="row">
+        <div class="g {{ row.severity }}">{{ row.gutter }}</div>
+        <div class="b">
+          <div class="t">{{ row.text }}</div>
+          {% if row.meta %}<div class="m">{{ row.meta }}</div>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
     {% endif %}
     {% if r.ms %}<div class="meta">{{ r.ms }} ms</div>{% endif %}
   </div>
