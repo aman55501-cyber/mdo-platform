@@ -40,9 +40,19 @@ Create the Drive folder with **one subfolder per entity** (`VWLR/`, `Dadu Develo
 LIVE`; when a real file first lands, send me its headers and I commit that entity's
 `lifeos/mappings/<slug>.yaml`.
 
-**Broker logins (Phase 5, optional, off by default)**: `LIFEOS_BROKER_LOGINS=1`
-needs `shares_cfo` in the image and its `CFO_ACCOUNTS` / `HDFC_*` / `ANGEL_*` creds on
-a shared token volume — a follow-up when you want it. Leave unset for the first deploy.
+**Broker logins (Phase 5, optional, off by default)** — now wired into the image
+(`shares_cfo` is included; its token store is redirected to the `/data` volume so
+HDFC phone-login tokens survive a same-day redeploy). To turn it on:
+| Var | What |
+|---|---|
+| `LIFEOS_BROKER_LOGINS` | `1` to run daily HDFC/Angel logins in the 06:30 run |
+| `CFO_ACCOUNTS` | comma list of accounts to arm, e.g. `HDFC1,HDFC2,ANGEL1` |
+| `HDFC_<KEY>_API_KEY` / `_API_SECRET` / `_CLIENT_CODE` | per HDFC account (see `.env.example`) |
+| `ANGEL_<KEY>_API_KEY` / `_CLIENT_CODE` / `_TOTP_SECRET` / `_MPIN` | per Angel account (Angel auto-arms server-side) |
+
+Angel accounts log in automatically each morning; HDFC accounts show **NEEDS LOGIN**
+until you do the daily phone OAuth, and LIFEOS drafts a reminder to your Inbox. Leave
+`LIFEOS_BROKER_LOGINS` unset to skip all of this on the first deploy.
 
 ## 3. First boot checks
 - `GET /healthz` → `ok` (Railway health check; no auth).

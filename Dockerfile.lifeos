@@ -7,6 +7,13 @@ RUN pip install --no-cache-dir -r requirements_lifeos.txt
 
 COPY lifeos/ ./lifeos/
 
+# shares_cfo is reused by the optional Phase 5 broker logins (LIFEOS_BROKER_LOGINS=1).
+# Only its lean login chain (config/token_store/brokers) is imported, lazily, so the
+# image stays free of pandas/numpy/yfinance. Its same-day token store is redirected to
+# the /data volume so HDFC phone-login tokens survive a redeploy within the day.
+COPY shares_cfo/ ./shares_cfo/
+RUN rm -rf shares_cfo/data/state && ln -s /data/sharescfo_state shares_cfo/data/state
+
 # /data is mounted as a Railway persistent volume — SQLite run history lives here
 ENV LIFEOS_DB_PATH=/data/lifeos.db
 
