@@ -20,10 +20,13 @@ from lifeos.ingest import (
 
 
 def test_infer_report():
-    assert infer_report("VWLR Sales Order Book Sep.csv") == "pipeline"
+    assert infer_report("VWLR Purchase Order Book Sep.csv") == "pipeline"
     assert infer_report("dadu_sales_register.xlsx") == "invoiced"
     assert infer_report("Outstanding Receivables.csv") == "receivables"
     assert infer_report("random.csv") == "pipeline"  # default = the funnel
+    # VWLR sells offtake agreements, not orders — read as committed quantity
+    assert infer_report("VWLR Supply Agreements 26-27.csv") == "agreements"
+    assert infer_report("coal_offtake_contract.xlsx") == "agreements"
 
 
 def test_to_number_tolerant():
@@ -83,6 +86,36 @@ def test_mapping_needed_when_file_but_no_mapping(monkeypatch, tmp_path):
     assert vwlr["gutter"] == "MAP?"
     assert "mapping needed" in vwlr["meta"] and "Party Name" in vwlr["meta"]
     assert r.data["mapping_needed"] == 1
+
+
+def test_agreements_summarized_by_quantity(monkeypatch, tmp_path):
+    from datetime import date, timedelta
+    drop = tmp_path / "drop" / "vwlr"
+    drop.mkdir(parents=True)
+    soon = (date.today() + timedelta(days=10)).isoformat()
+    (drop / "vwlr_supply_agreements.csv").write_text(
+        "Party,Qty,Delivered,PeriodEnd\n"
+        f"NTPC Korba,50000,20000,{soon}\n"
+        "Trader X,30000,30000,2027-01-01\n",
+        encoding="utf-8",
+    )
+    maps = tmp_path / "maps"
+    maps.mkdir()
+    (maps / "vwlr.yaml").write_text(
+        "columns:\n  entity: {literal: VWLR}\n  party: Party\n  qty: Qty\n"
+        "  delivered_qty: Delivered\n  period_end: PeriodEnd\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LIFEOS_ERP_DIR", str(tmp_path / "drop"))
+    monkeypatch.setenv("LIFEOS_MAPPINGS_DIR", str(maps))
+    from lifeos.sources import erp_sales
+    r = erp_sales.fetch()
+    vwlr = next(x for x in r.extra["rows"] if x["text"] == "VWLR")
+    assert vwlr["gutter"] == "LIVE"
+    assert "2 agreements" in vwlr["meta"]
+    assert "contracted 80,000" in vwlr["meta"]
+    assert "delivered 50,000" in vwlr["meta"] and "bal 30,000" in vwlr["meta"]
+    assert "1 expiring ≤30d" in vwlr["meta"]  # only NTPC's period ends within 30d
 
 
 def test_live_when_file_and_mapping(monkeypatch, tmp_path):

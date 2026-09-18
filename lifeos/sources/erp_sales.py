@@ -17,9 +17,11 @@ the heartbeat summary counts fed vs owed. Files land in a per-entity drop folder
 from __future__ import annotations
 
 import os
+from datetime import date, datetime
 from pathlib import Path
 
 from . import BLOCKED, OK, Result
+from ..config import IST
 from ..ingest import apply_mapping, load_mapping, read_table, to_number
 from ..ingest.entities import ENTITIES
 
@@ -53,6 +55,53 @@ def _fmt_inr(x: float) -> str:
     return f"₹{x:,.0f}"
 
 
+def _fmt_qty(x: float) -> str:
+    return f"{x:,.0f}"
+
+
+def _pdate(s) -> date | None:
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except ValueError:
+        return None
+
+
+def _summarize_report(report: str, rows: list) -> str:
+    """One short summary per report file. Agreements are summarised by committed
+    QUANTITY (contracted / delivered / balance / expiring) — VWLR sells offtake
+    agreements, not orders — while the other reports are summarised by value."""
+    if not rows:
+        return ""
+    if report == "agreements":
+        contracted = sum(to_number(r.get("qty")) for r in rows)
+        delivered = sum(to_number(r.get("delivered_qty")) for r in rows)
+        balance = sum(to_number(r.get("balance_qty")) for r in rows)
+        if not balance and contracted:
+            balance = contracted - delivered
+        value = sum(to_number(r.get("amount")) for r in rows)
+        today = datetime.now(IST).date()
+        expiring = 0
+        for r in rows:
+            d = _pdate(r.get("period_end") or r.get("due_date"))
+            if d is not None and 0 <= (d - today).days <= 30:
+                expiring += 1
+        s = f"{len(rows)} agreements"
+        if contracted:
+            s += f" · contracted {_fmt_qty(contracted)}"
+        if delivered:
+            s += f" · delivered {_fmt_qty(delivered)} · bal {_fmt_qty(balance)}"
+        if value:
+            s += f" · {_fmt_inr(value)}"
+        if expiring:
+            s += f" · {expiring} expiring ≤30d"
+        return s
+    field = "outstanding" if report == "receivables" else "amount"
+    total = sum(to_number(r.get(field) or r.get("gross") or r.get("amount")) for r in rows)
+    return f"{report} {_fmt_inr(total)}"
+
+
 def _entity_row(root: Path, entity) -> dict:
     files = _entity_files(root, entity.slug)
     if not files:
@@ -72,21 +121,17 @@ def _entity_row(root: Path, entity) -> dict:
             "_state": "mapping_needed",
         }
 
-    # Live: total each report kind across the entity's files.
-    totals: dict[str, float] = {}
+    # Live: summarise each report file (agreements by quantity, others by value).
+    summaries: list[str] = []
     for f in files:
         table = read_table(f)
         rows = apply_mapping(table, mapping)
-        field = "outstanding" if table.report == "receivables" else "amount"
-        total = sum(to_number(r.get(field) or r.get("gross") or r.get("amount")) for r in rows)
-        totals[table.report] = totals.get(table.report, 0.0) + total
-    parts = []
-    for kind in ("pipeline", "invoiced", "receivables"):
-        if kind in totals:
-            parts.append(f"{kind} {_fmt_inr(totals[kind])}")
+        s = _summarize_report(table.report, rows)
+        if s:
+            summaries.append(s)
     return {
         "gutter": "LIVE", "severity": "alive", "text": entity.label,
-        "meta": " · ".join(parts) or "file mapped, 0 rows", "_state": "live",
+        "meta": " · ".join(summaries) or "file mapped, 0 rows", "_state": "live",
     }
 
 

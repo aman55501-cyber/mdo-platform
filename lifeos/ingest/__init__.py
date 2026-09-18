@@ -24,13 +24,18 @@ from typing import Any, Optional
 CANONICAL_FIELDS = [
     "entity", "date", "doctype", "docno", "party", "item", "qty", "rate",
     "amount", "tax", "gross", "status", "owner", "due_date", "outstanding",
+    # contract / agreement fields (VWLR offtake agreements, real-estate bookings, …)
+    "period_start", "period_end", "delivered_qty", "balance_qty",
 ]
 
-# report kinds and the filename tokens that identify them
+# report kinds and the filename tokens that identify them. Order matters — the first
+# matching token wins. `agreements` is checked before `pipeline` so a coal offtake
+# "agreement"/"contract" file is read as committed quantity, not as an order book.
 REPORT_TOKENS = {
-    "pipeline": ("order", "pending", "pipeline", "quotation", "quote"),
-    "invoiced": ("sales", "register", "invoice", "billed"),
+    "agreements": ("agreement", "contract", "offtake", "supply", "allotment", "booking", "linkage"),
+    "invoiced": ("sales", "register", "invoice", "billed", "dispatch", "despatch"),
     "receivables": ("outstanding", "receivable", "bills", "debtor", "ageing", "aging"),
+    "pipeline": ("order", "pending", "pipeline", "quotation", "quote"),
 }
 
 
