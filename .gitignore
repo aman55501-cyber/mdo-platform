@@ -19,6 +19,9 @@ venv/
 *.db
 *.sqlite
 
+# LIFEOS runtime data — ERP exports are data, never source (mappings ARE source)
+lifeos/data/
+
 # Node / Next.js
 mdo-app/node_modules/
 mdo-app/.next/

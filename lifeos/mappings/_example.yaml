@@ -1,0 +1,23 @@
+# Example ERP column mapping. Copy this to <slug>.yaml (e.g. vwlr.yaml) and set the
+# right-hand values to that entity's actual export headers. Once a mapping exists,
+# the erp_sales panel flips that entity from "MAP?" to "LIVE".
+#
+# Left = LIFEOS canonical field. Right = the header in that ERP's CSV/XLSX, OR a
+# fixed value via {literal: VALUE} (use for `entity` when the file omits it).
+#
+# Only fill the fields the export actually has; leave the rest out. `amount` (or
+# `gross`) drives pipeline/invoiced totals; `outstanding` drives receivables.
+columns:
+  entity: {literal: "VWLR"}
+  date: "Voucher Date"
+  doctype: "Voucher Type"
+  docno: "Voucher No"
+  party: "Party Name"
+  item: "Item"
+  qty: "Quantity"
+  rate: "Rate"
+  amount: "Amount"
+  status: "Status"
+  owner: "Salesperson"
+  due_date: "Due Date"
+  outstanding: "Pending Amount"
