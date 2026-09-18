@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS snapshots (
     html     TEXT NOT NULL,
     built_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS nudges (
+    fingerprint TEXT PRIMARY KEY,     -- stable key for the underlying issue
+    created_at  TEXT NOT NULL         -- when we last filed this nudge to the Inbox
+);
 """
 
 
@@ -174,4 +178,30 @@ def recent_runs(limit: int = 20) -> list[sqlite3.Row]:
     with _conn() as c:
         return list(
             c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        )
+
+
+# ── nudges (evolving loop de-dup) ─────────────────────────────────────────────
+def nudge_filed_recently(fingerprint: str, within_days: int) -> bool:
+    """True if this exact nudge was already filed within the window — so the
+    proactive loop doesn't recreate the same Inbox row every morning."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT created_at FROM nudges WHERE fingerprint = ?", (fingerprint,)
+        ).fetchone()
+    if not row:
+        return False
+    try:
+        last = datetime.fromisoformat(row["created_at"])
+    except ValueError:
+        return False
+    return (now_ist() - last).days < within_days
+
+
+def record_nudge(fingerprint: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO nudges (fingerprint, created_at) VALUES (?, ?) "
+            "ON CONFLICT(fingerprint) DO UPDATE SET created_at=excluded.created_at",
+            (fingerprint, _iso(now_ist())),
         )

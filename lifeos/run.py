@@ -87,6 +87,15 @@ def execute_run(trigger: str = "manual") -> dict:
         status = publish_mod.publish(results, ok, unreachable)
         db.record_source(run_id, "notion_publish", "ok",
                          f"{status['today']}; {status['archive']}", 0)
+
+        # Proactive evolving loop: draft nudges into the Inbox — only on the
+        # scheduled morning run, so manual runs never file to Notion. Draft-only.
+        if trigger == "scheduled":
+            from . import nudge as nudge_mod
+            report = nudge_mod.file_nudges(results)
+            db.record_source(run_id, "nudges", "ok",
+                             f"filed {report['filed']}, skipped {report['skipped']} "
+                             f"of {report['candidates']} candidates", 0)
     else:
         db.record_source(run_id, "notion_publish", "blocked", "skipped — no NOTION_TOKEN", 0)
 
