@@ -48,7 +48,7 @@ def query_data_source(
 
     Tries the classic databases endpoint, then the data_sources endpoint. Any HTTP
     or network failure raises NotionError (caught upstream by guarded())."""
-    token = _token()
+    bearer = _token()
     body: dict[str, Any] = {"page_size": page_size}
     if filter_:
         body["filter"] = filter_
@@ -62,7 +62,7 @@ def query_data_source(
     last_error: Exception | None = None
     for path, version in attempts:
         try:
-            return _query_paginated(path, version, token, body)
+            return _query_paginated(path, version, bearer, body)
         except httpx.HTTPStatusError as exc:
             # 404 (wrong endpoint for this API version) -> try the next style.
             if exc.response.status_code in (400, 404):
@@ -72,9 +72,9 @@ def query_data_source(
     raise NotionError(f"query failed for {data_source_id}: {last_error}")
 
 
-def _query_paginated(path: str, version: str, token: str, body: dict) -> list[dict]:
+def _query_paginated(path: str, version: str, bearer: str, body: dict) -> list[dict]:
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {bearer}",
         "Notion-Version": version,
         "Content-Type": "application/json",
     }

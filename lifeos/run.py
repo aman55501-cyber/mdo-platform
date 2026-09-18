@@ -19,21 +19,26 @@ from . import db
 from .config import IST
 from .render import render_console
 from .sources import Result, guarded
-from .sources import self_check
+from .sources import self_check  # kept importable; superseded in the registry by task_health
 from .sources import deal_room
 from .sources import erp_sales
 from .sources import tenders
+from .sources import gmail_mail
+from .sources import calendar_today
+from .sources import task_health
 
 # The source registry. Each entry is (name, fetch_callable); order here is display
-# order on the page. Sales (ERP exports) leads — it is the majority focus, with the
-# VWLR tender funnel next. Phases 2+ append Gmail, Calendar, scheduled-task health
-# and brokers.
+# order on the page. Sales (ERP exports) leads — it is the majority focus — then the
+# VWLR tender funnel, the deal room, the mail/calendar feed, and finally the console's
+# own scheduled-task liveness table. Brokers fold in at Phase 5.
 SOURCES: list[tuple[str, callable]] = [
     ("erp_sales", erp_sales.fetch),
     ("tenders", tenders.fetch),
     ("deal_room_actions", deal_room.fetch_actions),
     ("deal_room_counterparties", deal_room.fetch_counterparties),
-    ("self_check", self_check.fetch),
+    ("mail", gmail_mail.fetch),
+    ("calendar", calendar_today.fetch),
+    ("task_health", task_health.fetch),
 ]
 
 
