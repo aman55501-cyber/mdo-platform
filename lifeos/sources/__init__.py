@@ -17,6 +17,8 @@ Status vocabulary (also used by the runs table and the page's severity stripes):
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -66,8 +68,12 @@ def guarded(name: str, fetch: Callable[[], Result]) -> Result:
         result.name = result.name or name
     except Exception as exc:  # noqa: BLE001 — fault isolation is the point
         reason = f"{type(exc).__name__}: {exc}".strip().replace("\n", " ")
-        # keep the reason short; full trace only to stderr for the operator
-        traceback.print_exc()
+        # One concise operator line by default; full trace only with LIFEOS_DEBUG=1
+        # (so a handful of expected UNREACHABLE sources don't flood the logs).
+        if os.environ.get("LIFEOS_DEBUG", "").strip().lower() in ("1", "true", "yes", "on"):
+            traceback.print_exc()
+        else:
+            print(f"[lifeos] source '{name}' unreachable: {reason[:200]}", file=sys.stderr)
         result = Result(
             name=name,
             status=UNREACHABLE,
