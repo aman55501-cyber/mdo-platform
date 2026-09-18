@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements_lifeos.txt ./
+RUN pip install --no-cache-dir -r requirements_lifeos.txt
+
+COPY lifeos/ ./lifeos/
+
+# /data is mounted as a Railway persistent volume — SQLite run history lives here
+ENV LIFEOS_DB_PATH=/data/lifeos.db
+
+# Railway injects PORT; the app reads it (falls back to LIFEOS_PORT then 8600)
+EXPOSE 8600
+
+CMD ["python", "-m", "lifeos"]

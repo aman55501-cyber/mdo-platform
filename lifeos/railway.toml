@@ -1,0 +1,13 @@
+# Railway service config for LIFEOS. Point a Railway service at this file
+# (Settings -> Config-as-code path = lifeos/railway.toml) or set the build to use
+# Dockerfile.lifeos. Attach a volume mounted at /data so the run history survives
+# restarts. Set LIFEOS_USER and LIFEOS_PASSWORD in the service's Variables — the
+# app refuses to boot without them.
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.lifeos"
+
+[deploy]
+restartPolicyType = "always"
+restartPolicyMaxRetries = 10
+healthcheckPath = "/healthz"

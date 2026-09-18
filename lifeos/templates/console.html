@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LIFEOS</title>
+<style>
+/* ── tokens (brief's palette) ─────────────────────────────────────────────── */
+:root{
+  --ground:#FFFFFF; --surface:#FFFFFF; --surface-2:#F4F6F8; --line:#D6DCE3;
+  --ink:#11161D; --ink-2:#47515D; --ink-3:#6C7680;
+  --accent:#1C3D6B; --brass:#8A6926;
+  --critical:#A62E22; --warning:#8D6410; --alive:#1F6B45; --quiet:#6C7680;
+  --fh:'Archivo',system-ui,sans-serif;
+  --fb:'IBM Plex Sans',system-ui,sans-serif;
+  --fm:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1116; --surface:#141920; --surface-2:#1D232B; --line:#2A323C;
+    --ink:#E8ECF1; --ink-2:#A6B0BB; --ink-3:#7B858F;
+    --accent:#7FA9DC; --brass:#C49B50;
+    --critical:#E8756A; --warning:#DCA946; --alive:#5FBA8B; --quiet:#8A939E;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1116; --surface:#141920; --surface-2:#1D232B; --line:#2A323C;
+  --ink:#E8ECF1; --ink-2:#A6B0BB; --ink-3:#7B858F;
+  --accent:#7FA9DC; --brass:#C49B50;
+  --critical:#E8756A; --warning:#DCA946; --alive:#5FBA8B; --quiet:#8A939E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ground);color:var(--ink)}
+body{font-family:var(--fb);font-size:15px;line-height:1.5;
+  padding:0 16px calc(96px + env(safe-area-inset-bottom));
+  -webkit-text-size-adjust:100%;font-variant-numeric:tabular-nums}
+.wrap{max-width:720px;margin:0 auto}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+.lbl{font-family:var(--fh);text-transform:uppercase;letter-spacing:.10em;
+  font-size:11px;font-weight:600;color:var(--ink-3)}
+
+/* header + heartbeat */
+.top{position:sticky;top:0;background:var(--ground);z-index:5;
+  padding:calc(env(safe-area-inset-top) + 14px) 0 10px;border-bottom:1px solid var(--line)}
+.brand{font-family:var(--fh);font-weight:700;letter-spacing:.16em;font-size:16px}
+.brand b{color:var(--accent);font-weight:700}
+.beat{font-family:var(--fm);font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.beat .ok{color:var(--alive)} .beat .bad{color:var(--critical)}
+
+/* banner for an incomplete previous run — silent death made loud */
+.banner{border:1px solid var(--critical);border-left-width:4px;
+  background:var(--surface-2);color:var(--ink);
+  padding:10px 12px;margin:14px 0;border-radius:5px;font-size:13.5px}
+.banner .lbl{color:var(--critical)}
+
+/* source lines — every one in words, never a blank div */
+.panel{border:1px solid var(--line);border-left:4px solid var(--quiet);
+  background:var(--surface);border-radius:5px;padding:12px 14px;margin:10px 0}
+.panel.ok{border-left-color:var(--alive)}
+.panel.nil{border-left-color:var(--quiet)}
+.panel.blocked{border-left-color:var(--warning)}
+.panel.unreachable{border-left-color:var(--critical)}
+.panel h3{font-family:var(--fh);font-size:12px;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--ink-2);font-weight:600;
+  display:flex;justify-content:space-between;gap:10px}
+.panel h3 .st{font-family:var(--fm);font-size:10.5px;letter-spacing:.04em}
+.panel.ok h3 .st{color:var(--alive)}
+.panel.blocked h3 .st{color:var(--warning)}
+.panel.unreachable h3 .st{color:var(--critical)}
+.panel.nil h3 .st{color:var(--quiet)}
+.panel p{margin-top:6px;font-size:14px;color:var(--ink)}
+.panel .meta{margin-top:6px;font-family:var(--fm);font-size:11px;color:var(--ink-3)}
+
+.note{margin:18px 0;color:var(--ink-3);font-size:12.5px;line-height:1.7}
+.note code{font-family:var(--fm)}
+
+/* ask bar — fixed, thumb-reachable, above the safe area (wired in Phase 4) */
+.ask{position:fixed;left:0;right:0;bottom:0;background:var(--ground);
+  border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:6}
+.ask form{max-width:720px;margin:0 auto;display:flex;gap:8px}
+.ask input{flex:1;min-width:0;font-family:var(--fb);font-size:15px;color:var(--ink);
+  background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:11px 12px}
+.ask button{font-family:var(--fh);font-weight:600;font-size:13px;letter-spacing:.04em;
+  color:#fff;background:var(--accent);border:none;border-radius:5px;padding:0 16px;cursor:pointer}
+.ask .hint{max-width:720px;margin:6px auto 0;font-size:11px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">LIFE<b>·</b>OS</div>
+    <div class="beat mono">
+      {{ heartbeat.date }} · {{ heartbeat.time }} ·
+      <span class="ok">{{ heartbeat.ok }} OK</span> ·
+      <span class="{{ 'bad' if heartbeat.unreachable else 'ok' }}">{{ heartbeat.unreachable }} unreachable</span>
+      · {{ heartbeat.total }} sources · {{ heartbeat.trigger }} run {{ heartbeat.started }}
+    </div>
+  </div>
+
+  {% if previous_incomplete %}
+  <div class="banner">
+    <div class="lbl">Previous run did not complete</div>
+    A run started and never finished — it left a row with no finish time. Treat the
+    figures below as this run's; the last one died mid-way and was not published.
+  </div>
+  {% endif %}
+
+  {% for r in results %}
+  <div class="panel {{ r.status }}">
+    <h3>{{ r.name }}<span class="st">{{ r.status | upper }}</span></h3>
+    {% if r.status == 'unreachable' %}
+      <p>UNREACHABLE — {{ r.name }} — {{ r.reason }}</p>
+    {% else %}
+      <p>{{ r.summary }}</p>
+    {% endif %}
+    {% if r.ms %}<div class="meta">{{ r.ms }} ms</div>{% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="note">
+    <span class="lbl">Phase 0</span> — this is the LIFEOS spine: fails-loud config,
+    run history that makes silent death visible, HTTP Basic on every route, and one
+    rendered snapshot. Sales-first tabs and the real sources (Notion, Gmail,
+    Calendar, tenders, brokers, per-entity ERP exports) arrive in the next phases.
+    Ask bar below is scaffolded; it answers from Phase 4.
+  </div>
+
+</div>
+
+<div class="ask">
+  <form onsubmit="return false;">
+    <input type="text" placeholder="Ask about today —  or  capture: / remind:  (wired in Phase 4)" disabled>
+    <button type="submit" disabled>Ask</button>
+  </form>
+  <div class="hint mono">/ask streams from your own server with today's state injected — nothing leaves that isn't already on this page.</div>
+</div>
+</body>
+</html>
