@@ -26,19 +26,27 @@ from .sources import tenders
 from .sources import gmail_mail
 from .sources import calendar_today
 from .sources import task_health
+from .sources import notion_ops
+from .sources import frontier
 
-# The source registry. Each entry is (name, fetch_callable); order here is display
-# order on the page. Sales (ERP exports) leads — it is the majority focus — then the
-# VWLR tender funnel, the deal room, the mail/calendar feed, and finally the console's
-# own scheduled-task liveness table. Brokers fold in at Phase 5.
+# The source registry. Each entry is (name, fetch_callable). The page groups these
+# into tabs (see render.TAB_OF); this list is just what the run fetches. Brokers
+# fold in at Phase 5.
 SOURCES: list[tuple[str, callable]] = [
     ("erp_sales", erp_sales.fetch),
     ("tenders", tenders.fetch),
+    ("hotel_ans_pms", frontier.fetch_hotel_pms),
     ("deal_room_actions", deal_room.fetch_actions),
     ("deal_room_counterparties", deal_room.fetch_counterparties),
+    ("compliance", notion_ops.fetch_compliance),
+    ("family", notion_ops.fetch_family),
     ("mail", gmail_mail.fetch),
     ("calendar", calendar_today.fetch),
     ("task_health", task_health.fetch),
+    ("rnd", frontier.fetch_rnd),
+    ("hiring", frontier.fetch_hiring),
+    ("expansion", frontier.fetch_expansion),
+    ("usa", frontier.fetch_usa),
 ]
 
 
