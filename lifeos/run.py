@@ -22,12 +22,15 @@ from .sources import Result, guarded
 from .sources import self_check
 from .sources import deal_room
 from .sources import erp_sales
+from .sources import tenders
 
 # The source registry. Each entry is (name, fetch_callable); order here is display
-# order on the page. Sales (ERP exports) leads — it is the majority focus. Phases 2+
-# append Gmail, Calendar, Supabase tenders, scheduled-task health and brokers.
+# order on the page. Sales (ERP exports) leads — it is the majority focus, with the
+# VWLR tender funnel next. Phases 2+ append Gmail, Calendar, scheduled-task health
+# and brokers.
 SOURCES: list[tuple[str, callable]] = [
     ("erp_sales", erp_sales.fetch),
+    ("tenders", tenders.fetch),
     ("deal_room_actions", deal_room.fetch_actions),
     ("deal_room_counterparties", deal_room.fetch_counterparties),
     ("self_check", self_check.fetch),
