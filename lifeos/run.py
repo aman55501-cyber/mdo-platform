@@ -78,6 +78,18 @@ def execute_run(trigger: str = "manual") -> dict:
         trigger=trigger,
     )
     db.save_snapshot(run_id, html)
+
+    # Publish to Notion (Today + Archive) — the console's second home. Best-effort
+    # and only when a token exists; never blocks the HTML snapshot (rule 3).
+    from .config import has
+    if has("NOTION_TOKEN"):
+        from . import publish as publish_mod
+        status = publish_mod.publish(results, ok, unreachable)
+        db.record_source(run_id, "notion_publish", "ok",
+                         f"{status['today']}; {status['archive']}", 0)
+    else:
+        db.record_source(run_id, "notion_publish", "blocked", "skipped — no NOTION_TOKEN", 0)
+
     db.finish_run(run_id, ok, unreachable, note=f"{len(results)} sources")
 
     return {

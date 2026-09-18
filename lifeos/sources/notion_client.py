@@ -72,6 +72,101 @@ def query_data_source(
     raise NotionError(f"query failed for {data_source_id}: {last_error}")
 
 
+def create_page(data_source_id: str, properties: dict) -> dict:
+    """Create a page (row) in a data source. Used for the Inbox capture writes —
+    the only writes LIFEOS makes, and only ones the user initiated (rule 4). Tries
+    the classic parent shape then the data_source shape."""
+    bearer = _token()
+    attempts = [
+        ({"database_id": data_source_id}, _CLASSIC_VERSION),
+        ({"type": "data_source_id", "data_source_id": data_source_id}, _DATASOURCE_VERSION),
+    ]
+    last_error: Exception | None = None
+    for parent, version in attempts:
+        headers = {
+            "Authorization": f"Bearer {bearer}",
+            "Notion-Version": version,
+            "Content-Type": "application/json",
+        }
+        try:
+            with httpx.Client(base_url=_BASE, timeout=30) as client:
+                resp = client.post(
+                    "/v1/pages", headers=headers,
+                    json={"parent": parent, "properties": properties},
+                )
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 404):
+                last_error = exc
+                continue
+            raise NotionError(f"{exc.response.status_code} create_page") from exc
+    raise NotionError(f"create_page failed for {data_source_id}: {last_error}")
+
+
+# property builders for writes
+def title_prop(text_value: str) -> dict:
+    return {"title": [{"text": {"content": text_value}}]}
+
+
+def text_prop(text_value: str) -> dict:
+    return {"rich_text": [{"text": {"content": text_value}}]}
+
+
+def select_prop(name: str) -> dict:
+    return {"select": {"name": name}}
+
+
+def _headers(bearer: str, version: str = _CLASSIC_VERSION) -> dict:
+    return {"Authorization": f"Bearer {bearer}", "Notion-Version": version,
+            "Content-Type": "application/json"}
+
+
+def list_children(block_id: str) -> list[dict]:
+    bearer = _token()
+    out: list[dict] = []
+    cursor = None
+    with httpx.Client(base_url=_BASE, timeout=30) as client:
+        while True:
+            params = {"page_size": 100}
+            if cursor:
+                params["start_cursor"] = cursor
+            resp = client.get(f"/v1/blocks/{block_id}/children", headers=_headers(bearer), params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            out.extend(data.get("results", []))
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+    return out
+
+
+def append_children(block_id: str, children: list[dict]) -> dict:
+    bearer = _token()
+    with httpx.Client(base_url=_BASE, timeout=30) as client:
+        resp = client.patch(f"/v1/blocks/{block_id}/children", headers=_headers(bearer),
+                            json={"children": children})
+        resp.raise_for_status()
+        return resp.json()
+
+
+def delete_block(block_id: str) -> None:
+    bearer = _token()
+    with httpx.Client(base_url=_BASE, timeout=30) as client:
+        resp = client.delete(f"/v1/blocks/{block_id}", headers=_headers(bearer))
+        resp.raise_for_status()
+
+
+def paragraph_block(text_value: str) -> dict:
+    return {"object": "block", "type": "paragraph",
+            "paragraph": {"rich_text": [{"type": "text", "text": {"content": text_value[:1900]}}]}}
+
+
+def heading_block(text_value: str) -> dict:
+    return {"object": "block", "type": "heading_3",
+            "heading_3": {"rich_text": [{"type": "text", "text": {"content": text_value[:1900]}}]}}
+
+
 def _query_paginated(path: str, version: str, bearer: str, body: dict) -> list[dict]:
     headers = {
         "Authorization": f"Bearer {bearer}",

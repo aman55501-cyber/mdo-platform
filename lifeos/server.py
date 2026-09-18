@@ -15,10 +15,11 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 from . import __version__, db
+from . import ask as ask_mod
 from .auth import BasicAuthMiddleware
 from .config import IST, RUN_HOUR, RUN_MINUTE, auth_credentials, port
 from .run import execute_run
@@ -86,6 +87,30 @@ def run_now() -> JSONResponse:
     """Trigger a run immediately (for testing and acceptance checks)."""
     summary = execute_run(trigger="manual")
     return JSONResponse(summary)
+
+
+@app.post("/ask")
+async def ask(request: Request):
+    """The ask bar. capture:/remind: writes to the Inbox and confirms (JSON);
+    anything else streams the model's answer. Behind the same Basic gate."""
+    body = await request.json()
+    question = (body.get("q") or body.get("question") or "").strip()
+    if not question:
+        return JSONResponse({"ok": False, "message": "empty question"}, status_code=400)
+
+    capture = ask_mod.parse_capture(question)
+    if capture:
+        kind, text = capture
+        try:
+            message = ask_mod.write_capture(kind, text)
+            return JSONResponse({"ok": True, "captured": True, "message": message})
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"ok": False, "captured": True, "message": f"capture failed: {exc}"},
+                status_code=502,
+            )
+
+    return StreamingResponse(ask_mod.stream_answer(question), media_type="text/plain")
 
 
 @app.get("/runs.json")

@@ -112,6 +112,10 @@ body{font-family:var(--fb);font-size:15px;line-height:1.5;
 .ask button{font-family:var(--fh);font-weight:600;font-size:13px;color:#fff;background:var(--accent);
   border:none;border-radius:5px;padding:0 16px;cursor:pointer}
 .ask .hint{max-width:720px;margin:6px auto 0;font-size:11px;color:var(--ink-3)}
+.ask .answer{max-width:720px;margin:0 auto 8px;max-height:40vh;overflow-y:auto;
+  font-size:13px;line-height:1.5;color:var(--ink);background:var(--surface-2);
+  border:1px solid var(--line);border-radius:5px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ask .answer.err{color:var(--critical)}
 </style>
 </head>
 <body>
@@ -190,11 +194,13 @@ body{font-family:var(--fb);font-size:15px;line-height:1.5;
 </div>
 
 <div class="ask">
-  <form onsubmit="return false;">
-    <input type="text" placeholder="Ask about today —  or  capture: / remind:  (wired in Phase 4)" disabled>
-    <button type="submit" disabled>Ask</button>
+  <div class="answer mono" id="answer" hidden></div>
+  <form id="askform">
+    <input id="askq" type="text" autocomplete="off"
+           placeholder="Ask about today —  or  capture: / remind:">
+    <button type="submit" id="askbtn">Ask</button>
   </form>
-  <div class="hint mono">/ask streams from your own server with today's state injected — nothing leaves that isn't already on this page.</div>
+  <div class="hint mono">Streams from your own server with today's state injected. <code>capture:</code> / <code>remind:</code> file to your Inbox.</div>
 </div>
 
 <script>
@@ -207,6 +213,35 @@ body{font-family:var(--fb);font-size:15px;line-height:1.5;
   }
   tabs.forEach(function(b){ b.addEventListener('click', function(){ show(b.dataset.tab); }); });
   try{ var saved = localStorage.getItem('lifeos_tab'); if(saved && document.getElementById('tab-'+saved)) show(saved); }catch(e){}
+})();
+
+(function(){
+  var form = document.getElementById('askform');
+  var input = document.getElementById('askq');
+  var btn = document.getElementById('askbtn');
+  var out = document.getElementById('answer');
+  if(!form) return;
+  function setOut(text, isErr){ out.hidden = false; out.textContent = text; out.classList.toggle('err', !!isErr); }
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    var q = input.value.trim(); if(!q) return;
+    btn.disabled = true; input.disabled = true; setOut('…', false);
+    try{
+      var resp = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({q:q})});
+      var ctype = resp.headers.get('content-type') || '';
+      if(ctype.indexOf('application/json') !== -1){
+        var j = await resp.json(); setOut(j.message || JSON.stringify(j), !j.ok);
+        if(j.ok && j.captured) input.value = '';
+      } else {
+        // stream the model answer
+        var reader = resp.body.getReader(), dec = new TextDecoder(), acc = '';
+        setOut('', false);
+        while(true){ var r = await reader.read(); if(r.done) break; acc += dec.decode(r.value, {stream:true}); out.textContent = acc; out.scrollTop = out.scrollHeight; }
+        input.value = '';
+      }
+    }catch(err){ setOut('ask failed: ' + err, true); }
+    finally{ btn.disabled = false; input.disabled = false; input.focus(); }
+  });
 })();
 </script>
 </body>
