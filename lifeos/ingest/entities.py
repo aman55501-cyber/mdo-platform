@@ -22,15 +22,17 @@ class Entity:
     focus: bool = True  # part of the "other entities" sales focus
 
 
-# Order here is display order in the Sales tab. Hotel ANS is last because its sales
-# come from the IDS Next PMS (a separate blocked source), not an ERP export.
+# Order here is display order in the Sales tab. Each entity's sales shape (confirmed
+# with Aman): VWLR = coal supply agreements/offtake (committed quantity); the Dadu /
+# Raigarh entities = real-estate bookings / agreements-to-sell (value); Rukmani =
+# infra work contracts; Hotel ANS = IDS Next PMS, not an ERP export. Aditi Investments
+# is a portfolio (broker side), NOT a sales entity, so it is intentionally absent.
 ENTITIES: list[Entity] = [
-    Entity("vwlr", "VWLR", "site ERP — VWLR (coal washery / logistics)"),
-    Entity("dadu_developers", "Dadu Developers", "site ERP — Dadu Developers"),
-    Entity("dadu_builders", "Dadu Builders", "site ERP — Dadu Builders"),
-    Entity("raigarh_land", "Raigarh Land Venture", "site ERP — Raigarh Land Venture"),
-    Entity("rukmani_infra", "Rukmani Infrastructure", "site ERP — Rukmani Infrastructure"),
-    Entity("aditi_investments", "Aditi Investments", "site ERP — Aditi Investments"),
+    Entity("vwlr", "VWLR", "site ERP — VWLR (coal supply agreements)"),
+    Entity("dadu_developers", "Dadu Developers", "site ERP — Dadu Developers (bookings)"),
+    Entity("dadu_builders", "Dadu Builders", "site ERP — Dadu Builders (bookings)"),
+    Entity("raigarh_land", "Raigarh Land Venture", "site ERP — Raigarh Land Venture (bookings)"),
+    Entity("rukmani_infra", "Rukmani Infrastructure", "site ERP — Rukmani Infrastructure (work contracts)"),
     Entity("hotel_ans", "Hotel ANS", "IDS Next PMS export (GM Satya)", focus=False),
 ]
 
