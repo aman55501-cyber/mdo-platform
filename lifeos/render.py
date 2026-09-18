@@ -29,7 +29,7 @@ TAB_OF = {
     "deal_room_actions": "home", "calendar": "home", "family": "home",
     "erp_sales": "sales", "tenders": "sales", "hotel_ans_pms": "sales",
     "deal_room_counterparties": "operations", "compliance": "operations",
-    "mail": "operations", "task_health": "operations",
+    "mail": "operations", "broker_logins": "operations", "task_health": "operations",
     "rnd": "growth", "hiring": "growth", "expansion": "growth", "usa": "growth",
 }
 TABS = [("home", "Home"), ("sales", "Sales"), ("operations", "Operations"), ("growth", "Growth")]

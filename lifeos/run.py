@@ -28,6 +28,7 @@ from .sources import calendar_today
 from .sources import task_health
 from .sources import notion_ops
 from .sources import frontier
+from .sources import broker_logins
 
 # The source registry. Each entry is (name, fetch_callable). The page groups these
 # into tabs (see render.TAB_OF); this list is just what the run fetches. Brokers
@@ -42,6 +43,7 @@ SOURCES: list[tuple[str, callable]] = [
     ("family", notion_ops.fetch_family),
     ("mail", gmail_mail.fetch),
     ("calendar", calendar_today.fetch),
+    ("broker_logins", broker_logins.fetch),
     ("task_health", task_health.fetch),
     ("rnd", frontier.fetch_rnd),
     ("hiring", frontier.fetch_hiring),

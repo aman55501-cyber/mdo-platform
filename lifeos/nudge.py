@@ -12,7 +12,10 @@ re-filed within WITHIN_DAYS, so the Inbox doesn't fill with repeats every mornin
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from . import db
+from .config import IST
 from .sources import Result
 from .sources import notion_client as nc
 
@@ -56,6 +59,15 @@ def build_nudges(results: list[Result]) -> list[dict]:
             if str(row.get("gutter", "")).startswith("+"):  # overdue
                 step = row.get("text", "")
                 add(f"Overdue, awaiting your click: {step}", row.get("meta", ""), f"overdue_action:{step}")
+
+    # HDFC accounts needing today's phone login (date-stamped so it recurs daily)
+    bl = named.get("broker_logins")
+    if bl and not bl.unreachable and bl.extra:
+        today = datetime.now(IST).date().isoformat()
+        for row in bl.extra.get("rows", []):
+            if row.get("gutter") == "LOGIN":
+                who = row.get("text", "")
+                add(f"HDFC login needed today: {who}", row.get("meta", ""), f"hdfc_login:{who}:{today}")
 
     # Compliance due soon (critical/warning rows only)
     comp = named.get("compliance")
