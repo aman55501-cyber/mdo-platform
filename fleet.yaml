@@ -5,10 +5,10 @@
 cos:
   name: Chief of Staff
   runs_on: claude-code-routine        # cloud; arms only after Aman's "go"
-  cadence: "daily 06:30 IST + on demand"
+  cadence: "daily 06:22 IST + on demand"
   model: claude-fable-5-1
   reports_via: POST /api/agent/report cadence=cos
-  command: "Claude Code Routine 'Chief of Staff morning run' (fires a fresh cloud session)"
+  command: "Claude Code Routine 'Chief of Staff morning run' — CRON_TZ=Asia/Kolkata 22 6 * * * (fresh cloud session each fire)"
   reads: [Objectives sheet (Claude Doc), agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
   enabled: true
 
