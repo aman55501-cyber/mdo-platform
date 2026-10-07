@@ -139,7 +139,7 @@
   "compliance": {
     "label": "Compliance & Legal",
     "icon": "⚖",
-    "children": ["ozone_steel", "rashi_steel", "group_filings"]
+    "children": ["ozone_steel", "group_filings"]
   },
   "ozone_steel": {
     "label": "🔴 Ozone Steel & Power",
@@ -148,15 +148,6 @@
       ["§454(8) RISK — NO ITR PDF filed",  "CRITICAL — ROC strike-off risk"],
       ["Action: File ITR PDF via CA",       "CA Vimal Agrawal 9755220259"],
       ["Status: UNRESOLVED Apr 2026",       "Immediate action required"]
-    ]
-  },
-  "rashi_steel": {
-    "label": "🔴 Rashi Steel",
-    "icon": "🔴",
-    "commands": [
-      ["§454(8) CJM Bilaspur — Case 3616/2026", "ACTIVE court case"],
-      ["Court: Chief Judicial Magistrate, Bilaspur CG", ""],
-      ["Action: Legal counsel + CA response",    "CA: Vimal Agrawal 9755220259"]
     ]
   },
   "group_filings": {

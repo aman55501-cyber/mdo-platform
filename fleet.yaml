@@ -1,0 +1,83 @@
+# fleet.yaml — every bot that exists, and why. Owner of all of them: the Chief of Staff.
+# A bot with no `serves:` objective in agenda.yaml is paused at its next slot (CHIEF_OF_STAFF.md §1.8).
+# Model IDs are exact strings for the Anthropic API. Change here, not in code.
+
+cos:
+  name: Chief of Staff
+  runs_on: claude-code-routine        # cloud; arms only after Aman's "go"
+  cadence: "daily 06:30 IST + on demand"
+  model: claude-fable-5-1
+  reports_via: POST /api/agent/report cadence=cos
+  reads: [agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
+  enabled: false
+
+bots:
+  - id: ops-hourly
+    name: Ops hourly watcher (WhatsApp groups + photos)
+    runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py hourly"
+    cadence: hourly
+    model: claude-sonnet-5-5
+    checks: [dispatch_rakes, tender_watch, mkt_pulse, acct_positions, fo_update]
+    heartbeat: every run posts a one-line report even when clean   # not yet true — see fleet gaps
+    serves: []            # fill from agenda.yaml once objectives are confirmed
+    enabled: true
+
+  - id: daily-brief
+    name: Daily brief
+    runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py daily"
+    cadence: "daily 06:57 IST"
+    model: claude-sonnet-5-5
+    checks: [dispatch_trend, market_close, compliance_due, hotel_daily, projects_update, bank_balances]
+    serves: []
+    enabled: true
+
+  # ── planned split (not built until Aman says go) ──────────────────────────
+  - id: tender-go-no-go
+    runs_on: vps-cron
+    cadence: "daily 08:00 IST"
+    model: claude-opus-5-5
+    checks: [tender_watch]
+    skill: skills/tender-go-no-go.md   # does not exist yet
+    serves: []
+    enabled: false
+  - id: compliance-sentinel
+    runs_on: vps-cron
+    cadence: "daily 07:30 IST"
+    model: claude-opus-5-5
+    checks: [compliance_due]
+    serves: []
+    enabled: false
+  - id: capital-watcher
+    runs_on: vps-cron
+    cadence: "hourly 09:00-15:30 IST Mon-Fri"
+    model: claude-opus-5-5
+    checks: [acct_positions, fo_update, mkt_pulse]
+    serves: []
+    enabled: false
+  - id: hotel-daily
+    runs_on: vps-cron
+    cadence: "daily 22:30 IST"
+    model: claude-sonnet-5-5
+    checks: [hotel_daily]
+    serves: []
+    enabled: false
+  - id: classifier
+    name: dedup / urgency classification / heartbeat lines
+    runs_on: vps (library, called by other bots)
+    model: claude-haiku-4-5
+    enabled: false
+  - id: singhvi
+    runs_on: vps
+    cadence: "08:00-09:15 IST Mon-Fri"
+    model: grok-4
+    checks: []
+    serves: []
+    enabled: false
+
+fleet_gaps:   # true today; each is a CoS finding until closed
+  - ops-hourly files nothing when clean (mdo_agent.py: "clean — no report filed"). Violates directive 1.5.
+  - No spend ledger; SPEND_CAP_INR_MONTH not read anywhere yet.
+  - bank_balances check is blocked: no feed.
+  - tender_watch has no Tender247 access (manual login); public portals only.

@@ -76,7 +76,7 @@ it is L0.
 | Bank balance below the working-capital floor ⚠️ ₹__ | L2 | Same day |
 | Cheque bounce — ours or theirs | **L3** | Reputational and legal |
 | GST/TDS/ROC deadline within 7 days unfiled | L2 | CA Vimal + Aman |
-| Any statutory notice, summons, or court date | **L3** | Ozone §454 and Rashi 3616/2026 are live examples |
+| Any statutory notice, summons, or court date | **L3** | Ozone §454 is a live example |
 | Tender closing within 72h, bid not decided | L2 | Decision has a deadline |
 | F&O position beyond the risk limit | **L3** | Capital preservation outranks everything |
 

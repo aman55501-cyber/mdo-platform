@@ -74,7 +74,6 @@ ENTITIES = [
     ("Aditi Investments",              "Aditi Inv",    "company", "Equity / derivatives trading",  "Raigarh CG",          "Aman Agrawal",          "₹16-20 Cr AUM", "Liquid portfolio entity"),
     ("Hotel ANS International Ltd",    "Hotel ANS",    "company", "Hospitality / hotel",           "Raigarh CG",          "Aman Agrawal",          "₹2-3 Cr",    "Hotel operations"),
     ("Ozone Steel & Power Ltd",        "Ozone Steel",  "company", "Steel / iron",                  "Raigarh CG",          "Aman Agrawal",          "",           "§454 CRITICAL — strike-off notice"),
-    ("Rashi Steel Ltd",                "Rashi Steel",  "company", "Steel manufacturing",           "Raigarh CG",          "Aman Agrawal",          "",           "Court case 3616/2026"),
     ("ANS Transport Pvt Ltd",          "ANS Trans",    "company", "Coal/goods transport",          "Raigarh CG",          "Aman Agrawal",          "₹1-2 Cr",    "Fleet: trucks/tippers"),
     ("ANS Minerals Pvt Ltd",           "ANS Min",      "company", "Mineral trading",               "Raigarh CG",          "Aman Agrawal",          "",           ""),
     ("ANS Infrastructure Pvt Ltd",     "ANS Infra",    "company", "Infrastructure/construction",   "Raigarh CG",          "Aman Agrawal",          "",           ""),
@@ -125,7 +124,6 @@ FILINGS = [
     # entity_name, type, description, due_date, period, status, notes
     ("Ozone Steel Pvt Ltd",       "MCA ROC",    "Annual return + financial statements",     "2024-12-31", "FY2024",   "overdue",  "§454 CRITICAL — file immediately"),
     ("Ozone Steel Pvt Ltd",       "MCA ROC",    "DIR-3 KYC for all directors",             "2024-09-30", "FY2024",   "overdue",  "DIN deactivation risk"),
-    ("Rashi Steel Ltd",           "Legal",      "Court case 3616/2026 — next hearing",     "2026-05-15", "2026",     "pending",  "CA + advocate coordination needed"),
     ("Aditi Investments",         "ITR",        "Individual ITR filing",                    "2026-07-31", "FY2026",   "pending",  "Capital gains from F&O"),
     ("Aditi Investments",         "GST",        "GST quarterly return",                     "2026-04-30", "Q4 FY26",  "pending",  ""),
     ("ANS Coal Washery Pvt Ltd",  "GST",        "GSTR-1 monthly",                           "2026-04-11", "Mar 2026", "pending",  ""),
@@ -155,7 +153,6 @@ else:
 # ── Intel Items ───────────────────────────────────────────────────────────────
 INTEL = [
     ("compliance", "system",  "CRITICAL", "Ozone Steel",    "§454 Strike-off Notice — File immediately",        "Ozone Steel not filing annual returns. NCLT strike-off proceedings underway. Contact CA Vimal Agrawal (9755220259) TODAY.", "2026-04-30", "open"),
-    ("compliance", "system",  "HIGH",     "Rashi Steel",    "Court Case 3616/2026 — Next hearing May 15",        "Civil dispute in progress. CA + advocate coordination needed. Get case status update.", "2026-05-15", "open"),
     ("trading",    "system",  "HIGH",     "Aditi",          "F&O expiry week — review open positions",           "April series expiry approaching. Review all open F&O positions and decide roll/close.", "2026-04-24", "open"),
     ("vwlr",       "system",  "HIGH",     "Vedanta",        "Tender VED/WC/2026/004 closes May 5",               "Coal washery tender 10,000 MT. Eligibility 92%. Prepare bid with gate price ₹4,200. Volume discount applicable.", "2026-05-05", "open"),
     ("compliance", "system",  "MEDIUM",   "All Entities",   "GST filings due Apr 20 — 6 companies",             "GSTR-3B for March 2026 due April 20. Companies: ANS Coal, Hotel ANS, ANS Transport, ANS Mining, ANS Minerals, ANS Coals.", "2026-04-20", "open"),
@@ -245,14 +242,8 @@ ENRICH = {
         "notes": "C10. 🔴 §454(8) strike-off risk — no ITR PDF filed. NCLT/ROC exposure. "
                  "Escalate via CA Vimal Agrawal (9755220259).",
     },
-    "Rashi Steel Ltd": {
-        "entity_type": "external",
-        "directors": "",
-        "notes": "X1 — EXTERNAL entity, not ANS-controlled. 🔴 §454(8) CJM Bilaspur case "
-                 "3616/2026, next hearing was 15 May 2026; advocate not yet engaged.",
-    },
     "Aman Agrawal (Individual)": {
-        "notes": "I1. Age 31, first-generation industrialist. Father: Narendra Agrawal (founder), "
+        "notes": "I1. Age 31, first-generation industrialist. Father: Ashok Agrawal, mother: Sudha Agrawal, "
                  "sister: Aditi Agrawal. PAN/ITR/DIN compliance; DIR-3 KYC due 30 Sep 2026.",
     },
     "ANS Group HUF": {
@@ -296,7 +287,7 @@ if not c.execute("SELECT 1 FROM intel_items WHERE title=?", (AUDIT_TITLE,)).fetc
            VALUES ('compliance','audit','MEDIUM','All Entities',?,?,NULL,'open')""",
         (AUDIT_TITLE,
          "MDO_VISION §2D documents 26 taxable units as 6 persons (I1-I6) + 1 HUF + 5 firms "
-         "(F1-F5) + 14 companies (C1-C14) + 1 external (X1 Rashi Steel). The seeded register "
+         "(F1-F5) + 14 companies (C1-C14). The seeded register "
          "has 1 person, 1 HUF, 2 firms, 22 companies — 12 company names have no source and "
          "are flagged 'unverified'. Action: pull the ANS_Group_Data_Capture files from "
          "Desktop/MASTER and replace placeholders with the real register."),

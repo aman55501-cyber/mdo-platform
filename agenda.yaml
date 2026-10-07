@@ -1,0 +1,57 @@
+# agenda.yaml — Aman's objectives. The only list the Chief of Staff works from.
+#
+# Rules (CHIEF_OF_STAFF.md §1):
+#   - Only `confirmed: true` items are live. The CoS never flips this flag.
+#   - Candidates below were lifted from Aman's own documents, with the source
+#     named. They are NOT objectives until Aman moves them up and confirms.
+#   - Every item: id, title, owner, next_action, blocker, click_needed, source.
+#
+# Edit this file, or tell the CoS "confirm <id>" / "kill <id>" / "add ...".
+
+cap:
+  spend_inr_month: null        # Aman to set. CoS proposal: 10000 (≈ US$120 at current rates)
+  preview_fortnight_until: null  # Aman to set, e.g. 2026-10-21 — outbound to third parties previews until then
+
+objectives: []                 # ← empty on purpose. Aman fills this.
+
+candidates:                    # from Aman's files; unconfirmed; CoS lists these once, never acts
+  - id: hdfc-oauth
+    title: HDFC InvestRight OAuth callback registered on VPS URL + one OTP login test
+    owner: Aman
+    source: MDO_VISION.md §15 row 3, §18 q1
+    confirmed: false
+  - id: ozone-454
+    title: Ozone Steel & Power — §454(8) exposure, ITR PDF filing via CA Vimal
+    owner: CA Vimal Agrawal
+    source: MDO_VISION.md §4; seed_mdo_db.py FILINGS
+    confirmed: false
+  - id: hotel-filings
+    title: Hotel ANS International Ltd — confirm AOC-4 / MGT-7 currency with CA
+    owner: CA Vimal Agrawal
+    source: MDO_VISION.md §4
+    confirmed: false
+  - id: staah-token
+    title: Staah API token into VPS .env → live occupancy feed
+    owner: Aman
+    source: MDO_VISION.md §10 Pending; LIFE_LLM_MAP.md Phase 2
+    confirmed: false
+  - id: bank-feed
+    title: Decide bank-balance channel (emailed statements via Gmail / API / manual)
+    owner: Aman
+    source: mdo_server.py CHECKS_SEED bank_balances (blocked)
+    confirmed: false
+  - id: escalation-thresholds
+    title: Fill the ⚠️ numbers in skills/escalation-routing.md
+    owner: Aman
+    source: skills/escalation-routing.md
+    confirmed: false
+  - id: dir3-kyc
+    title: DIR-3 KYC across all directorships
+    owner: CA Vimal Agrawal
+    source: seed_mdo_db.py TASKS (due 2026-09-30 per seed — may be stale)
+    confirmed: false
+  - id: entity-register
+    title: Replace the seeded entity register with the real 20 + 5 from _memory/entity-registry.md
+    owner: Aman
+    source: seed_mdo_db.py AUDIT_TITLE intel item
+    confirmed: false

@@ -34,8 +34,8 @@ Management Decision Office (ANS Group, Raigarh, Chhattisgarh, India).
 Aman is a first-generation industrialist. His businesses: VWLR coal washery \
 (commissioning at ~50% capacity, ₹34.55 Cr tender pipeline across WCL/SCCL/SECL), \
 Hotel ANS (88 rooms, low occupancy — a standing focus area), Aditi Investments \
-(liquid portfolio, target ₹100 Cr in 2 years), and 26 taxable entities with two \
-critical §454(8) compliance flags (Ozone Steel, Rashi Steel).
+(liquid portfolio, target ₹100 Cr in 2 years), and the ANS Group entities with one \
+critical §454(8) compliance flag (Ozone Steel).
 
 You have tools that read his LIVE business database and a few that write to it. \
 Rules, in order:

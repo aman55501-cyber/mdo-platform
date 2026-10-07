@@ -10,7 +10,7 @@
 | Owner | Aman Agrawal, 31 |
 | Group | ANS Group, Kharsia, Raigarh, Chhattisgarh |
 | CA | Vimal Agrawal — 9755220259 |
-| Family | Father: Narendra Agrawal (ANS founders); Sister: Aditi Agrawal |
+| Family | Father: Ashok Agrawal; Mother: Sudha Agrawal; Sister: Aditi Agrawal; Wife: Jahnavi (corrected 2026-10-07 — earlier notes said "Narendra") |
 | Telegram Chat ID | Set in `TELEGRAM_CHAT_ID` env var |
 
 ---
@@ -24,7 +24,6 @@
 | **Aditi Investments** | Investment / Trading | Liquid portfolio ₹16–20 Cr, NSE Cash+F&O |
 | **Hotel ANS** | Hospitality | Raigarh area |
 | **Ozone Steel & Power** | Steel | §454 risk — NO ITR PDF filed (CRITICAL) |
-| **Rashi Steel** | Steel | §454(8) CJM Bilaspur Court Case 3616/2026 (CRITICAL) |
 | ANS Infra | Construction | — |
 | ANS Trading | Trading entity | — |
 
@@ -32,7 +31,6 @@
 | Entity | Issue | Severity |
 |--------|-------|----------|
 | Ozone Steel & Power | §454(8) — ITR not filed as PDF. Risk of strike-off | 🔴 CRITICAL |
-| Rashi Steel | §454(8) CJM case no. 3616/2026 Bilaspur court | 🔴 CRITICAL |
 
 ### Full 26-entity list: stored in ANS_Group_Data_Capture files on Desktop/MASTER
 
@@ -208,12 +206,6 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 - **Action needed**: File ITR PDF immediately via CA Vimal Agrawal (9755220259)
 - **Status**: UNRESOLVED as of intel extraction
 
-### Rashi Steel — Court Case
-- **Case**: §454(8) CJM Bilaspur, Case No. 3616/2026
-- **Court**: Chief Judicial Magistrate, Bilaspur, CG
-- **Action needed**: Legal counsel + CA Vimal Agrawal response
-- **Status**: ACTIVE CASE
-
 ---
 
 ## 12. KEY FILE PATHS
@@ -246,4 +238,3 @@ Key pricing intel in DB: `competitors` table, `pricing` column
 - [ ] L2 Google Sheets integration
 - [ ] L3 Make.com automation
 - [ ] Ozone Steel §454 ITR filing
-- [ ] Rashi Steel court case 3616/2026 response

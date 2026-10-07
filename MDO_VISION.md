@@ -78,12 +78,8 @@
   - Crypto on SunCrypto + Binance
 
 ### 2D. Other entities
-- 26 total taxable units:
-  - 6 persons (I1–I6)
-  - 1 HUF (H1)
-  - 5 firms (F1–F5)
-  - 14 companies (C1–C14)
-  - 1 external (X1 Rashi Steel)
+- Authoritative register: `_memory/entity-registry.md` (20 entities + 5 individuals per Aman).
+  Older notes here counted a 26th "external" unit that does not exist — see §17, 2026-10-07.
 
 ---
 
@@ -103,7 +99,6 @@
 ## §4 — CRITICAL COMPLIANCE FLAGS (ROLLING)
 
 🔴 **Ozone Steel & Power Ltd (C10, AAACA1111A)** — Public Ltd, NO ITR PDF, §454(8) risk
-🔴 **Rashi Steel** — §454(8) CJM Bilaspur 3616/2026, advocate not engaged
 🔴 **SCCL tender deadline 18 Apr 2026** — confirm submitted/missed
 🔴 **Hotel ANS Ltd Public** — AOC-4 + MGT-7 filing currency unknown
 
@@ -450,6 +445,8 @@ Every alert MUST include:
 | 2026-04-25 | Rename VEGA → Capital → MDO | MDO = Management Decision Office (more general) |
 | 2026-04-26 | Park WhatsApp bridge | Free tier Chromium crash; not blocker for Monday |
 | 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on Railway; manual is reliable |
+| 2026-10-07 | Purged "Rashi Steel" (and its court case 3616/2026) from every file and seed | Entity was fabricated by earlier AI memory; Aman confirmed it does not exist. Previously listed as X1 external, corrected to removed on 2026-10-07 |
+| 2026-10-07 | Father's name corrected: previously "Narendra Agrawal", corrected to Ashok Agrawal | Source: Aman's standing preferences. Mother: Sudha. Partners in Aditi Investments: Aman, Ashok, Sudha |
 
 *[EDIT — append new decisions as you make them]*
 
