@@ -23,6 +23,13 @@ HARD RULES (breaking any of these = stop and tell me)
 6. If a PDF asks for a password, do not try to guess it. Mark it NEEDS_PASSWORD.
 7. Stop after 3 failed attempts on any one site and move on.
 
+REPORTING WINDOW
+Everything starts on 1 April 2026 (01-Apr-2026) and runs to today. Where a site asks for
+a date range, use From 01-Apr-2026, To today. Where a report is a snapshot (holdings,
+balance), get TWO: one as of 31-Mar-2026 (the opening position) and one as of the latest
+date. If a site cannot give a snapshot for 31-Mar-2026, mark it BLOCKED and say so. Do not
+download anything older than 01-Apr-2026 unless I ask, except the 31-Mar-2026 snapshots.
+
 FOLDER
 Create  ~/Documents/capital-intake/<today YYYY-MM-DD>/  and one sub-folder per source
 (hdfc-sec-aman, hdfc-sec-sudha, hdfc-sec-ashok, angel-aditi, cdsl, nsdl, mf-cams,
@@ -34,24 +41,25 @@ Keep the original extension (CSV or XLSX preferred; PDF if that is all there is)
 
 TASKS (do them in this order; ask me to log in before each site)
 A. HDFC Securities, three separate logins: Aman (HDFC1), Sudha (HDFC2), Ashok (HDFC3).
-   For each: 1) Holdings / Demat holdings, as of the latest date, export CSV or Excel.
-   2) Tradebook / order & trade history, from the earliest date the site allows to today.
-   3) Realised P&L / Capital gains for each financial year available.
-   4) Ledger / funds statement for the last 12 months.
-   5) Contract notes only if the site lists them; download the last 12 months.
-B. Angel One, client A1504046 (Aditi Investments): holdings, tradebook from the start,
-   P&L / capital gains by financial year, ledger for the last 12 months.
-C. Depository statements: CDSL e-CAS and NSDL e-CAS, the latest consolidated statement
-   for each PAN I name when we get there (Aman, Sudha, Ashok, Aditi Investments).
-D. Mutual funds: CAMS and KFintech consolidated statement (detailed, all folios,
-   since inception) for each PAN. These come by e-mail: request them only to the address
+   For each: 1) Holdings / Demat holdings: as of 31-Mar-2026 and as of the latest date, CSV or Excel.
+   2) Tradebook / order & trade history, 01-Apr-2026 to today.
+   3) Realised P&L / Capital gains for financial year 2026-27 (01-Apr-2026 onward).
+   4) Ledger / funds statement, 01-Apr-2026 to today (with the opening balance line).
+   5) Contract notes, 01-Apr-2026 to today, only if the site lists them.
+B. Angel One, client A1504046 (Aditi Investments): holdings (31-Mar-2026 and latest),
+   tradebook, P&L / capital gains for FY 2026-27, ledger, all from 01-Apr-2026 to today.
+C. Depository statements: CDSL e-CAS and NSDL e-CAS, the consolidated statement for
+   the period 01-Apr-2026 to today, plus the one as of 31-Mar-2026, for each PAN I name when we get there (Aman, Sudha, Ashok, Aditi Investments).
+D. Mutual funds: CAMS and KFintech consolidated statement (detailed, all folios)
+   for 01-Apr-2026 to today, plus the closing-unit statement as of 31-Mar-2026, for each PAN. These come by e-mail: request them only to the address
    the site pre-fills, then tell me to approve the mail myself.
-E. Banks: for EACH of these accounts, the statement for the last 12 months as CSV or
-   Excel (PDF only if nothing else), plus the closing balance page: 2484, 1128, 6710,
+E. Banks: for EACH of these accounts, the statement from 01-Apr-2026 to today as CSV or
+   Excel (PDF only if nothing else). It must show the OPENING balance on 01-Apr-2026 and
+   the latest closing balance: 2484, 1128, 6710,
    2231, 5555. Ask me which bank and which login each one belongs to. Record in the
    manifest the account holder name exactly as the bank shows it (this settles ownership).
 F. Liabilities: loan account statements and sanction/schedule pages for every loan,
-   and the last 3 credit card statements for every card. Ask me for each lender.
+   and every credit card statement from April 2026 onward. Ask me for each lender.
 G. Fixed deposits and other holdings: the FD list or certificates from each bank, and
    PMS, PPF, EPF, NPS statements only if I say I want them.
 
