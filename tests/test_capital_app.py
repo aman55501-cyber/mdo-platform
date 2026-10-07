@@ -158,7 +158,7 @@ def test_desk_labels_stale_prices_and_dead_bantu_feed(client):
 
 def test_desk_says_how_much_of_the_book_the_held_check_sees(client):
     t = client.get("/").text
-    assert "1 of 4" in t and "Aman (HDFC1)" in t and "Sudha (HDFC2)" in t and "is not marked" in t
+    assert "1 of 5" in t and "Aman (HDFC1)" in t and "Sudha (HDFC2)" in t and "is not marked" in t
 
 
 def test_empty_ideas_and_calls_are_written_out(client):
@@ -211,7 +211,7 @@ def test_movers_have_size_bars_scaled_to_the_biggest_move(client):
     t = client.get("/").text
     assert t.count('role="progressbar"') >= 3               # two movers + coverage
     assert 'aria-valuenow="100"' in t                       # the biggest mover fills its bar
-    assert "coverage" in t and 'aria-valuenow="25"' in t        # 1 of 4 demats
+    assert "coverage" in t and 'aria-valuenow="20"' in t        # 1 of 5 demats
 
 
 def test_idea_without_stop_and_target_gets_no_made_up_bar(client):

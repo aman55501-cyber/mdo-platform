@@ -32,7 +32,7 @@ download anything older than 01-Apr-2026 unless I ask, except the 31-Mar-2026 sn
 
 FOLDER
 Create  ~/Documents/capital-intake/<today YYYY-MM-DD>/  and one sub-folder per source
-(hdfc-sec-aman, hdfc-sec-sudha, hdfc-sec-ashok, angel-aditi, cdsl, nsdl, mf-cams,
+(hdfc-sec-aman, hdfc-sec-sudha, hdfc-sec-ashok, hdfc-sec-aditi, angel-aditi, cdsl, nsdl, mf-cams,
 mf-kfintech, bank-<last4>, loans, cards, fd, other).
 
 FILE NAMES
@@ -40,7 +40,8 @@ FILE NAMES
 Keep the original extension (CSV or XLSX preferred; PDF if that is all there is).
 
 TASKS (do them in this order; ask me to log in before each site)
-A. HDFC Securities, three separate logins: Aman (HDFC1), Sudha (HDFC2), Ashok (HDFC3).
+A. HDFC Securities, FOUR separate logins: Aman (HDFC1), Sudha (HDFC2), Ashok (HDFC3) and
+   Aditi (HDFC4, client code 53612658).
    For each: 1) Holdings / Demat holdings: as of 31-Mar-2026 and as of the latest date, CSV or Excel.
    2) Tradebook / order & trade history, 01-Apr-2026 to today.
    3) Realised P&L / Capital gains for financial year 2026-27 (01-Apr-2026 onward).
@@ -49,7 +50,7 @@ A. HDFC Securities, three separate logins: Aman (HDFC1), Sudha (HDFC2), Ashok (H
 B. Angel One, client A1504046 (Aditi Investments): holdings (31-Mar-2026 and latest),
    tradebook, P&L / capital gains for FY 2026-27, ledger, all from 01-Apr-2026 to today.
 C. Depository statements: CDSL e-CAS and NSDL e-CAS, the consolidated statement for
-   the period 01-Apr-2026 to today, plus the one as of 31-Mar-2026, for each PAN I name when we get there (Aman, Sudha, Ashok, Aditi Investments).
+   the period 01-Apr-2026 to today, plus the one as of 31-Mar-2026, for each PAN I name when we get there (Aman, Sudha, Ashok, Aditi).
 D. Mutual funds: CAMS and KFintech consolidated statement (detailed, all folios)
    for 01-Apr-2026 to today, plus the closing-unit statement as of 31-Mar-2026, for each PAN. These come by e-mail: request them only to the address
    the site pre-fills, then tell me to approve the mail myself.

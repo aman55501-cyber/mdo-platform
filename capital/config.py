@@ -20,6 +20,7 @@ KNOWN_DEMATS = [
     ("HDFC1", "Aman", "hdfc"),
     ("HDFC2", "Sudha", "hdfc"),
     ("HDFC3", "Ashok", "hdfc"),
+    ("HDFC4", "Aditi", "hdfc"),
     ("A1504046", "Aditi Investments", "angelone"),
 ]
 
