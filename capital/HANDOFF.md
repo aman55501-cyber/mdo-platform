@@ -63,3 +63,12 @@ Open questions: Aditi Investments holdings personal vs company; HDFC 2231 / 5555
 5. Re-link wa1 (QR) so Bantu's calls resume. Finish the Telegram handshake (fill `wb.channel_map`).
 6. Resolve the two open questions above.
 7. Then the rest of the task file: bank-alert parsing, statements and reconciliation, liabilities, backups, evidence links on every figure.
+
+
+## 8. Added 7 Oct (later)
+- Held stocks are **marked, not hidden** (migration `0002_show_held_up.sql`; undo with `_down`). Ideas and calls carry a `held` flag.
+- New **Daily login** tab (`capital/daily_login.py`): needs `CAPITAL_CFO_URL` + `CFO_API_TOKEN`.
+- Parser fixed against the real Bantu formats (closing `*` before `@`, `to` ranges, `STOP-LOSS #`, "3 to 6 months", "Added more.").
+  It also re-matches earlier unresolved names when the ticker list arrives.
+- `wb.calls` backfilled with 10 calls (ids 1-10, `needs_review = true`; unresolved tickers). Messages 32, 179, 237 are chat, not calls.
+- Backend crash (`mdo_brain.py` vs `mcp 2.x`): the file is **not in this repo**; fix is on the VPS checkout, see runbook. Unverified.

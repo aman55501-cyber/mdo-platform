@@ -13,6 +13,7 @@ Tables and views from `capital/migrations/0001_capital_c0_up.sql` are applied. T
 | `CAPITAL_USER`, `CAPITAL_PASSWORD` | the login for the page (long password) |
 | `CAPITAL_PIN` | 4-8 digits for the Net worth tab |
 | `CAPITAL_COOKIE_SECRET` | any random 32+ characters |
+| `CAPITAL_CFO_URL`, `CFO_API_TOKEN` | for the **Daily login** tab: the shares_cfo server address and its existing token |
 
 ## 2. Run the web app (HTTPS is required: the login and PIN must never travel over plain http)
 VPS (recommended): build `Dockerfile.capital`, run it on port 8700 beside the existing Caddy, and add to the Caddyfile
@@ -40,3 +41,14 @@ When both run cleanly, let the health monitor watch them:
 - **"Already held"** sees only the Angel account today. Give me the HDFC holdings (or the HDFC export) and the check covers
   Aman, Sudha and Ashok too. Until then you can list them in `wb.manual_holdings`.
 - **Net worth** is partial by design and lists every gap on the page.
+
+
+## 4. Bantu's calls (already filled once)
+On 7 Oct the 10 calls found in the real WhatsApp messages (22-25 Sep) were loaded into `wb.calls`. They carry
+`needs_review = true` because the ticker list could not be fetched from the build sandbox. The first run of
+`parse_calls` on the server fetches it, matches names to tickers (KSCL etc.), and clears the flag for the clear ones.
+Company names such as "Bandhan Bank" stay unmatched until you confirm them; nothing is guessed.
+
+## 5. Daily login tab
+Shows one row per demat. HDFC rows have a **Log in** button that sends you to HDFC's own page; Angel signs in by itself.
+The page never sees your password or OTP.

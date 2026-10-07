@@ -3,7 +3,7 @@
 Rules this module enforces on screen:
   * the Desk and Holdings pages never carry a net-worth figure;
   * a price older than the market session is labelled as such, never presented as live;
-  * ideas and calls for stocks already held are removed, and the count removed is shown;
+  * ideas and calls are never removed for being held: they carry a "you hold this" marker and a count;
   * anything the app cannot see (HDFC demats, missing balances, liabilities) is listed, not hidden.
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ def desk(db, now: datetime | None = None) -> dict:
         r["bar"] = fmt.bar_width(r["day_change_pct"], scale)
 
     ideas = db.query("select id, symbol, side, entry, stop, target, horizon, thesis, status, run_date, age_days, "
-                     "price, price_time, price_source, pct_from_entry from wb.ideas_view order by run_date desc, id desc")
+                     "price, price_time, price_source, pct_from_entry, held from wb.ideas_view order by run_date desc, id desc")
     for r in ideas:
         r["basis"] = _price_basis(r["price_source"], r["price_time"], now)
         r["stale"] = (r["age_days"] or 0) > 7 or "stale" in (r["thesis"] or "").lower()
@@ -69,16 +69,16 @@ def desk(db, now: datetime | None = None) -> dict:
 
     calls = db.query("select id, caller, called_at, kind, action, symbol_raw, symbol, entry_low, entry_high, stop, "
                      "targets, horizon, status, needs_review, unresolved, price, price_time, price_source, "
-                     "pct_from_entry from wb.calls_view order by called_at desc limit 20")
+                     "pct_from_entry, held from wb.calls_view order by called_at desc limit 20")
     for r in calls:
         r["basis"] = _price_basis(r["price_source"], r["price_time"], now)
         first_target = min(r["targets"]) if r["targets"] else None
         r["range"] = fmt.range_bar(r["price"], r["stop"], first_target, r["entry_high"]) if r["action"] in ("ADD", "BUY") else None
 
-    hidden = (db.query("select ideas_hidden, calls_hidden from wb.desk_hidden") or [{"ideas_hidden": 0, "calls_hidden": 0}])[0]
+    held = {"ideas": sum(1 for r in ideas if r["held"]), "calls": sum(1 for r in calls if r["held"])}
     return {
         "gainers": gainers, "losers": losers, "movers_live": movers_live,
-        "ideas": ideas, "calls": calls, "hidden": hidden,
+        "ideas": ideas, "calls": calls, "held": held,
         "coverage": _coverage(db),
         "fresh": {k: {"at": v, "age": fmt.age(v, now)} for k, v in fresh.items()},
         "now": now,

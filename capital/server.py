@@ -9,6 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+import httpx
+
+from . import daily_login
 from . import desk as desk_data
 from . import fmt, pin
 from .auth import BasicAuthMiddleware
@@ -31,6 +34,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Capital", lifespan=lifespan)
 app.state.db = None
+app.state.cfo_http = None          # tests inject an httpx client here
 app.state.guard = pin.PinGuard()
 app.add_middleware(BasicAuthMiddleware)
 
@@ -84,6 +88,38 @@ def holdings_page():
 def health_page():
     d, err = _load(desk_data.health)
     return _render("health", d=d, error=err)
+
+
+def _cfo() -> httpx.Client:
+    return app.state.cfo_http or httpx.Client(timeout=10)
+
+
+@app.get("/daily-login", response_class=HTMLResponse)
+def daily_login_page():
+    try:
+        d = daily_login.board(_db(), _cfo())
+        err = None
+    except Exception as exc:  # noqa: BLE001
+        d, err = None, f"{type(exc).__name__}: {str(exc)[:160]}"
+    return _render("login", d=d, error=err)
+
+
+@app.post("/daily-login/start/{key}")
+def daily_login_start(key: str):
+    """Begin one HDFC login. 303 to HDFC's own page; credentials are typed there, never here."""
+    base, tok, missing = daily_login.settings()
+    allowed = {}
+    try:
+        if not missing:
+            allowed = {a["key"]: a for a in daily_login.accounts(_cfo(), base, tok) if a.get("broker") == "hdfc"}
+    except Exception as exc:  # noqa: BLE001
+        return _render("login", d=daily_login.board(_db(), None), error=f"login service: {type(exc).__name__}")
+    if key not in allowed:
+        return _render("login", d=daily_login.board(_db(), _cfo()), error="That account cannot be logged in from here.")
+    try:
+        return RedirectResponse(daily_login.start(_cfo(), base, tok, key), status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        return _render("login", d=daily_login.board(_db(), _cfo()), error=f"login service: {str(exc)[:140]}")
 
 
 def _unlocked(request: Request) -> bool:

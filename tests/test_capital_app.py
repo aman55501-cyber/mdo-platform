@@ -30,13 +30,12 @@ class FakeDB:
             "from wb.ideas_view": [{"id": 2, "symbol": "VAML", "side": "ADD", "entry": Decimal("250"), "stop": Decimal("230"),
                                     "target": Decimal("300"), "horizon": None, "thesis": "On stale prices. Add ~2% of book",
                                     "status": "proposed", "run_date": date(2026, 9, 18), "age_days": 19, "price": None,
-                                    "price_time": None, "price_source": None, "pct_from_entry": None}],
+                                    "price_time": None, "price_source": None, "pct_from_entry": None, "held": False}],
             "from wb.calls_view": [{"id": 559, "caller": "Bantu Mausaji", "called_at": NOW - timedelta(days=11), "kind": "call",
                                     "action": "ADD", "symbol_raw": "TGVSL", "symbol": "TGVSL", "entry_low": Decimal("120"),
                                     "entry_high": Decimal("120"), "stop": None, "targets": [], "horizon": None, "status": "open",
                                     "needs_review": False, "unresolved": False, "price": None, "price_time": None,
-                                    "price_source": None, "pct_from_entry": None}],
-            "from wb.desk_hidden": [{"ideas_hidden": 0, "calls_hidden": 3}],
+                                    "price_source": None, "pct_from_entry": None, "held": True}],
             "select distinct portfolio": [{"portfolio": "A1504046"}],
             "from wb.manual_holdings where active": [],
             "from wb.holdings_view order by market_value": [],
@@ -154,19 +153,19 @@ def test_desk_labels_stale_prices_and_dead_bantu_feed(client):
     assert "No live quotes right now" in t
     assert "273h old" in t or "11d old" in t
     assert "stale prices" in t                               # the VAML idea was priced on stale data
-    assert "3</b> call(s)" in t                              # calls removed because already held are counted
+    assert "Nothing is removed" in t
 
 
 def test_desk_says_how_much_of_the_book_the_held_check_sees(client):
     t = client.get("/").text
-    assert "1 of 4" in t and "Aman (HDFC1)" in t and "Sudha (HDFC2)" in t
+    assert "1 of 4" in t and "Aman (HDFC1)" in t and "Sudha (HDFC2)" in t and "is not marked" in t
 
 
 def test_empty_ideas_and_calls_are_written_out(client):
     client.app.state.db = FakeDB(**{"from wb.ideas_view": [], "from wb.calls_view": []})
     t = client.get("/").text
-    assert "No open ideas outside your book." in t
-    assert "No open calls from Bantu Mausaji outside your book." in t
+    assert "No open trade ideas." in t
+    assert "No open calls from Bantu Mausaji." in t
 
 
 def test_database_failure_is_unreachable_not_a_500(client):
@@ -212,7 +211,7 @@ def test_movers_have_size_bars_scaled_to_the_biggest_move(client):
     t = client.get("/").text
     assert t.count('role="progressbar"') >= 3               # two movers + coverage
     assert 'aria-valuenow="100"' in t                       # the biggest mover fills its bar
-    assert "held-check coverage" in t and 'aria-valuenow="25"' in t        # 1 of 4 demats
+    assert "coverage" in t and 'aria-valuenow="25"' in t        # 1 of 4 demats
 
 
 def test_idea_without_stop_and_target_gets_no_made_up_bar(client):
@@ -234,3 +233,97 @@ def test_networth_and_health_progress(client):
     client.cookies.set(pin.COOKIE, pin.make_cookie("k" * 32))
     assert "How much of your money this counts" in client.get("/networth").text
     assert "Deployed jobs healthy" in client.get("/health").text
+
+
+# ---- held stocks stay visible, marked ---------------------------------------------------------------
+def test_held_ideas_and_calls_are_marked_not_removed(client):
+    idea = FakeDB().data["from wb.ideas_view"][0]
+    client.app.state.db = FakeDB(**{"from wb.ideas_view": [dict(idea, symbol="HELDCO", held=True), dict(idea, id=3, symbol="NEWCO")]})
+    t = client.get("/").text
+    assert "HELDCO" in t and "NEWCO" in t                       # both listed
+    assert t.count('class="chip held"') == 2                     # the held idea and the held call (TGVSL)
+    assert "Nothing is removed" in t
+
+
+# ---- daily login tab ---------------------------------------------------------------------------------
+import httpx as _httpx
+
+CFO_ACCOUNTS = {"accounts": [
+    {"key": "HDFC1", "label": "Aman (personal)", "broker": "hdfc", "client_code": "4016900", "logged_in": True},
+    {"key": "HDFC2", "label": "Sudha", "broker": "hdfc", "client_code": "189737306", "logged_in": False},
+    {"key": "HDFC3", "label": "Ashok", "broker": "hdfc", "client_code": "190837559", "logged_in": False},
+    {"key": "ANGEL1", "label": "Aditi Investment", "broker": "angel", "client_code": "288924176", "logged_in": True}]}
+
+
+def _cfo(seen, location="https://developer.hdfcsec.com/oapi/v1/login?api_key=PUB", status=200):
+    def handler(req):
+        seen.append((req.url.path, req.headers.get("x-cfo-token"), dict(req.url.params)))
+        if req.url.path == "/accounts":
+            return _httpx.Response(status, json=CFO_ACCOUNTS)
+        if req.url.path == "/hdfc/login":
+            return _httpx.Response(307, headers={"location": location}) if location else _httpx.Response(500)
+        return _httpx.Response(404)
+    return _httpx.Client(transport=_httpx.MockTransport(handler))
+
+
+@pytest.fixture()
+def login_client(client, monkeypatch):
+    monkeypatch.setenv("CAPITAL_CFO_URL", "http://cfo.test")
+    monkeypatch.setenv("CFO_API_TOKEN", "super-secret-cfo-token")
+    return client
+
+
+def test_daily_login_board_counts_progress_and_gives_hdfc_a_button_not_angel(login_client):
+    login_client.app.state.cfo_http = _cfo([])
+    t = login_client.get("/daily-login").text
+    assert "1 of 3" in t and 'aria-valuenow="33"' in t
+    assert 'action="/daily-login/start/HDFC2"' in t and 'action="/daily-login/start/HDFC3"' in t
+    assert 'action="/daily-login/start/HDFC1"' not in t              # already logged in
+    assert "signs in by itself" in t and "ANGEL1/start" not in t
+    assert "super-secret-cfo-token" not in t                          # the API token never reaches the page
+
+
+def test_start_sends_token_in_header_only_and_redirects_to_hdfc(login_client):
+    seen = []
+    login_client.app.state.cfo_http = _cfo(seen)
+    r = login_client.post("/daily-login/start/HDFC2", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("https://developer.hdfcsec.com/")
+    login = [s for s in seen if s[0] == "/hdfc/login"][0]
+    assert login[1] == "super-secret-cfo-token" and login[2] == {"key": "HDFC2"}
+    assert "super-secret-cfo-token" not in r.headers["location"] and "token=" not in r.headers["location"]
+
+
+def test_start_refuses_unknown_and_non_hdfc_accounts_without_calling_login(login_client):
+    seen = []
+    login_client.app.state.cfo_http = _cfo(seen)
+    for key in ("ANGEL1", "HDFC9", "../../etc"):
+        r = login_client.post(f"/daily-login/start/{key}", follow_redirects=False)
+        assert r.status_code in (200, 404)
+        if r.status_code == 200:
+            assert "cannot be logged in from here" in r.text
+    assert not [s for s in seen if s[0] == "/hdfc/login"]
+
+
+def test_start_refuses_an_insecure_login_address(login_client):
+    login_client.app.state.cfo_http = _cfo([], location="http://evil.example/login")
+    r = login_client.post("/daily-login/start/HDFC2", follow_redirects=False)
+    assert r.status_code == 200 and "secure HDFC login address" in r.text
+
+
+def test_login_service_down_is_unreachable_and_claims_nothing(login_client):
+    login_client.app.state.cfo_http = _cfo([], status=503)
+    t = login_client.get("/daily-login").text
+    assert "UNREACHABLE — login service" in t and "logged in</span>" not in t
+
+
+def test_not_configured_names_the_missing_variables_only(client, monkeypatch):
+    monkeypatch.delenv("CAPITAL_CFO_URL", raising=False)
+    monkeypatch.delenv("CFO_API_TOKEN", raising=False)
+    t = client.get("/daily-login").text
+    assert "CAPITAL_CFO_URL and CFO_API_TOKEN" in t
+
+
+def test_login_tab_is_in_the_nav_and_behind_basic_auth(client):
+    assert 'href="/daily-login"' in client.get("/").text
+    assert TestClient(client.app).get("/daily-login").status_code == 401
+    assert TestClient(client.app).post("/daily-login/start/HDFC1").status_code == 401

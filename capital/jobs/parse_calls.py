@@ -22,11 +22,11 @@ CALLER = "Bantu Mausaji"
 JOB = "bantu_calls"
 
 # The action word must be capitals, as he writes it, so prose like "can add me @ 5" never matches.
-_CALL = re.compile(r"\b(ADD|BUY|SELL|TRIM|EXIT)\b\s*[:#\-]*\s*\*?\s*([A-Za-z0-9][A-Za-z0-9 &.\-]{1,40}?)\s*@\s*"
-                   r"(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?")
-_SL = re.compile(r"\b(?:SL|S\.L\.|STOP\s*LOSS)\b\s*[:\-]?\s*(\d+(?:\.\d+)?)", re.I)
+_CALL = re.compile(r"\b(ADD|BUY|SELL|TRIM|EXIT)\b\s*[:#\-]*\s*\*?\s*([A-Za-z0-9][A-Za-z0-9 &.\-]{1,40}?)\s*\*?\s*@\s*"
+                   r"(\d+(?:\.\d+)?)(?:\s*(?:[-–]|to)\s*(\d+(?:\.\d+)?))?")
+_SL = re.compile(r"\b(?:SL|S\.L\.|STOP[\s\-]*LOSS)\b\s*[:\-#]*\s*(\d+(?:\.\d+)?)", re.I)
 _TARGET = re.compile(r"\btargets?\b", re.I)
-_HORIZON = re.compile(r"\b(\d+\s*[-–]\s*\d+|\d+)\s*(day|week|month)s?\b", re.I)
+_HORIZON = re.compile(r"\b(\d+\s*(?:[-–]|to)\s*\d+|\d+)\s*(day|week|month)s?\b", re.I)
 _DECLARED = re.compile(r"^\s*\*?(Added|Bought|Sold|Exited)\s+(.{2,40}?)[.\s*]*$", re.I)
 _FILLER = {"more", "again", "today", "also", "some", "little", "bit"}
 _DECL_ACTION = {"added": "ADD", "bought": "ADD", "sold": "EXIT", "exited": "EXIT"}
@@ -64,6 +64,14 @@ def _targets(body: str) -> list[float]:
     return out[:12]
 
 
+_TO = re.compile(r"\s*(?:to|–)\s*", re.I)
+
+
+def _horizon_text(m) -> str:
+    """'3 to 6' + 'month' -> '3-6 months'."""
+    return f"{_TO.sub('-', m.group(1)).replace(' ', '')} {m.group(2).lower()}s"
+
+
 def parse_message(body: str) -> Parsed | None:
     body = body or ""
     calls = list(_CALL.finditer(body))
@@ -75,13 +83,13 @@ def parse_message(body: str) -> Parsed | None:
         hz = _HORIZON.search(body)
         return Parsed(action=m.group(1), symbol_raw=m.group(2).strip(" *-"), entry_low=min(low, high), entry_high=max(low, high),
                       stop=float(sl.group(1)) if sl else None, targets=_targets(body),
-                      horizon=f"{hz.group(1).replace(' ', '')} {hz.group(2).lower()}s" if hz else None,
+                      horizon=_horizon_text(hz) if hz else None,
                       confidence=0.9, extra_calls=len(calls) - 1)
     if len(body) <= 80:
         d = _DECLARED.match(body.strip())
         if d:
             words = d.group(2).strip().split()
-            while words and words[-1].lower() in _FILLER:
+            while words and words[-1].lower().strip(".,;:!*") in _FILLER:
                 words.pop()
             name = " ".join(words).strip(" .*")
             if len(name) >= 2:
@@ -136,10 +144,17 @@ def run(db: DB, *, master: dict | None = None, note: str | None = None, lookback
             new += 1
             unresolved += sym is None
             skipped_multi += p.extra_calls
+        rematched = 0
+        for r in db.query("select id, symbol_raw, confidence, entry_low from wb.calls where symbol is null"):
+            sym = resolve(r["symbol_raw"], known)
+            if sym:
+                review = float(r["confidence"] or 0) < 0.8 or r["entry_low"] is None
+                db.execute("update wb.calls set symbol = %s, needs_review = %s where id = %s", (sym, review, r["id"]))
+                rematched += 1
         booked = db.execute(_BOOKED)
         stopped = db.execute(_STOPPED)
         summary = (f"{new} new call(s) from {len(msgs)} unparsed message(s); {unresolved} name(s) not matched to a ticker; "
-                   f"{booked} booked, {stopped} stopped on live quotes"
+                   f"{rematched} earlier name(s) now matched; {booked} booked, {stopped} stopped on live quotes"
                    + (f"; {skipped_multi} extra call(s) in multi-call messages skipped" if skipped_multi else "")
                    + (f"; {note}" if note else ""))
         db.execute("insert into wb.run_log (job, ok, summary) values (%s, true, %s)", (JOB, summary))

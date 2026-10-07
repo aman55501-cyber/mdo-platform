@@ -52,12 +52,14 @@ def test_names_resolve_only_to_tickers_we_can_vouch_for():
 
 
 class WriterDB:
-    def __init__(self, messages, known=()):
-        self.messages, self.known, self.writes = messages, known, []
+    def __init__(self, messages, known=(), unresolved=()):
+        self.messages, self.known, self.writes, self.unresolved = messages, known, [], unresolved
 
     def query(self, sql, params=None):
         if "from public.wa_messages" in sql:
             return self.messages
+        if "from wb.calls where symbol is null" in sql:
+            return list(self.unresolved)
         return [{"symbol": s} for s in self.known]
 
     def execute(self, sql, params=None):
@@ -159,3 +161,55 @@ def test_symbol_master_filters_to_nse_equity_and_normalises(tmp_path, monkeypatc
             {"token": "3", "symbol": "NIFTY26OCTFUT", "exch_seg": "NFO"}]
     m = scrip.load(fetch=lambda: rows)
     assert m == {"KSCL": {"token": "1", "symbol": "KSCL-EQ"}}
+
+
+# ---- real messages that exposed gaps in the first parser ---------------------------------------------
+SAMBHV = "KEEP on your RADAR & BUY :-\n*SAMBHV STEEL* @ 147-148\nTargets \n151-156-162-169-171-179-184\nStop Loss\n131\n\nTime Frame 3 to 6 months"
+BANDHAN = ("POSITIONAL CALL 🚀🚀 \n*BUY # Bandhan Bank@ 180 to 185\n* \nTARGETS # 195/201/220/235/245/265/290/310\n\n"
+           "STOP-LOSS # 152\nTIME FRAME #  1-6 MONTHS\n\nPL REVIEW AFTER EVERY QUARTERLY RESULTS")
+RBL = ("POSITIONAL CALL 🚀🚀 \n*BUY # RBL Bank* @ 416 to 422\n* \nTARGETS # 434/454/474/496/510/535/565\nSTOP-LOSS # 384\n"
+       "TIME FRAME #  1-6 MONTHS")
+AVT = ("DARK HORSE 🐎 🐎 \n*BUY # AVTNPL* @ 97-99\n*(AVT NATURAL PRODUCTS LTD)*\nTARGETS # 115/134/148/164\nSTOP-LOSS #  68\n"
+       "TIME FRAME #  3-6  MONTHS\n\n\nPL REVIEW AFTER EVERY QUARTERLY RESULTS")
+
+
+def test_closing_star_before_at_and_to_ranges_and_stop_on_next_line():
+    p = parse_message(SAMBHV)
+    assert (p.action, p.symbol_raw, p.entry_low, p.entry_high, p.stop) == ("BUY", "SAMBHV STEEL", 147, 148, 131)
+    assert p.targets == [151, 156, 162, 169, 171, 179, 184] and p.horizon == "3-6 months"
+
+
+def test_slash_separated_targets_stop_loss_with_hash_and_word_to_in_price_range():
+    p = parse_message(BANDHAN)
+    assert (p.symbol_raw, p.entry_low, p.entry_high, p.stop) == ("Bandhan Bank", 180, 185, 152)
+    assert p.targets == [195, 201, 220, 235, 245, 265, 290, 310] and p.horizon == "1-6 months"
+
+
+def test_star_closes_the_name_before_the_at_sign():
+    assert (parse_message(RBL).symbol_raw, parse_message(RBL).entry_high, parse_message(RBL).stop) == ("RBL Bank", 422, 384)
+    a = parse_message(AVT)
+    assert (a.symbol_raw, a.entry_low, a.entry_high, a.stop, a.targets) == ("AVTNPL", 97, 99, 68, [115, 134, 148, 164])
+    assert a.horizon == "3-6 months"
+
+
+@pytest.mark.parametrize("text", [
+    "Added more.",
+    "exited and moved to boring names - too fast moves scare me :)",
+    "bought ola - v high risk trade - hearing that for first time management is taking all big investors to the giga factory on weekend",
+])
+def test_vague_or_long_chat_is_not_mistaken_for_a_call(text):
+    assert parse_message(text) is None
+
+
+def test_trailing_filler_with_punctuation_is_dropped():
+    assert parse_message("added adani power more").symbol_raw == "adani power"
+    assert parse_message("Added apl apollo more.").symbol_raw == "apl apollo"
+
+
+def test_names_that_could_not_be_matched_earlier_are_matched_when_the_ticker_list_arrives():
+    db = WriterDB([], unresolved=[{"id": 7, "symbol_raw": "KSCL", "confidence": 0.9, "entry_low": 780},
+                                  {"id": 8, "symbol_raw": "INDIA GLYCOLS", "confidence": 0.9, "entry_low": 304}])
+    out = parse_calls.run(db, master={"KSCL": {"token": "1", "symbol": "KSCL-EQ"}})
+    updates = [p for s, p in db.writes if s.startswith("update wb.calls set symbol")]
+    assert updates == [("KSCL", False, 7)]                    # matched and cleared for review; the company name stays unmatched
+    assert "1 earlier name(s) now matched" in [p for s, p in db.writes if "wb.run_log" in s][-1][1]

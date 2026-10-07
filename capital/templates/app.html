@@ -56,6 +56,7 @@ h2 small{font-family:var(--fm);font-size:10px;letter-spacing:0;text-transform:no
 .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--ink-3)} .warn{color:var(--warn)}
 .chip{display:inline-block;font-family:var(--fm);font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2);margin-left:4px}
 .chip.warn{border-color:var(--warn);color:var(--warn);background:transparent}
+.chip.held{border-color:var(--accent);color:var(--accent);background:transparent}
 .card{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:12px 14px;margin:8px 0;border-left:3px solid var(--accent);min-width:0}
 .card.call{border-left-color:var(--warn)}
 .card .t{font-family:var(--fm);font-weight:600;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
@@ -91,7 +92,7 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:v
 <header>
   <h1 class="brand">CAPITAL<b>·</b>DESK</h1>
   <nav>
-    {% for key, label, href in [('desk','Desk','/'),('holdings','Holdings','/holdings'),('networth','Net worth','/networth'),('health','Health','/health')] %}
+    {% for key, label, href in [('desk','Desk','/'),('holdings','Holdings','/holdings'),('networth','Net worth','/networth'),('login','Daily login','/daily-login'),('health','Health','/health')] %}
     <a href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>
@@ -137,23 +138,23 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:v
   {% else %}<div class="meta">No holdings with a price move on record.</div>{% endfor %}
   </div>
 
-  <h2>Live trade ideas <small>new names only · draft, not advice</small></h2>
+  <h2>Live trade ideas <small>draft, not advice</small></h2>
   {% for i in d.ideas %}
   <div class="card">
-    <div class="t"><span>{{ i.symbol }} <span class="chip">{{ i.side }}</span>{% if i.stale %}<span class="chip warn">stale prices</span>{% endif %}</span><span class="chip">{{ i.status }}</span></div>
+    <div class="t"><span>{{ i.symbol }} <span class="chip">{{ i.side }}</span>{% if i.held %}<span class="chip held">you hold this</span>{% endif %}{% if i.stale %}<span class="chip warn">stale prices</span>{% endif %}</span><span class="chip">{{ i.status }}</span></div>
     <div class="lv"><span><b>entry</b> {{ i.entry|price }}</span><span><b>stop</b> {{ i.stop|price }}</span><span><b>target</b> {{ i.target|price }}</span>
       <span><b>now</b> {{ i.price|price }}</span>{% if i.pct_from_entry is not none %}<span><b>vs entry</b> {{ i.pct_from_entry|pct }}</span>{% endif %}</div>
     {% if i.range %}{{ rangebar(i.range, 'stop', 'target') }}{% elif i.side in ('ADD','BUY') %}<div class="meta">No progress bar: needs both a stop and a target.</div>{% endif %}
     {% if i.thesis %}<div class="d">{{ i.thesis[:220] }}</div>{% endif %}
     <div class="meta">idea of {{ i.run_date }} · {{ i.age_days }}d old · {{ i.basis.label }}</div>
   </div>
-  {% else %}<div class="note">No open ideas outside your book.</div>{% endfor %}
+  {% else %}<div class="note">No open trade ideas.</div>{% endfor %}
 
-  <h2>Bantu Mausaji's calls <small>new names only · logged as his call, your decision</small></h2>
+  <h2>Bantu Mausaji's calls <small>logged as his call, your decision</small></h2>
   {% for c in d.calls %}
   <div class="card call">
-    <div class="t"><span>{{ c.symbol or c.symbol_raw }} <span class="chip">{{ c.action }}</span>{% if c.kind == 'declared' %}<span class="chip">he added</span>{% endif %}
-      {% if c.unresolved %}<span class="chip warn">name not matched — can't check if held</span>{% endif %}</span>
+    <div class="t"><span>{{ c.symbol or c.symbol_raw }} <span class="chip">{{ c.action }}</span>{% if c.held %}<span class="chip held">you hold this</span>{% endif %}{% if c.kind == 'declared' %}<span class="chip">he added</span>{% endif %}
+      {% if c.unresolved %}<span class="chip warn">name not matched — can't tell if you hold it</span>{% endif %}</span>
       <span class="meta">{{ c.called_at|clock }}</span></div>
     <div class="lv">
       {% if c.entry_low %}<span><b>entry</b> {{ c.entry_low|price }}{% if c.entry_high and c.entry_high != c.entry_low %}–{{ c.entry_high|price }}{% endif %}</span>{% endif %}
@@ -165,14 +166,14 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:v
     {% if c.range %}{{ rangebar(c.range, 'stop', 'first target') }}{% elif c.action in ('ADD','BUY') %}<div class="meta">No progress bar: needs a stop and a target.</div>{% endif %}
     {% if c.horizon %}<div class="meta">horizon {{ c.horizon }} · message #{{ c.id }}</div>{% endif %}
   </div>
-  {% else %}<div class="note">No open calls from Bantu Mausaji outside your book.</div>{% endfor %}
+  {% else %}<div class="note">No open calls from Bantu Mausaji.</div>{% endfor %}
 
-  <div class="prog"><div class="cap"><span>Held-check coverage</span><span>{{ d.coverage.seen }} of {{ d.coverage.total }} demat accounts</span></div>
-    <div class="bar" role="progressbar" aria-label="held-check coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.coverage.pct }}"><i style="width:{{ d.coverage.pct }}%"></i></div></div>
+  <div class="prog"><div class="cap"><span>"You hold this" coverage</span><span>{{ d.coverage.seen }} of {{ d.coverage.total }} demat accounts</span></div>
+    <div class="bar" role="progressbar" aria-label="held marker coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.coverage.pct }}"><i style="width:{{ d.coverage.pct }}%"></i></div></div>
   <div class="note">
-    Removed because you already hold them: <b class="mono">{{ d.hidden.ideas_hidden }}</b> idea(s), <b class="mono">{{ d.hidden.calls_hidden }}</b> call(s).
-    The held-check sees <b class="mono">{{ d.coverage.seen }} of {{ d.coverage.total }}</b> demat accounts{% if d.coverage.seen < d.coverage.total %} — not yet visible:
-    {% for r in d.coverage.rows if not r.seen %}{{ r.label }} ({{ r.code }}){{ ', ' if not loop.last }}{% endfor %}. Stocks held only there can still appear above.{% endif %}
+    Marked "you hold this": <b class="mono">{{ d.held.ideas }}</b> of {{ d.ideas|length }} idea(s) and <b class="mono">{{ d.held.calls }}</b> of {{ d.calls|length }} call(s). Nothing is removed.
+    The marker sees <b class="mono">{{ d.coverage.seen }} of {{ d.coverage.total }}</b> demat accounts{% if d.coverage.seen < d.coverage.total %} — not yet visible:
+    {% for r in d.coverage.rows if not r.seen %}{{ r.label }} ({{ r.code }}){{ ', ' if not loop.last }}{% endfor %}. A stock held only there is not marked.{% endif %}
   </div>
 {% endif %}
 
@@ -234,6 +235,33 @@ footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:v
     {% else %}<div class="meta">No bank balances on record.</div>{% endfor %}
     </div>
     <form method="post" action="/lock" style="margin-top:14px"><button class="ghost" type="submit">Lock now</button></form>
+  {% endif %}
+{% endif %}
+
+{# ===================== DAILY LOGIN ===================== #}
+{% if page == 'login' and d %}
+  <h2>Today's broker logins <small>access expires overnight · repeat each morning</small></h2>
+  {% if d.missing %}
+    <div class="note warn"><b>Not connected.</b> Add {{ d.missing|join(' and ') }} to the server .env so this page can see and start logins.</div>
+  {% elif d.error %}
+    <div class="note bad"><b>UNREACHABLE — login service — {{ d.error }}</b><br>Status below is unknown. Nothing here claims anyone is logged in.</div>
+  {% else %}
+    <div class="prog"><div class="cap"><span>HDFC logins done today</span><span>{{ d.done }} of {{ d.need }}</span></div>
+      <div class="bar {{ 'up' if d.need and d.done == d.need else '' }}" role="progressbar" aria-label="daily logins" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.pct }}"><i style="width:{{ d.pct }}%"></i></div></div>
+    <div class="panel">
+    {% for a in d.rows %}
+      <div class="row"><div class="main"><span class="sym">{{ a.label }}</span><span class="chip">{{ a.key }}</span>
+        <div class="meta">{{ a.code }}{% if not a.manual %} · signs in by itself each morning{% endif %}{% if a.needs_setup %} · needs setup on the server{% endif %}</div></div>
+        <div class="num">
+          {% if a.logged_in %}<span class="up">logged in</span>
+          {% elif a.manual %}<form method="post" action="/daily-login/start/{{ a.key }}"><button type="submit">Log in</button></form>
+          {% else %}<span class="warn">not logged in</span>{% endif %}
+        </div></div>
+    {% else %}<div class="meta">The login service lists no accounts.</div>{% endfor %}
+    </div>
+    <div class="note"><b>How it works.</b> Tap Log in. You land on HDFC's own page; approve with the 2FA on that account holder's phone. HDFC returns you to a confirmation page. Come back here and refresh. This app never sees your HDFC password or PIN.</div>
+    <div class="note warn"><b>Be aware.</b> Logging in arms the broker connection for today. HDFC holdings reach this desk only after a holdings sync that is not built yet, so "you hold this" still cannot see Aman, Sudha or Ashok.{% if d.pull_age %} Angel holdings were last pulled {{ d.pull_age }} ago.{% endif %}</div>
+    <form method="get" action="/daily-login" style="margin-top:12px"><button class="ghost" type="submit">Refresh status</button></form>
   {% endif %}
 {% endif %}
 
