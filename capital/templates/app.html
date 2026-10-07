@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Capital</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#FBFCFD; --surface:#FFFFFF; --surface-2:#F1F4F7; --line:#DCE2E8;
+  --ink:#141A21; --ink-2:#4C5763; --ink-3:#78838F;
+  --accent:#2D5C8A; --up:#1F7A4D; --down:#B23B2E; --warn:#8A6A1E;
+  --fh:'Archivo',system-ui,sans-serif; --fb:'IBM Plex Sans',system-ui,sans-serif; --fm:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0D1117; --surface:#141A21; --surface-2:#1C242D; --line:#28323D;
+  --ink:#E7ECF1; --ink-2:#A6B2BE; --ink-3:#7C8894;
+  --accent:#6FA6DC; --up:#4FB07A; --down:#E0796B; --warn:#D7A84A; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --ground:#0D1117; --surface:#141A21; --surface-2:#1C242D; --line:#28323D;
+  --ink:#E7ECF1; --ink-2:#A6B2BE; --ink-3:#7C8894;
+  --accent:#6FA6DC; --up:#4FB07A; --down:#E0796B; --warn:#D7A84A; color-scheme:dark;}
+*{box-sizing:border-box}
+html,body{max-width:100%;overflow-x:hidden}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--fb);font-size:15px;line-height:1.5;-webkit-text-size-adjust:100%;
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-bottom:48px}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+header{position:sticky;top:0;background:var(--ground);z-index:10;padding-top:calc(14px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
+.brand{font-family:var(--fh);font-weight:700;letter-spacing:.14em;font-size:17px;margin:0}
+.brand b{color:var(--accent)}
+nav{display:flex;gap:2px;margin-top:8px;overflow-x:auto}
+nav a{flex:0 0 auto;font-family:var(--fh);font-weight:600;font-size:13px;letter-spacing:.03em;color:var(--ink-3);padding:9px 13px;
+  border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap}
+nav a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{padding-top:16px}
+h2{font-family:var(--fh);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);margin:22px 0 10px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+h2:first-child{margin-top:2px}
+h2 small{font-family:var(--fm);font-size:10px;letter-spacing:0;text-transform:none;color:var(--ink-3);font-weight:400}
+.note{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--ink-2);margin:10px 0}
+.note.warn{border-left:3px solid var(--warn)} .note.bad{border-left:3px solid var(--down);color:var(--ink)}
+.fresh{display:flex;flex-wrap:wrap;gap:6px 14px;font-family:var(--fm);font-size:11px;color:var(--ink-3);margin-bottom:6px}
+.grid2{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:560px){.grid2{grid-template-columns:1fr 1fr}}
+.panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:12px 14px;min-width:0}
+.ph{font-family:var(--fh);text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;font-weight:600;margin-bottom:4px}
+.ph.up{color:var(--up)} .ph.down{color:var(--down)}
+.row{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row .main{flex:1;min-width:0}
+.sym{font-family:var(--fm);font-weight:600;font-size:14px}
+.meta{font-family:var(--fm);font-size:11px;color:var(--ink-3);margin-top:2px;overflow-wrap:anywhere}
+.num{text-align:right;font-family:var(--fm);font-size:13px;white-space:nowrap}
+.num .sm{display:block;font-size:11px;color:var(--ink-3)}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--ink-3)} .warn{color:var(--warn)}
+.chip{display:inline-block;font-family:var(--fm);font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);background:var(--surface-2);margin-left:4px}
+.chip.warn{border-color:var(--warn);color:var(--warn);background:transparent}
+.card{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:12px 14px;margin:8px 0;border-left:3px solid var(--accent);min-width:0}
+.card.call{border-left-color:var(--warn)}
+.card .t{font-family:var(--fm);font-weight:600;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card .lv{font-family:var(--fm);font-size:12px;margin-top:6px;display:flex;gap:6px 14px;flex-wrap:wrap}
+.card .lv b{color:var(--ink-3);font-weight:400}
+.card .d{font-size:13px;color:var(--ink-2);margin-top:5px;overflow-wrap:anywhere}
+.hero{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:16px 18px}
+.hero .k{font-size:12px;color:var(--ink-3)} .hero .v{font-family:var(--fm);font-size:32px;font-weight:600;margin-top:2px}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th,.tbl td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-family:var(--fh);text-transform:uppercase;letter-spacing:.05em;font-size:10px;color:var(--ink-3)}
+.scroll{overflow-x:auto}
+ul.gaps{margin:6px 0 0;padding-left:18px} ul.gaps li{margin:3px 0;font-size:13px}
+form.pin{display:flex;gap:8px;margin-top:10px}
+form.pin input{flex:1;min-width:0;font-family:var(--fm);font-size:18px;letter-spacing:.3em;padding:11px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink)}
+button{font-family:var(--fh);font-weight:600;font-size:13px;border:none;border-radius:6px;padding:0 18px;background:var(--accent);color:var(--ground);cursor:pointer}
+button.ghost{background:none;border:1px solid var(--line);color:var(--ink-2);padding:7px 12px}
+/* graphic bars: movers magnitude, idea/call progress (stop -> target), and coverage / health progress */
+.bar{position:relative;height:5px;background:var(--surface-2);border-radius:3px;margin-top:6px;overflow:visible}
+.bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+.bar.up>i{background:var(--up)} .bar.down>i{background:var(--down)}
+.bar .tick{position:absolute;top:-3px;width:2px;height:11px;background:var(--ink-3);border-radius:1px}
+.bar .nowpin{position:absolute;top:-4px;width:4px;height:13px;margin-left:-2px;background:var(--ink);border-radius:2px}
+.barlabels{display:flex;justify-content:space-between;font-family:var(--fm);font-size:10px;color:var(--ink-3);margin-top:3px}
+.prog{margin:10px 0 2px}
+.prog .cap{display:flex;justify-content:space-between;gap:14px;font-family:var(--fm);font-size:11px;color:var(--ink-2);margin-bottom:4px}
+.prog .bar{height:8px;margin-top:0}
+footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-3);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1 class="brand">CAPITAL<b>·</b>DESK</h1>
+  <nav>
+    {% for key, label, href in [('desk','Desk','/'),('holdings','Holdings','/holdings'),('networth','Net worth','/networth'),('health','Health','/health')] %}
+    <a href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</header>
+<main>
+{% macro rangebar(r, lo, hi) %}
+  <div class="bar" role="progressbar" aria-label="progress from {{ lo }} to {{ hi }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ (r.now or 0)|round|int }}">
+    <i style="width:{{ r.now or 0 }}%"></i>
+    {% if r.mark is not none %}<span class="tick" style="left:{{ r.mark }}%" title="entry"></span>{% endif %}
+    {% if r.now is not none %}<span class="nowpin" style="left:{{ r.now }}%" title="now"></span>{% endif %}
+  </div>
+  <div class="barlabels"><span>{{ lo }} {{ r.low|price }}</span><span>{% if r.state == 'below_stop' %}at or below stop{% elif r.state == 'at_target' %}at or past target{% elif r.state == 'inside' %}tick = entry · pin = now{% else %}no price{% endif %}</span><span>{{ hi }} {{ r.high|price }}</span></div>
+{% endmacro %}
+{% if error %}<div class="note bad"><b>UNREACHABLE — database — {{ error }}</b><br>Nothing below is current. This page does not show old figures as if they were live.</div>{% endif %}
+
+{# ===================== DESK ===================== #}
+{% if page == 'desk' and d %}
+  <div class="fresh">
+    <span>Holdings pulled {{ d.fresh.get('holdings_pull', {}).get('age', 'never') }} ago</span>
+    <span>Live quotes: {% if d.fresh.get('quotes', {}).get('at') %}{{ d.fresh.quotes.age }} ago{% else %}none yet{% endif %}</span>
+    <span>Bantu chat: last message {{ d.fresh.get('bantu_chat', {}).get('age', 'never') }} ago</span>
+  </div>
+  {% if not d.movers_live %}<div class="note warn">No live quotes right now (market closed, or the latest quote is over 20 minutes old). Prices are the latest on record, and moves are the last completed change, not necessarily today's session.</div>{% endif %}
+  {% set bantu = d.fresh.get('bantu_chat') %}
+  {% if not bantu or not bantu.at or d.bantu_stale %}<div class="note warn">Bantu Mausaji's feed is {{ bantu.age if bantu else 'missing' }} old. His WhatsApp session is disconnected, so new calls are not arriving until it is re-linked.</div>{% endif %}
+
+  <h2>Top gainers <small>your holdings</small></h2>
+  <div class="panel">
+  {% for r in d.gainers %}
+    <div class="row"><div class="main"><span class="sym">{{ r.symbol }}</span>{% if r.owner_name %}<span class="chip">{{ r.owner_name }}</span>{% endif %}
+      <div class="meta">{{ r.price|price }} · {{ r.basis.label }}</div>
+      <div class="bar {{ r.day_change_pct|tone }}" role="progressbar" aria-label="size of move" aria-valuenow="{{ r.bar|round|int }}" aria-valuemin="0" aria-valuemax="100"><i style="width:{{ r.bar }}%"></i></div></div>
+      <div class="num {{ r.day_change_pct|tone }}">{{ r.day_change_pct|pct }}</div></div>
+  {% else %}<div class="meta">No holdings with a price move on record.</div>{% endfor %}
+  </div>
+  <h2>Top losers <small>your holdings</small></h2>
+  <div class="panel">
+  {% for r in d.losers %}
+    <div class="row"><div class="main"><span class="sym">{{ r.symbol }}</span>{% if r.owner_name %}<span class="chip">{{ r.owner_name }}</span>{% endif %}
+      <div class="meta">{{ r.price|price }} · {{ r.basis.label }}</div>
+      <div class="bar {{ r.day_change_pct|tone }}" role="progressbar" aria-label="size of move" aria-valuenow="{{ r.bar|round|int }}" aria-valuemin="0" aria-valuemax="100"><i style="width:{{ r.bar }}%"></i></div></div>
+      <div class="num {{ r.day_change_pct|tone }}">{{ r.day_change_pct|pct }}</div></div>
+  {% else %}<div class="meta">No holdings with a price move on record.</div>{% endfor %}
+  </div>
+
+  <h2>Live trade ideas <small>new names only · draft, not advice</small></h2>
+  {% for i in d.ideas %}
+  <div class="card">
+    <div class="t"><span>{{ i.symbol }} <span class="chip">{{ i.side }}</span>{% if i.stale %}<span class="chip warn">stale prices</span>{% endif %}</span><span class="chip">{{ i.status }}</span></div>
+    <div class="lv"><span><b>entry</b> {{ i.entry|price }}</span><span><b>stop</b> {{ i.stop|price }}</span><span><b>target</b> {{ i.target|price }}</span>
+      <span><b>now</b> {{ i.price|price }}</span>{% if i.pct_from_entry is not none %}<span><b>vs entry</b> {{ i.pct_from_entry|pct }}</span>{% endif %}</div>
+    {% if i.range %}{{ rangebar(i.range, 'stop', 'target') }}{% elif i.side in ('ADD','BUY') %}<div class="meta">No progress bar: needs both a stop and a target.</div>{% endif %}
+    {% if i.thesis %}<div class="d">{{ i.thesis[:220] }}</div>{% endif %}
+    <div class="meta">idea of {{ i.run_date }} · {{ i.age_days }}d old · {{ i.basis.label }}</div>
+  </div>
+  {% else %}<div class="note">No open ideas outside your book.</div>{% endfor %}
+
+  <h2>Bantu Mausaji's calls <small>new names only · logged as his call, your decision</small></h2>
+  {% for c in d.calls %}
+  <div class="card call">
+    <div class="t"><span>{{ c.symbol or c.symbol_raw }} <span class="chip">{{ c.action }}</span>{% if c.kind == 'declared' %}<span class="chip">he added</span>{% endif %}
+      {% if c.unresolved %}<span class="chip warn">name not matched — can't check if held</span>{% endif %}</span>
+      <span class="meta">{{ c.called_at|clock }}</span></div>
+    <div class="lv">
+      {% if c.entry_low %}<span><b>entry</b> {{ c.entry_low|price }}{% if c.entry_high and c.entry_high != c.entry_low %}–{{ c.entry_high|price }}{% endif %}</span>{% endif %}
+      {% if c.stop %}<span><b>stop</b> {{ c.stop|price }}</span>{% endif %}
+      {% if c.targets %}<span><b>targets</b> {{ c.targets|join(' · ') }}</span>{% endif %}
+      {% if c.price %}<span><b>now</b> {{ c.price|price }}</span>{% endif %}
+      {% if c.pct_from_entry is not none %}<span><b>vs entry</b> {{ c.pct_from_entry|pct }}</span>{% endif %}
+    </div>
+    {% if c.range %}{{ rangebar(c.range, 'stop', 'first target') }}{% elif c.action in ('ADD','BUY') %}<div class="meta">No progress bar: needs a stop and a target.</div>{% endif %}
+    {% if c.horizon %}<div class="meta">horizon {{ c.horizon }} · message #{{ c.id }}</div>{% endif %}
+  </div>
+  {% else %}<div class="note">No open calls from Bantu Mausaji outside your book.</div>{% endfor %}
+
+  <div class="prog"><div class="cap"><span>Held-check coverage</span><span>{{ d.coverage.seen }} of {{ d.coverage.total }} demat accounts</span></div>
+    <div class="bar" role="progressbar" aria-label="held-check coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.coverage.pct }}"><i style="width:{{ d.coverage.pct }}%"></i></div></div>
+  <div class="note">
+    Removed because you already hold them: <b class="mono">{{ d.hidden.ideas_hidden }}</b> idea(s), <b class="mono">{{ d.hidden.calls_hidden }}</b> call(s).
+    The held-check sees <b class="mono">{{ d.coverage.seen }} of {{ d.coverage.total }}</b> demat accounts{% if d.coverage.seen < d.coverage.total %} — not yet visible:
+    {% for r in d.coverage.rows if not r.seen %}{{ r.label }} ({{ r.code }}){{ ', ' if not loop.last }}{% endfor %}. Stocks held only there can still appear above.{% endif %}
+  </div>
+{% endif %}
+
+{# ===================== HOLDINGS ===================== #}
+{% if page == 'holdings' and d %}
+  <h2>Holdings <small>{{ d.rows|length }} names · latest pull per account · matched by ISIN</small></h2>
+  <div class="panel">
+  {% for r in d.rows %}
+    <div class="row"><div class="main"><span class="sym">{{ r.symbol }}</span>{% if r.owner_name %}<span class="chip">{{ r.owner_name }}</span>{% endif %}
+      <div class="meta">{{ r.qty|price }} @ {{ r.avg_price|price }} · now {{ r.price|price }} · {{ r.basis.label }}</div></div>
+      <div class="num">{{ r.market_value|inr }}<span class="sm {{ r.pnl_pct|tone }}">{{ r.pnl_pct|pct }}</span></div></div>
+  {% else %}<div class="meta">No holdings on record.</div>{% endfor %}
+  </div>
+  <h2>Plan levels <small>draft until you approve · exact crossings only</small></h2>
+  {% for a in d.actions %}
+  <div class="card {{ 'call' if a.inputs_missing }}">
+    <div class="t"><span>{{ a.symbol }}</span><span class="chip">{{ a.status }}</span></div>
+    {% if a.inputs_missing %}<div class="d">INPUTS MISSING — no levels set, so nothing is flagged and nothing is guessed.</div>
+    {% else %}<div class="lv"><span><b>buy ≤</b> {{ a.buy_below|price }}</span><span><b>add ≤</b> {{ a.add_below|price }}</span><span><b>target</b> {{ a.target|price }}</span><span><b>trim ≥</b> {{ a.trim_above|price }}</span><span><b>now</b> {{ a.price|price }}</span></div>
+    {% if a.crossing %}<div class="d warn">{{ a.crossing|replace('_',' ') }}</div>{% endif %}{% endif %}
+  </div>
+  {% else %}<div class="note">No plan levels set yet. Levels you add appear here as drafts; the app never approves them.</div>{% endfor %}
+{% endif %}
+
+{# ===================== NET WORTH ===================== #}
+{% if page == 'networth' %}
+  {% if locked %}
+    <div class="hero"><div class="k">Net worth is locked</div>
+      {% if not pin_set %}<p class="meta">No PIN is configured, so this page stays closed. Set CAPITAL_PIN on the server.</p>
+      {% else %}<form class="pin" method="post" action="/unlock"><input name="pin" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" autofocus><button type="submit">Open</button></form>
+      {% if message %}<p class="meta warn">{{ message }}</p>{% endif %}{% endif %}</div>
+  {% elif d %}
+    <div class="hero"><div class="k">Net worth · what the app can currently see{% if d.partial %} · <span class="warn">partial</span>{% endif %}</div>
+      <div class="v mono">{{ d.total|inr }}</div>
+      <div class="prog"><div class="cap"><span>How much of your money this counts</span><span>{{ d.counted }} of {{ d.expected }} sources</span></div>
+        <div class="bar" role="progressbar" aria-label="net worth coverage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.counted_pct }}"><i style="width:{{ d.counted_pct }}%"></i></div></div>
+      <div class="meta">relocks in 10 minutes</div></div>
+    {% if d.partial %}<div class="note warn"><b>This is not the whole picture.</b> Not counted yet:
+      <ul class="gaps">{% for g in d.gaps %}<li>{{ g }}</li>{% endfor %}</ul></div>{% endif %}
+    <h2>By scope</h2>
+    <div class="panel">
+    {% for scope, s in d.by_scope.items() %}
+      <div class="row"><div class="main"><span class="sym">{{ scope }}</span>
+        <div class="meta">{% for l in s.lines %}{{ l.line|replace('_',' ') }} {{ l.amount|inr }}{{ ' · ' if not loop.last }}{% endfor %} · {{ s.prov }} provisional line(s)</div></div>
+        <div class="num">{{ s.total|inr }}</div></div>
+    {% else %}<div class="meta">No scoped balances on record.</div>{% endfor %}
+    </div>
+    <h2>By bucket</h2>
+    <div class="panel">
+    {% for b in d.buckets %}<div class="row"><div class="main"><span class="sym">{{ b.bucket_id }}</span><div class="meta">{{ b.lines }} line(s)</div></div><div class="num">{{ b.amount|inr }}</div></div>
+    {% else %}<div class="meta">Nothing bucketed yet.</div>{% endfor %}
+    </div>
+    <h2>Bank balances</h2>
+    <div class="panel">
+    {% for a in d.accounts %}
+      <div class="row"><div class="main"><span class="sym">{{ a.institution }} ••{{ a.last4 }}</span><span class="chip">{{ a.owner_id }} · {{ a.scope }}</span>
+        <div class="meta">as of {{ a.as_of }} · {{ a.age }} old · {{ a.source }}</div></div>
+        <div class="num">{{ a.amount|inr(False) }}<span class="sm {{ 'up' if a.status == 'final' else 'warn' }}">{{ a.status }}</span></div></div>
+    {% else %}<div class="meta">No bank balances on record.</div>{% endfor %}
+    </div>
+    <form method="post" action="/lock" style="margin-top:14px"><button class="ghost" type="submit">Lock now</button></form>
+  {% endif %}
+{% endif %}
+
+{# ===================== HEALTH ===================== #}
+{% if page == 'health' and d %}
+  <div class="prog"><div class="cap"><span>Deployed jobs healthy</span><span>{{ d.ok }} of {{ d.live }}</span></div>
+    <div class="bar {{ 'up' if d.live and d.ok == d.live else '' }}" role="progressbar" aria-label="job health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.ok_pct }}"><i style="width:{{ d.ok_pct }}%"></i></div></div>
+  <h2>Input freshness</h2>
+  <div class="panel">
+  {% for k, v in d.fresh.items() %}<div class="row"><div class="main"><span class="sym">{{ k|replace('_',' ') }}</span></div><div class="num">{{ v }} ago</div></div>
+  {% else %}<div class="meta">No inputs recorded.</div>{% endfor %}
+  </div>
+  <h2>Jobs <small>from wb.source_health</small></h2>
+  <div class="scroll"><table class="tbl">
+    <tr><th>Job</th><th>State</th><th>Last success</th><th>Note</th></tr>
+    {% for j in d.jobs %}<tr><td class="mono">{{ j.job }}</td>
+      <td class="{{ 'up' if j.status == 'OK' else 'warn' if j.status == 'STALE' else 'down' }}">{% if not j.active %}not deployed{% else %}{{ j.status }}{% endif %}</td>
+      <td class="mono">{{ j.ok_age }} ago</td><td>{{ j.description }}</td></tr>
+    {% else %}<tr><td colspan="4">No jobs registered.</td></tr>{% endfor %}
+  </table></div>
+{% endif %}
+
+<footer>Read-only. This app cannot move money, place orders or send messages. Capital figures stay on this screen.</footer>
+</main>
+</div>
+</body>
+</html>

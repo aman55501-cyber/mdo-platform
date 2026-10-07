@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements_capital.txt ./
+RUN pip install --no-cache-dir -r requirements_capital.txt
+
+COPY capital/ ./capital/
+
+# The web app opens a read-only database session; jobs (capital/jobs/*) are run separately by cron.
+EXPOSE 8700
+CMD ["python", "-m", "capital"]
