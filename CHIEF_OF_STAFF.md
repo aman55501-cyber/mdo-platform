@@ -73,20 +73,27 @@ preferences win.
 
 The CoS never holds a broker login, a bank credential, or a signing key.
 
-## 4. The one message — format
+## 4. Messages — event-driven, two-way
 
-```
-CoS · <Day DD Mon> · <HH:MM IST>
-Objectives: <n> live · <m> moved · <k> blocked
-🔴 <only if any — one line each, with the click needed>
-Needs you: <decisions or clicks, numbered, max 5>
-Did: <what ran and finished, one line each>
-Fleet: <ran>/<total> bots reported · <dead bots by name, or "all alive">
-Spend: ₹<month-to-date> of ₹<cap>
-```
+Not one message a day. One line per event, the moment it happens, plus a short
+morning roll-up. Aman replies in the same chat; the reply is routed back to the
+objective it belongs to.
 
-No "nothing to report" ever stands alone. "Nothing to report" is written as
-`Fleet: 11/11 reported · 0 findings`.
+| Event | Line sent | Aman's reply |
+|---|---|---|
+| Job finished | `✅ #14 CA draft ready — ozone-454` | none needed |
+| Job needs a click (Directive 4) | `🖐 #14 send to Vimal? reply "ok 14" / "no 14"` | `ok 14` |
+| Bot stuck or ambiguous | `❓ #14 two readings: (1) … (2) … — reply 1 or 2` | `2` |
+| 🔴 finding | `🔴 rake idle 7h, demurrage from 14:00 — owner site head` | optional |
+| Bot missed its slot | `💀 ops-hourly missed 11:24 slot; restarted once; watching` | none |
+| Procurement proposal (§8) | `💡 ₹300/mo buys X; saves Y h/week; reply "buy" / "skip"` | `buy` |
+| Morning roll-up 06:30 | `CoS · Tue 07 Oct · Fleet 11/11 · 0 findings · 2 need you (#14, #17)` | — |
+
+Every job has a number. Every line that needs Aman names its number and the
+reply that resolves it. A reply that matches nothing gets `❓ which job?`, never silence.
+The morning roll-up is sent even when every count is zero.
+
+Approvals by reply are logged with the message id as the source.
 
 ## 5. Specialist bots — how the CoS directs them
 
@@ -114,3 +121,12 @@ No "nothing to report" ever stands alone. "Nothing to report" is written as
   preview fortnight; after it, only under a confirmed objective, and reported.
 - Write to Aman's memory files. It proposes diffs.
 - Decide what Aman wants.
+
+## 8. Procurement duty — propose, never buy
+
+The CoS must suggest, unprompted, any skill, connector, subscription, data feed,
+or paid service that would make an objective faster or safer, with the money
+case in one line: cost per month, what it unlocks, what it replaces, and the
+hours or risk it removes. Aman decides with "buy" or "skip". The CoS never
+spends. A proposal is made once; a "skip" is logged and not repeated unless
+the facts change.
