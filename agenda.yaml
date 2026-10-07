@@ -1,4 +1,10 @@
-# agenda.yaml — Aman's objectives. The only list the Chief of Staff works from.
+# agenda.yaml — MIRROR of the Objectives sheet (Claude Doc
+# "Objectives — Aman's direction for Claude", https://claude.ai/code/artifact/d666c819-6cc6-4331-9b96-a01632907adf).
+# Aman edits the sheet. The CoS refreshes this file from it on every run and
+# records the read date below. Bots on the VPS read this file, never the sheet.
+mirror_of: "Objectives — Aman's direction for Claude"
+last_synced: null          # set by the CoS on each run
+
 #
 # Rules (CHIEF_OF_STAFF.md §1):
 #   - Only `confirmed: true` items are live. The CoS never flips this flag.
@@ -10,7 +16,7 @@
 
 cap:
   spend_inr_month: null        # Aman to set. CoS proposal: 10000 (≈ US$120 at current rates)
-  preview_fortnight_until: null  # Aman to set, e.g. 2026-10-21 — outbound to third parties previews until then
+  outbound_email: never      # Aman, 2026-10-07 — drafts only, he sends
 
 objectives: []                 # ← empty on purpose. Aman fills this.
 

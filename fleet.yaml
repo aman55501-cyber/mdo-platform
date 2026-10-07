@@ -8,7 +8,7 @@ cos:
   cadence: "daily 06:30 IST + on demand"
   model: claude-fable-5-1
   reports_via: POST /api/agent/report cadence=cos
-  reads: [agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
+  reads: [Objectives sheet (Claude Doc), agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
   enabled: false
 
 bots:
@@ -68,6 +68,23 @@ bots:
     runs_on: vps (library, called by other bots)
     model: claude-haiku-4-5
     enabled: false
+  - id: housekeeping
+    name: Memory purge + disk health (Directive 12)
+    runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_housekeeping.py"   # to be built
+    cadence: "weekly Sun 03:00 IST"
+    model: none            # deterministic; no LLM call
+    does:
+      - archive agent_reports older than 60 days to /data/archive/YYYY-MM.jsonl.gz
+      - trim whatsapp_messages older than 90 days (group text; photos' extracted text kept 180 days)
+      - rotate /var/log/mdo-agent.log, keep 8 weeks
+      - VACUUM sqlite; measure free disk; alert at <20% free
+      - compact per-chat brain memory older than 30 turns into a dated summary
+    never_touches: [agenda.yaml, COS_LOG.md, Objectives sheet, open intel_items, open ops_tasks, checks]
+    report: "housekeeping: freed X MB · disk Y% free · archived N reports" — every run, even when nothing was freed
+    serves: [all]
+    enabled: false
+
   - id: singhvi
     runs_on: vps
     cadence: "08:00-09:15 IST Mon-Fri"
