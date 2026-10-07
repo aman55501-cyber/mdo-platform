@@ -8,8 +8,9 @@ cos:
   cadence: "daily 06:30 IST + on demand"
   model: claude-fable-5-1
   reports_via: POST /api/agent/report cadence=cos
+  command: "Claude Code Routine 'Chief of Staff morning run' (fires a fresh cloud session)"
   reads: [Objectives sheet (Claude Doc), agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
-  enabled: false
+  enabled: true
 
 bots:
   - id: ops-hourly
@@ -19,7 +20,7 @@ bots:
     cadence: hourly
     model: claude-sonnet-5-5
     checks: [dispatch_rakes, tender_watch, mkt_pulse, acct_positions, fo_update]
-    heartbeat: every run posts a one-line report even when clean   # not yet true — see fleet gaps
+    heartbeat: every run posts a one-line report even when clean
     serves: []            # fill from agenda.yaml once objectives are confirmed
     enabled: true
 
@@ -33,36 +34,40 @@ bots:
     serves: []
     enabled: true
 
-  # ── planned split (not built until Aman says go) ──────────────────────────
+  # ── specialists (same runner, own checks + model; enable per Aman's go) ───
   - id: tender-go-no-go
     runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py tender-go-no-go"
     cadence: "daily 08:00 IST"
     model: claude-opus-5-5
     checks: [tender_watch]
     skill: skills/tender-go-no-go.md   # does not exist yet
     serves: []
-    enabled: false
+    enabled: true
   - id: compliance-sentinel
     runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py compliance-sentinel"
     cadence: "daily 07:30 IST"
     model: claude-opus-5-5
     checks: [compliance_due]
     serves: []
-    enabled: false
+    enabled: true
   - id: capital-watcher
     runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py capital-watcher"
     cadence: "hourly 09:00-15:30 IST Mon-Fri"
     model: claude-opus-5-5
     checks: [acct_positions, fo_update, mkt_pulse]
     serves: []
-    enabled: false
+    enabled: true
   - id: hotel-daily
     runs_on: vps-cron
+    command: "docker compose exec -T backend python mdo_agent.py hotel-daily"
     cadence: "daily 22:30 IST"
     model: claude-sonnet-5-5
     checks: [hotel_daily]
     serves: []
-    enabled: false
+    enabled: true
   - id: classifier
     name: dedup / urgency classification / heartbeat lines
     runs_on: vps (library, called by other bots)
@@ -71,7 +76,7 @@ bots:
   - id: housekeeping
     name: Memory purge + disk health (Directive 12)
     runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_housekeeping.py"   # to be built
+    command: "docker compose exec -T backend python mdo_housekeeping.py"
     cadence: "weekly Sun 03:00 IST"
     model: none            # deterministic; no LLM call
     does:
@@ -81,9 +86,9 @@ bots:
       - VACUUM sqlite; measure free disk; alert at <20% free
       - compact per-chat brain memory older than 30 turns into a dated summary
     never_touches: [agenda.yaml, COS_LOG.md, Objectives sheet, open intel_items, open ops_tasks, checks]
-    report: "housekeeping: freed X MB · disk Y% free · archived N reports" — every run, even when nothing was freed
+    report: "housekeeping: freed X MB · disk Y% free · archived N reports — every run, even when nothing was freed"
     serves: [all]
-    enabled: false
+    enabled: true
 
   - id: singhvi
     runs_on: vps
@@ -94,7 +99,6 @@ bots:
     enabled: false
 
 fleet_gaps:   # true today; each is a CoS finding until closed
-  - ops-hourly files nothing when clean (mdo_agent.py: "clean — no report filed"). Violates directive 1.5.
-  - No spend ledger; SPEND_CAP_INR_MONTH not read anywhere yet.
-  - bank_balances check is blocked: no feed.
-  - tender_watch has no Tender247 access (manual login); public portals only.
+  - "bank_balances check is blocked: no feed (candidate: e-statements to Gmail, then Account Aggregator)"
+  - "tender_watch has no Tender247 access (manual login); public portals only (candidate: Tender247 email alerts into Gmail)"
+  - "CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the domain is allowed"

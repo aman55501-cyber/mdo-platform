@@ -149,36 +149,55 @@ sharecfo), route MDO through it instead of starting a second proxy:
    set `NEXT_PUBLIC_API_URL=https://api.yourdomain.com` in `.env`, then
    `docker compose up -d --build frontend`. Update `HDFC_REDIRECT_URL` too.
 
-## 8. Autonomous agents (run ON the VPS)
+## 8. The fleet (runs ON the VPS) — Chief of Staff edition
 
-`mdo_agent.py` runs the checks registry on a cadence and files reports into the
-app. It lives inside the backend container — same key, same database, same
-network as everything else, so there is no cloud-session auth to fail silently.
+Every bot in `fleet.yaml` runs through `mdo_agent.py <bot-id>` inside the
+backend container: same key, same database, same network. Every run files a
+heartbeat even when clean, so a bot that stops is visible on the app's
+**Fleet & Memory** page within one slot and the Chief of Staff sends a 💀 line.
 
-Test it by hand first:
+Test by hand first:
 ```bash
 cd /docker/sharecfo/mdo-platform
-docker compose exec backend python mdo_agent.py daily
+docker compose exec backend python mdo_agent.py daily-brief
+docker compose exec backend python mdo_housekeeping.py --dry-run
 ```
-Expect: `filed report N — {...} — intel items: M`. Findings appear in the app's
-Intel Centre immediately.
+Expect `heartbeat filed: …` or `filed report N — {...}`.
 
-Then schedule it with host cron (`crontab -e`):
+Then replace the old two cron lines with this block (`crontab -e`). Times are
+UTC on the host; IST in the comments. Each line = one bot: when it wakes,
+what it runs, where it logs.
 ```
-24 * * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py hourly >> /var/log/mdo-agent.log 2>&1
-27 1 * * * cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python mdo_agent.py daily  >> /var/log/mdo-agent.log 2>&1
+# MDO fleet — one line per bot (fleet.yaml). Log: /var/log/mdo-agent.log
+MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
+24 *    * * *   $MDO python mdo_agent.py ops-hourly          >> /var/log/mdo-agent.log 2>&1   # every hour
+27 1    * * *   $MDO python mdo_agent.py daily-brief         >> /var/log/mdo-agent.log 2>&1   # 06:57 IST
+0  2    * * *   $MDO python mdo_agent.py compliance-sentinel >> /var/log/mdo-agent.log 2>&1   # 07:30 IST
+30 2    * * *   $MDO python mdo_agent.py tender-go-no-go     >> /var/log/mdo-agent.log 2>&1   # 08:00 IST
+35 3-10 * * 1-5 $MDO python mdo_agent.py capital-watcher     >> /var/log/mdo-agent.log 2>&1   # 09:05-15:35 IST Mon-Fri
+0  17   * * *   $MDO python mdo_agent.py hotel-daily         >> /var/log/mdo-agent.log 2>&1   # 22:30 IST
+30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST
+0  22   * * 6   savelog -n -c 8 /var/log/mdo-agent.log                                        # keep 8 weeks of log
 ```
-(01:27 UTC = 06:57 IST — the brief is waiting when you wake up.)
+(`$MDO` is a cron variable; if your cron rejects variables, paste the full
+`cd … && docker compose exec -T backend` in each line.)
 
-Behaviour: the hourly run files a report **only** when a finding crosses a
-threshold — silence is the healthy state. The daily run always files. Checks
-whose `run_window` excludes the current time (e.g. market checks at night) are
-skipped; checks marked `blocked` are reported as gaps, never guessed at.
+Budget: `SPEND_CAP_INR_MONTH` in `.env`. At 90% the bots drop to Haiku; at
+100% they file "paused: budget" and stop. Both are reported, never silent.
+Model per bot: `fleet.yaml` (`model:`), not `.env`.
 
-Model: set `MDO_AGENT_MODEL` in `.env` to change it (default `claude-sonnet-5`;
-use `claude-opus-5` for deeper strategy work at higher cost).
+Two-way WhatsApp (the Chief of Staff answers in the chat you write in):
+- `COS_CHANNEL=alert` (today): self-message via the ops bridge. Type in your
+  own "message yourself" chat; replies start with `CoS ·`.
+- `COS_CHANNEL=baileys`: a dedicated number on its own bridge container
+  (copy the `whatsapp` service in docker-compose.yml, name it `whatsapp-cos`,
+  own volume, scan its QR once). Set `COS_WA_BRIDGE_URL`, `COS_WHATSAPP_TO`.
+- `COS_CHANNEL=meta`: Meta WhatsApp Cloud API. Set `META_*` in `.env`, point
+  the webhook at `https://api.<domain>/api/cos/meta-webhook` with
+  `META_VERIFY_TOKEN`.
+Either way `COS_ALLOWED_NUMBERS` lists who may talk to it.
 
-Watch it: `tail -f /var/log/mdo-agent.log`
+Watch it: `tail -f /var/log/mdo-agent.log` · app: **Fleet & Memory** page.
 
 ## Data safety
 

@@ -72,6 +72,7 @@ async def vdb() -> aiosqlite.Connection:
         _vdb = await aiosqlite.connect(VEGA_DB)
         _vdb.row_factory = aiosqlite.Row
         await _ensure_schema()
+        await _cos["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -654,7 +655,8 @@ async def _require_key(request, call_next):
     # user's browser without our key. It carries only a one-time auth code.
     if (not MDO_AUTH_TOKEN or request.method == "OPTIONS"
             or request.url.path.startswith("/mcp/")
-            or request.url.path == "/api/hdfc/callback"):
+            or request.url.path == "/api/hdfc/callback"
+            or request.url.path == "/api/cos/meta-webhook"):
         return await call_next(request)
     supplied = (
         request.headers.get("x-mdo-key")
@@ -1005,6 +1007,23 @@ async def agent_report(body: dict):
     findings = body.get("findings") or []
     if not isinstance(findings, list):
         findings = []
+    bot = str(body.get("bot") or body.get("agent") or "unknown").split(" ")[0][:60]
+    cadence = str(body.get("cadence", "daily")).lower()
+    # Heartbeat: a run that found nothing (or could not run) still reports.
+    # It lands in the run ledger, not in agent_reports, so the phone stays quiet
+    # and the fleet page shows the bot alive.
+    if body.get("heartbeat"):
+        status = str(body.get("status") or "clean")[:20]
+        await _cos["record_run"](bot, cadence, status, str(body.get("summary", "")))
+        for code in (body.get("checks_run") or []):
+            await db.execute(
+                "UPDATE checks SET last_run=datetime('now'), last_result=?, updated_at=datetime('now') WHERE code=?",
+                (status, str(code)))
+        await db.commit()
+        alert = {"sent": False, "reason": "heartbeat"}
+        if status in ("error", "paused", "warning"):
+            alert = _cos["send_cos"](f"💀 {bot}: {status} — {str(body.get('summary', ''))[:300]}", legacy_send=_send_whatsapp)
+        return {"stored": True, "heartbeat": True, "bot": bot, "status": status, "alert": alert}
     counts = {"CRITICAL": 0, "HIGH": 0, "LOW": 0}
     for f in findings:
         counts[_LEVEL_URGENCY.get(str(f.get("level", "info")).lower().strip(), "LOW")] += 1
@@ -1054,29 +1073,35 @@ async def agent_report(body: dict):
         )
     await db.commit()
     rows = await db.execute_fetchall("SELECT * FROM agent_reports ORDER BY id DESC LIMIT 1")
+    report_id = dict(rows[0])["id"] if rows else None
+    await _cos["record_run"](bot, cadence, str(body.get("status") or "reported"),
+                             str(body.get("summary", "")), report_id)
 
-    # Push 🔴 findings to WhatsApp — only the newly filed ones, so a recurring
-    # problem doesn't re-alert every hour.
+    # Event lines (CHIEF_OF_STAFF.md §4): one line per NEW 🔴 finding, with its
+    # owner and ETA. 🟡 goes to the Intel Centre and the morning roll-up.
+    # A recurring problem doesn't re-alert every hour: only newly filed titles push.
     alert = {"sent": False, "reason": "no new critical findings"}
     new_crit = [f for f in findings
                 if _LEVEL_URGENCY.get(str(f.get("level", "")).lower().strip()) == "CRITICAL"
                 and str(f.get("title", ""))[:200] in newly_filed]
-    if new_crit:
-        lines = [f"🔴 MDO ALERT — {body.get('cadence', 'agent')} run"]
-        for f in new_crit[:5]:
-            lines.append("")
-            lines.append("• " + str(f.get("title", ""))[:150])
-            if f.get("detail"):
-                lines.append("  " + str(f["detail"])[:300])
-            if f.get("action"):
-                lines.append("  → " + str(f["action"])[:200] +
-                             (f" ({f['owner']})" if f.get("owner") else ""))
-        lines.append("")
-        lines.append("Full report: https://amanagrawal.cloud/reports")
-        alert = _send_whatsapp("\n".join(lines))
+    pushes = []
+    for f in new_crit[:5]:
+        line = "🔴 " + str(f.get("title", ""))[:150]
+        if f.get("action"):
+            line += " → " + str(f["action"])[:160]
+        if f.get("owner"):
+            line += f" ({f['owner']})"
+        if f.get("eta"):
+            line += f" · ETA {str(f['eta'])[:40]}"
+        pushes.append(_cos["send_cos"](line, legacy_send=_send_whatsapp))
+    if pushes:
+        alert = pushes[-1]
         print("alert push:", alert)
+    # The CoS's own run (cadence "cos") is the roll-up: its summary goes as-is.
+    if cadence == "cos" and body.get("summary"):
+        alert = _cos["send_cos"](str(body["summary"])[:1500], legacy_send=_send_whatsapp)
 
-    return {"stored": True, "report_id": (dict(rows[0])["id"] if rows else None),
+    return {"stored": True, "report_id": report_id,
             "intel_filed": filed, "counts": counts, "alert": alert}
 
 @app.get("/api/agent/reports")
@@ -2888,14 +2913,31 @@ mdo_brain.configure({
     "file_report": agent_report,
 })
 
+import mdo_cos_api
+_cos = mdo_cos_api.register(app, vdb, _send_whatsapp, mdo_brain)
+mdo_brain.configure({k: _cos[k] for k in ("agenda", "jobs", "job_add", "job_resolve", "fleet", "spend",
+                                          "spend_record", "memory", "chat_load", "chat_save")})
+
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):
-    """Ask the MDO Brain — an LLM with live tool access to the whole business."""
+    """Ask the MDO Brain / Chief of Staff — an LLM with live tool access to the
+    whole business. Pass chat_id to continue a remembered thread (the app and
+    WhatsApp share the same memory when they share a chat_id)."""
     question = (body.get("question") or "").strip()
     if not question:
         raise HTTPException(400, "question required")
+    chat_id = str(body.get("chat_id") or "").strip() or None
+    history = body.get("history") or []
+    summary = ""
+    if chat_id:
+        mem = await _cos["chat_load"](chat_id)
+        history, summary = mem["turns"], mem["summary"]
     try:
-        return await mdo_brain.brain_ask(question, body.get("history") or [])
+        result = await mdo_brain.brain_ask(question, history, chat_id=chat_id, chat_summary=summary)
+        if chat_id:
+            await _cos["chat_save"](chat_id, "user", question)
+            await _cos["chat_save"](chat_id, "assistant", result.get("answer") or "")
+        return result
     except Exception as e:
         return {"answer": f"Brain error: {type(e).__name__}: {e}", "tools_used": [],
                 "provider": None, "model": None}

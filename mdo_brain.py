@@ -3,9 +3,10 @@
 Gives an LLM *hands on the live business data*: a registry of tools that map
 straight onto the backend's own endpoint functions, plus two front doors:
 
-  1. brain_ask()      — agentic loop for the in-app chat (/api/brain/ask).
-                        Uses Claude (claude-opus-5) when ANTHROPIC_API_KEY is
-                        set; falls back to Grok (GROK_API_KEY) otherwise.
+  1. brain_ask()      — agentic loop for the in-app chat (/api/brain/ask) and
+                        for WhatsApp (/api/cos/inbound). Uses Claude
+                        (BRAIN_MODEL, default claude-fable-5-1) with server-side
+                        refusal fallback; falls back to Grok (GROK_API_KEY).
   2. build_mcp_manager() — the same tools exposed as an MCP server, mounted by
                         mdo_server under a secret path so the Claude app
                         (phone/web) can connect to MDO as a custom connector.
@@ -28,8 +29,24 @@ def configure(toolbox: dict[str, Callable[..., Awaitable[Any]]]) -> None:
     _toolbox.update(toolbox)
 
 
-SYSTEM_PROMPT = """You are the MDO Brain — the intelligence layer of Aman Agrawal's \
-Management Decision Office (ANS Group, Raigarh, Chhattisgarh, India).
+BRAIN_MODEL = os.environ.get("BRAIN_MODEL", "claude-fable-5-1")
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def _constitution() -> str:
+    """CHIEF_OF_STAFF.md is the law; it is prepended to the system prompt so the
+    same directives bind the chat, WhatsApp and the MCP door."""
+    try:
+        with open(os.path.join(_ROOT, "CHIEF_OF_STAFF.md"), encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+SYSTEM_PROMPT = """You are Aman Agrawal's Chief of Staff — the single point of contact between \
+Aman and every Claude agent, and the intelligence layer of his Management Decision Office \
+(ANS Group, Raigarh, Chhattisgarh, India). The constitution above binds you. Aman reads you \
+on WhatsApp or in the app, on a phone, between site visits.
 
 Aman is a first-generation industrialist. His businesses: VWLR coal washery \
 (commissioning at ~50% capacity, ₹34.55 Cr tender pipeline across WCL/SCCL/SECL), \
@@ -45,8 +62,12 @@ say "unverified" explicitly. Data accuracy is non-negotiable.
 3. Recommendations follow: what changed → why it matters → specific action with owner.
 4. Use add_task / add_intel_item when Aman asks you to track something, or when you \
 surface something genuinely critical he should not lose — say so when you do.
-5. Be direct and concise. Aman reads on a phone between site visits.
-6. Amounts are in INR; use lakh/crore notation (₹12.5 L, ₹3.4 Cr)."""
+5. Be direct and concise. One answer when he asks for one. Cut every word that can go.
+6. Amounts are in INR; use lakh/crore notation (₹12.5 L, ₹3.4 Cr).
+7. Objectives are Aman's alone: read them with get_agenda; never add, widen or reorder one.
+   When a decision is his, create_job(kind="needs_click" or "needs_choice") and stop.
+8. Never send email. Never move money. Never sign. Never file. Draft, propose, report.
+9. Give an ETA whenever one can be estimated."""
 
 
 # ── tool registry ────────────────────────────────────────────────────────────
@@ -261,6 +282,53 @@ TOOLS: list[dict] = [
             "additionalProperties": False,
         },
     },
+    # ── Chief of Staff tools ───────────────────────────────────────────────
+    {
+        "name": "get_agenda",
+        "description": "Aman's objectives (mirror of his Objectives sheet). Only confirmed objectives are work. Call before acting on anything.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "list_jobs",
+        "description": "Jobs the Chief of Staff is tracking: open ones awaiting Aman's click/choice, recent done ones.",
+        "input_schema": {"type": "object", "properties": {
+            "status": {"type": "string", "enum": ["open", "approved", "rejected", "chosen", "done", "skipped"]},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+            "additionalProperties": False},
+    },
+    {
+        "name": "create_job",
+        "description": "Create a numbered job and send its one-line event to Aman's phone. kind: needs_click (money/sign/regulator or anything needing his yes), needs_choice (ambiguous — give options), proposal (a paid enabler with the money case), stuck (a blocker), done (finished work), info.",
+        "input_schema": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "kind": {"type": "string", "enum": ["needs_click", "needs_choice", "proposal", "stuck", "done", "info"]},
+            "objective": {"type": "string", "description": "objective id from get_agenda, if any"},
+            "options": {"type": "array", "items": {"type": "string"}},
+            "eta": {"type": "string", "description": "e.g. 'today 17:00', '2 days', 'unknown'"}},
+            "required": ["title", "kind"], "additionalProperties": False},
+    },
+    {
+        "name": "resolve_job",
+        "description": "Mark a job done/skipped after finishing or abandoning it (Aman's approvals arrive by his reply, not here).",
+        "input_schema": {"type": "object", "properties": {
+            "job_id": {"type": "integer"}, "status": {"type": "string", "enum": ["done", "skipped"]},
+            "note": {"type": "string"}}, "required": ["job_id", "status"], "additionalProperties": False},
+    },
+    {
+        "name": "get_fleet",
+        "description": "Every bot: cadence, model, last run, next due, missed slots, month-to-date spend.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "get_spend",
+        "description": "Month-to-date API spend in rupees, the cap, and the budget mode (normal/economy/paused).",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "get_memory",
+        "description": "What the system remembers and where: agenda mirror, chat summaries, per-bot memory, database size, disk free, archives, purge policy.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
 ]
 
 
@@ -339,6 +407,21 @@ async def _dispatch(name: str, a: dict) -> Any:
             "priority": a.get("priority", "medium"), "entity": a.get("entity", ""),
             "due_date": a.get("due_date"), "category": "general",
         })
+    if name == "get_agenda":
+        return await tb["agenda"]()
+    if name == "list_jobs":
+        return await tb["jobs"](a.get("status", "open"), int(a.get("limit", 20)))
+    if name == "create_job":
+        return await tb["job_add"]({"title": a["title"], "kind": a["kind"], "objective": a.get("objective", ""),
+                                    "options": a.get("options") or [], "eta": a.get("eta", ""), "bot": "cos"})
+    if name == "resolve_job":
+        return await tb["job_resolve"](int(a["job_id"]), a["status"], a.get("note", ""), "cos")
+    if name == "get_fleet":
+        return await tb["fleet"]()
+    if name == "get_spend":
+        return await tb["spend"]()
+    if name == "get_memory":
+        return await tb["memory"]()
     if name == "add_intel_item":
         return await tb["intel_add"]({
             "title": a["title"], "body": a.get("body", ""), "urgency": a.get("urgency", "MEDIUM"),
@@ -372,11 +455,31 @@ async def _claude_create(client, **kwargs):
     return await client.messages.create(**kwargs)
 
 
-async def _ask_claude(question: str, history: list[dict]) -> dict:
+async def _record_spend(response, chat_id: str | None) -> None:
+    """Every call lands in the spend ledger (Directive §6)."""
+    try:
+        u = response.usage
+        tb = _toolbox.get("spend_record")
+        if tb is not None:
+            await tb({"bot": "cos" if chat_id else "brain", "model": response.model,
+                      "input_tokens": getattr(u, "input_tokens", 0) or 0,
+                      "output_tokens": getattr(u, "output_tokens", 0) or 0,
+                      "cache_read_tokens": getattr(u, "cache_read_input_tokens", 0) or 0})
+    except Exception:
+        pass
+
+
+async def _ask_claude(question: str, history: list[dict], chat_id: str | None = None,
+                      chat_summary: str = "") -> dict:
     import anthropic
 
     client = anthropic.AsyncAnthropic()
     messages = [*history, {"role": "user", "content": question}]
+    system_blocks = [
+        {"type": "text", "text": _constitution() + "\n\n" + SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+    ]
+    if chat_summary:
+        system_blocks.append({"type": "text", "text": "Earlier in this chat (rolling summary): " + chat_summary[:4000]})
     tool_defs = [
         {"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
         for t in TOOLS
@@ -386,12 +489,13 @@ async def _ask_claude(question: str, history: list[dict]) -> dict:
     for _ in range(MAX_TURNS):
         response = await _claude_create(
             client,
-            model="claude-opus-5",
+            model=BRAIN_MODEL,
             max_tokens=16000,
-            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            system=system_blocks,
             tools=tool_defs,
             messages=messages,
         )
+        await _record_spend(response, chat_id)
 
         if response.stop_reason == "refusal":
             return {"answer": "The model declined this request (safety classifiers). Rephrase and try again.",
@@ -419,7 +523,7 @@ async def _ask_claude(question: str, history: list[dict]) -> dict:
         messages.append({"role": "user", "content": results})
 
     return {"answer": "Stopped after too many tool rounds — try a narrower question.",
-            "tools_used": trace, "provider": "claude", "model": "claude-opus-5"}
+            "tools_used": trace, "provider": "claude", "model": BRAIN_MODEL}
 
 
 # ── provider: Grok fallback (existing key works day one) ─────────────────────
@@ -475,8 +579,10 @@ def provider_status() -> dict:
     }
 
 
-async def brain_ask(question: str, history: list[dict] | None = None) -> dict:
-    """Answer a question with full tool access. history = [{role, content}] text turns."""
+async def brain_ask(question: str, history: list[dict] | None = None, chat_id: str | None = None,
+                    chat_summary: str = "") -> dict:
+    """Answer a question with full tool access. history = [{role, content}] text turns.
+    chat_id marks a remembered thread (WhatsApp number or app session)."""
     history = [
         {"role": m["role"], "content": m["content"]}
         for m in (history or [])
@@ -485,7 +591,7 @@ async def brain_ask(question: str, history: list[dict] | None = None) -> dict:
     status = provider_status()
     if status["active"] == "claude":
         try:
-            return await _ask_claude(question, history)
+            return await _ask_claude(question, history, chat_id=chat_id, chat_summary=chat_summary)
         except Exception as e:
             # bad/expired Claude key or account issue → degrade to Grok if possible
             import anthropic

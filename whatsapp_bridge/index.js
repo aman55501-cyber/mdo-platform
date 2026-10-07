@@ -156,9 +156,37 @@ async function startWA() {
     }
   }
 
+  // ── Chief of Staff: direct messages to/from Aman ──────────────────────────
+  // COS_INBOUND=1 turns this on. Two shapes work:
+  //   • a dedicated CoS number running this bridge: Aman's DMs arrive !fromMe
+  //     from a number in COS_ALLOWED_NUMBERS;
+  //   • Aman's own number (this bridge = his phone): he types in the
+  //     "message yourself" chat, which arrives fromMe with remoteJid = own jid.
+  // The backend's replies start with "CoS ·" and are skipped here, so a
+  // self-chat never loops.
+  const COS_INBOUND = (process.env.COS_INBOUND || "0") === "1"
+  const COS_ALLOWED = (process.env.COS_ALLOWED_NUMBERS || "").split(",").map(s => s.replace(/[^0-9]/g, "")).filter(Boolean)
+  function ownNumber() { return String(sock?.user?.id || "").split(":")[0].split("@")[0] }
+
+  async function routeDirectMessage(msg) {
+    if (!COS_INBOUND || !msg?.message) return false
+    const jid = msg.key?.remoteJid || ""
+    if (!jid.endsWith("@s.whatsapp.net")) return false
+    const number = jid.split("@")[0]
+    const fromMe = !!msg.key?.fromMe
+    const selfChat = fromMe && number === ownNumber()
+    if (!selfChat && (fromMe || (COS_ALLOWED.length && !COS_ALLOWED.includes(number)))) return false
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ""
+    if (!text || text.startsWith("CoS ·")) return false
+    console.log(`[CoS inbound] ${number}: ${text.slice(0, 80)}`)
+    await postToMDO("/api/cos/inbound", { from: number, text, channel: "baileys", message_id: msg.key?.id || "" })
+    return true
+  }
+
   // Returns true if the message was forwarded to the backend.
   async function ingestMessage(msg, { skipFromMe = true } = {}) {
     if (!msg?.message) return false
+    if (await routeDirectMessage(msg)) return true
     if (skipFromMe && msg.key?.fromMe) return false
 
     const jid = msg.key?.remoteJid || ""
