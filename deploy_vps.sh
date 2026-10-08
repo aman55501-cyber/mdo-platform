@@ -31,6 +31,7 @@ STEP="start"
 STATUS="error"
 SUMMARY=""
 HEARTBEAT_SENT=0
+PREV_SHA=""
 SHORT_SHA="unknown"
 SERVICES_UP="none"
 CRON_RESULT="skipped"
@@ -123,6 +124,7 @@ step_repo() {
         say "up to date at ${SHORT_SHA} — nothing to do"
         exit 0
     fi
+    PREV_SHA="$(git rev-parse HEAD)"
     if ! git pull --quiet --ff-only origin "$MDO_BRANCH"; then
         die "git pull --ff-only failed (local edits or diverged history on the VPS? run: git status)"
     fi
@@ -201,6 +203,11 @@ step_up() {
     local services=(backend whatsapp)
     if docker compose config --services 2>/dev/null | grep -qx whatsapp2; then
         services+=(whatsapp2)
+    fi
+    # The Next.js build takes ~4 min, so the frontend is rebuilt only when the app
+    # changed in what was just pulled (or when FORCE_FRONTEND=1).
+    if [[ "${FORCE_FRONTEND:-0}" == 1 ]] || { [[ -n "${PREV_SHA:-}" ]] && git diff --name-only "$PREV_SHA" HEAD -- mdo-app/ | grep -q .; }; then
+        services+=(frontend)
     fi
     docker compose up -d --build "${services[@]}" || die "docker compose up failed"
     SERVICES_UP="${services[*]}"
