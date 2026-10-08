@@ -178,9 +178,13 @@ step_tests() {
     # a test that wipes a table would wipe production. Scratch paths only, no volumes.
     # tests/test_core.py belongs to the Shares CFO service (its own container) and is
     # skipped here; CI runs it from the full checkout.
-    local img
-    img="$(docker compose config --images backend 2>/dev/null | head -1)"
-    [[ -n "$img" ]] || img="mdo-platform-backend"
+    local img=""
+    # Image name = <compose project>-backend. Every lookup below may fail on older
+    # compose versions, so each is wrapped; the fallback is the project directory name.
+    img="$( { docker compose config --images 2>/dev/null || true; } | grep -m1 -- '-backend' || true)"
+    [[ -n "$img" ]] || img="$( { docker compose ps --format '{{.Image}}' backend 2>/dev/null || true; } | head -1 || true)"
+    [[ -n "$img" ]] || img="$(basename "$PWD")-backend"
+    say "test image: $img"
     if ! docker run --rm --network none \
             -e VEGA_DB_PATH=/tmp/t/vega.db -e VEDANTA_DB_PATH=/tmp/t/vedanta.db \
             -e VAULT_DIR=/tmp/t/vault -e MDO_AUTH_TOKEN= -e MDO_MCP_SECRET= \
