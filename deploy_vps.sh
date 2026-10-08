@@ -1,0 +1,371 @@
+#!/usr/bin/env bash
+# deploy_vps.sh — one command deploys MDO on the VPS; `--auto` keeps it current.
+#
+#   sudo bash deploy_vps.sh          first deploy / re-deploy by hand (idempotent)
+#   sudo bash deploy_vps.sh --auto   cron, every 10 min: pull + test + rebuild
+#                                    only when origin/<branch> is ahead of HEAD;
+#                                    logs to /var/log/mdo-deploy.log and files a
+#                                    heartbeat to /api/agent/report every run
+#
+# Env overrides: MDO_DIR (repo dir), MDO_BRANCH (branch to track).
+# Secrets are read from .env only and never printed.
+#
+# Everything lives in functions and main() is the last line, so a `git pull`
+# that rewrites this very file cannot disturb the run already in progress.
+set -euo pipefail
+# bash ≥5.2 treats `&` in a ${var//pat/repl} replacement as the matched text;
+# the cron prefix contains `&&`, so turn that off (no-op on older bash).
+shopt -u patsub_replacement 2>/dev/null || true
+
+MDO_DIR="${MDO_DIR:-/docker/sharecfo/mdo-platform}"
+MDO_BRANCH="${MDO_BRANCH:-claude/chief-of-staff-bot-4i2jyz}"
+API_URL="${MDO_API_URL:-http://localhost:8501}"
+CRON_FILE=/etc/cron.d/mdo-fleet
+LOG_FILE=/var/log/mdo-deploy.log
+LOCK_FILE=/var/lock/mdo-deploy.lock
+DOC_FILE=DEPLOY_HOSTINGER.md
+DEFAULT_DIR_IN_DOC=/docker/sharecfo/mdo-platform
+
+AUTO=0
+STEP="start"
+STATUS="error"
+SUMMARY=""
+HEARTBEAT_SENT=0
+SHORT_SHA="unknown"
+SERVICES_UP="none"
+CRON_RESULT="skipped"
+ALERT_RESULT="skipped"
+TOKEN=""
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+say()  { printf '[deploy %s] %s\n' "$(date '+%F %T')" "$*"; }
+step() { STEP="$1"; say "── $1"; }
+die()  { SUMMARY="failed at ${STEP}: $*"; say "ABORT: $*"; exit 1; }
+
+read_env_value() {           # read_env_value KEY → value from $MDO_DIR/.env (never exported, never printed)
+    local key="$1" line
+    line="$(grep -E "^${key}=" "$MDO_DIR/.env" 2>/dev/null | tail -1 || true)"
+    line="${line#*=}"
+    line="${line%\"}"; line="${line#\"}"
+    line="${line%\'}"; line="${line#\'}"
+    printf '%s' "$line"
+}
+
+json_escape() {              # minimal JSON string escaping for the heartbeat
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/ }"
+    s="${s//$'\t'/ }"
+    printf '%s' "$s"
+}
+
+post_heartbeat() {           # ALWAYS called on exit (trap) — CHIEF_OF_STAFF.md Directive 5
+    [[ "$HEARTBEAT_SENT" == 1 ]] && return 0
+    HEARTBEAT_SENT=1
+    local body resp
+    body=$(printf '{"bot":"deploy","cadence":"daily","heartbeat":true,"status":"%s","summary":"%s","checks_run":[]}' \
+        "$STATUS" "$(json_escape "$SUMMARY")")
+    if [[ -z "$TOKEN" ]]; then
+        say "heartbeat NOT sent: MDO_AUTH_TOKEN empty in .env (status=${STATUS}: ${SUMMARY})"
+        return 0
+    fi
+    resp="$(curl -s -m 15 -X POST "${API_URL}/api/agent/report" \
+        -H "Content-Type: application/json" -H "X-MDO-Key: ${TOKEN}" \
+        --data "$body" 2>&1 || true)"
+    if [[ "$resp" == *'"stored"'* ]]; then
+        say "heartbeat filed: status=${STATUS} — ${SUMMARY}"
+    else
+        say "heartbeat NOT delivered (backend down?): status=${STATUS} — ${SUMMARY} — response: ${resp:0:200}"
+    fi
+}
+
+on_exit() {
+    local rc=$?
+    if [[ $rc -ne 0 && "$STATUS" != "clean" ]]; then
+        STATUS="error"
+        [[ -n "$SUMMARY" ]] || SUMMARY="failed at ${STEP} (exit ${rc})"
+    fi
+    post_heartbeat
+    say "exit ${rc}"
+}
+
+need_root() {
+    local flag=""
+    [[ "$AUTO" == 1 ]] && flag=" --auto"
+    [[ "${EUID}" -eq 0 ]] || die "run as root: sudo bash deploy_vps.sh${flag}"
+}
+
+# ── a. repo + branch ─────────────────────────────────────────────────────────
+step_repo() {
+    step "a. repo: ${MDO_DIR} @ ${MDO_BRANCH}"
+    [[ -d "$MDO_DIR/.git" ]] || die "${MDO_DIR} is not a git checkout (set MDO_DIR?)"
+    cd "$MDO_DIR"
+    if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx "$MDO_DIR"; then
+        git config --global --add safe.directory "$MDO_DIR" >/dev/null 2>&1 || true
+    fi
+    git fetch --quiet origin "$MDO_BRANCH" || die "git fetch origin ${MDO_BRANCH} failed"
+
+    local current
+    current="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+    if [[ "$current" != "$MDO_BRANCH" ]]; then
+        git checkout --quiet "$MDO_BRANCH" 2>/dev/null \
+            || git checkout --quiet -b "$MDO_BRANCH" --track "origin/$MDO_BRANCH" \
+            || die "cannot check out ${MDO_BRANCH}"
+        say "switched ${current} → ${MDO_BRANCH}"
+    fi
+
+    local behind
+    behind="$(git rev-list --count "HEAD..origin/${MDO_BRANCH}" 2>/dev/null || echo 0)"
+    if [[ "$AUTO" == 1 && "$behind" == 0 ]]; then
+        SHORT_SHA="$(git rev-parse --short HEAD)"
+        STATUS="clean"; SUMMARY="up to date"
+        say "up to date at ${SHORT_SHA} — nothing to do"
+        exit 0
+    fi
+    if ! git pull --quiet --ff-only origin "$MDO_BRANCH"; then
+        die "git pull --ff-only failed (local edits or diverged history on the VPS? run: git status)"
+    fi
+    SHORT_SHA="$(git rev-parse --short HEAD)"
+    say "HEAD ${SHORT_SHA} (${behind} new commit(s) pulled)"
+}
+
+# ── b. .env ──────────────────────────────────────────────────────────────────
+step_env() {
+    step "b. .env"
+    if [[ ! -f .env ]]; then
+        cp .env.example .env
+        chmod 600 .env
+        say "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        say "!!  .env did not exist — copied from .env.example. EVERY KEY IS A      !!"
+        say "!!  PLACEHOLDER. Fill ANTHROPIC_API_KEY, MDO_AUTH_TOKEN, MDO_MCP_SECRET, !!"
+        say "!!  CFO_API_TOKEN, NEXT_PUBLIC_API_URL in ${MDO_DIR}/.env               !!"
+        say "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    fi
+    # Append any var from the "Chief of Staff" block of .env.example that .env
+    # lacks, with its example default. Existing values are never touched.
+    local in_block=0 added=() line key
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^#\ ──\ Chief\ of\ Staff ]]; then in_block=1; continue; fi
+        if [[ $in_block == 1 && "$line" =~ ^#\ ── ]]; then break; fi
+        [[ $in_block == 1 ]] || continue
+        [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
+        key="${BASH_REMATCH[1]}"
+        if ! grep -qE "^${key}=" .env; then
+            if [[ -s .env && -n "$(tail -c1 .env)" ]]; then echo >> .env; fi
+            printf '%s\n' "$line" >> .env
+            added+=("$key")
+        fi
+    done < .env.example
+    if (( ${#added[@]} )); then
+        say "added ${#added[@]} missing Chief of Staff var(s) with example defaults: ${added[*]}"
+    else
+        say "all Chief of Staff vars present — nothing added"
+    fi
+    TOKEN="$(read_env_value MDO_AUTH_TOKEN)"
+    [[ -n "$TOKEN" ]] || say "WARNING: MDO_AUTH_TOKEN is empty — API is unprotected and heartbeats cannot authenticate"
+}
+
+# ── c. tests in a throwaway container ────────────────────────────────────────
+step_tests() {
+    step "c. unit tests (throwaway container)"
+    # The test container must run the NEW code, so the image is built first.
+    # Building does not touch the running containers; only `up` in step d does.
+    # A failed test therefore leaves the live services exactly as they were.
+    docker compose build backend || die "docker compose build backend failed"
+    if ! docker compose run --rm --no-deps -T backend python -m pytest -q tests/; then
+        die "unit tests FAILED — live services left untouched, nothing deployed"
+    fi
+    say "tests passed"
+}
+
+# ── d. bring services up ─────────────────────────────────────────────────────
+step_up() {
+    step "d. docker compose up"
+    local services=(backend whatsapp)
+    if docker compose config --services 2>/dev/null | grep -qx whatsapp2; then
+        services+=(whatsapp2)
+    fi
+    docker compose up -d --build "${services[@]}" || die "docker compose up failed"
+    SERVICES_UP="${services[*]}"
+    say "up: ${SERVICES_UP}"
+}
+
+# ── e+f. cron ────────────────────────────────────────────────────────────────
+render_cron() {              # the §8 block of DEPLOY_HOSTINGER.md, $MDO expanded, + self-update line
+    local block mdo="" line comment m h dom mon dow cmd
+    block="$(awk '/^# MDO fleet/{f=1} f&&/^```/{exit} f' "$DOC_FILE")"
+    [[ -n "$block" ]] || die "cron block not found in ${DOC_FILE} §8"
+    printf '# /etc/cron.d/mdo-fleet — written by deploy_vps.sh from %s §8. Do not hand-edit; re-run the script.\n' "$DOC_FILE"
+    printf 'SHELL=/bin/bash\n'
+    printf 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
+    printf 'MAILTO=""\n\n'
+    while IFS= read -r line; do
+        [[ -z "${line// }" ]] && continue
+        if [[ "$line" =~ ^# ]]; then printf '%s\n' "$line"; continue; fi
+        if [[ "$line" =~ ^MDO=(.*)$ ]]; then
+            mdo="${BASH_REMATCH[1]}"
+            mdo="${mdo//$DEFAULT_DIR_IN_DOC/$MDO_DIR}"
+            continue
+        fi
+        comment=""
+        if [[ "$line" == *"#"* ]]; then comment="${line#*#}"; line="${line%%#*}"; fi
+        read -r m h dom mon dow cmd <<<"$line"
+        [[ -n "${cmd:-}" ]] || continue
+        cmd="${cmd//\$MDO/$mdo}"
+        cmd="${cmd%"${cmd##*[![:space:]]}"}"
+        if [[ -n "$comment" ]]; then printf '#%s\n' "$comment"; fi
+        printf '%s %s %s %s %s root %s\n' "$m" "$h" "$dom" "$mon" "$dow" "$cmd"
+    done <<<"$block"
+    printf '\n# self-update: pull + test + rebuild when origin/%s is ahead; heartbeat every run\n' "$MDO_BRANCH"
+    printf '*/10 * * * * root MDO_DIR=%q MDO_BRANCH=%q /bin/bash %q/deploy_vps.sh --auto >> %s 2>&1\n' \
+        "$MDO_DIR" "$MDO_BRANCH" "$MDO_DIR" "$LOG_FILE"
+}
+
+step_cron() {
+    step "e+f. cron: ${CRON_FILE}"
+    local tmp
+    tmp="$(mktemp)"
+    render_cron > "$tmp"
+    if [[ -f "$CRON_FILE" ]] && cmp -s "$tmp" "$CRON_FILE"; then
+        CRON_RESULT="unchanged ($(grep -c '^[0-9*]' "$CRON_FILE") jobs)"
+        say "cron unchanged"
+    else
+        install -o root -g root -m 0644 "$tmp" "$CRON_FILE"
+        CRON_RESULT="installed ($(grep -c '^[0-9*]' "$CRON_FILE") jobs incl. self-update every 10 min)"
+        say "cron ${CRON_RESULT}"
+    fi
+    rm -f "$tmp"
+    touch "$LOG_FILE" /var/log/mdo-agent.log
+
+    # Old per-user crontab lines (the pre-cron.d way) would double-run the bots.
+    local users="root" u before after n_before n_after
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then users="root $SUDO_USER"; fi
+    for u in $users; do
+        before="$(crontab -u "$u" -l 2>/dev/null || true)"
+        [[ -n "$before" ]] || { say "no crontab for ${u} — nothing to clean"; continue; }
+        after="$(printf '%s\n' "$before" | grep -v -e 'mdo_agent' -e 'mdo_housekeeping' -e 'savelog .*mdo-agent' -e '^MDO=' || true)"
+        n_before="$(printf '%s\n' "$before" | grep -c . || true)"
+        n_after="$(printf '%s\n' "$after" | grep -c . || true)"
+        if (( n_before > n_after )); then
+            if [[ -n "${after// }" ]]; then printf '%s\n' "$after" | crontab -u "$u" -; else crontab -u "$u" -r; fi
+            say "removed $(( n_before - n_after )) old mdo_agent line(s) from ${u}'s crontab"
+        else
+            say "no old mdo_agent lines in ${u}'s crontab"
+        fi
+    done
+}
+
+# ── g. prove the alert channel ───────────────────────────────────────────────
+wait_backend() {
+    local i
+    for i in $(seq 1 45); do
+        if curl -s -m 3 -o /dev/null -w '%{http_code}' -H "X-MDO-Key: ${TOKEN}" "${API_URL}/api/status" 2>/dev/null | grep -q '^200$'; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
+step_alert() {
+    step "g. test alert → WhatsApp"
+    if ! wait_backend; then
+        ALERT_RESULT="backend not answering on ${API_URL} after 90s — check: docker compose logs backend"
+        say "$ALERT_RESULT"
+        return 0
+    fi
+    ALERT_RESULT="$(curl -s -m 20 -X POST "${API_URL}/api/alerts/test" -H "X-MDO-Key: ${TOKEN}" || echo '{"sent":false,"reason":"curl failed"}')"
+    say "alert test: ${ALERT_RESULT}"
+}
+
+# ── h. summary ───────────────────────────────────────────────────────────────
+placeholder_keys() {         # keys in .env still at example / empty values that only Aman can fill
+    local key val out=()
+    for key in ANTHROPIC_API_KEY MDO_AUTH_TOKEN MDO_MCP_SECRET CFO_API_TOKEN NEXT_PUBLIC_API_URL GROK_API_KEY HDFC_API_KEY HDFC_API_SECRET; do
+        val="$(read_env_value "$key")"
+        if [[ -z "$val" || "$val" == your_* || "$val" == *YOUR_VPS_IP* ]]; then out+=("$key"); fi
+    done
+    printf '%s' "${out[*]:-none}"
+}
+
+bridge_state() {
+    local resp
+    resp="$(curl -s -m 8 -H "X-MDO-Key: ${TOKEN}" "${API_URL}/api/whatsapp/qr" 2>/dev/null || true)"
+    if [[ "$resp" == *'"connected": true'* || "$resp" == *'"connected":true'* ]]; then
+        echo "connected"
+    elif [[ -z "$resp" ]]; then
+        echo "unknown (backend not reachable)"
+    else
+        echo "DISCONNECTED — scan the QR on the app's VWLR Ops Feed page"
+    fi
+}
+
+step_summary() {
+    step "h. summary"
+    local cap
+    cap="$(read_env_value SPEND_CAP_INR_MONTH)"
+    cat <<EOF
+
+══════════════════════════ MDO deploy summary ══════════════════════════
+ branch        : ${MDO_BRANCH}
+ commit        : ${SHORT_SHA}
+ services up   : ${SERVICES_UP}
+ cron          : ${CRON_RESULT}  (${CRON_FILE})
+ self-update   : every 10 min via deploy_vps.sh --auto → ${LOG_FILE}
+ test alert    : ${ALERT_RESULT}
+
+ Only Aman can do these three:
+  1. Fill the keys in ${MDO_DIR}/.env still at example/empty values:
+       $(placeholder_keys)
+     then: docker compose up -d backend whatsapp
+  2. Set the spend cap: SPEND_CAP_INR_MONTH in .env (now: ${cap:-empty}; agenda.yaml says Aman decides).
+  3. WhatsApp bridge: $(bridge_state)
+═════════════════════════════════════════════════════════════════════════
+EOF
+}
+
+# ── main ─────────────────────────────────────────────────────────────────────
+main() {
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        sed -n '2,14p' "$0"; exit 0
+    fi
+    if [[ "${1:-}" == "--auto" ]]; then AUTO=1; fi
+    need_root
+    mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")"
+
+    if [[ "$AUTO" == 1 ]]; then
+        exec >> "$LOG_FILE" 2>&1
+        say "auto run start"
+    fi
+    # TOKEN is read as early as possible so even an early failure heartbeats.
+    TOKEN="$(read_env_value MDO_AUTH_TOKEN)"
+    trap on_exit EXIT
+
+    # One deploy at a time. --auto gives up immediately (next slot retries);
+    # a manual run waits for a running auto deploy to finish.
+    exec 9>"$LOCK_FILE"
+    if [[ "$AUTO" == 1 ]]; then
+        if ! flock -n 9; then
+            STATUS="clean"; SUMMARY="skipped: previous deploy still running"
+            say "$SUMMARY"; exit 0
+        fi
+    else
+        flock -w 900 9 || die "another deploy has held the lock for 15 min"
+    fi
+
+    step_repo
+    step_env
+    step_tests
+    step_up
+    STATUS="clean"; SUMMARY="deployed ${SHORT_SHA} — tests passed"
+    if [[ "$AUTO" == 0 ]]; then
+        step_cron
+        step_alert
+        step_summary
+    else
+        say "auto: deployed ${SHORT_SHA} — tests passed"
+    fi
+}
+
+main "$@"

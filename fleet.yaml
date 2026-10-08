@@ -236,6 +236,33 @@ bots:
     rules:
     - Archive before delete
     - Report even when nothing was freed
+- id: deploy
+  name: Self-deploy from branch
+  runs_on: vps-cron
+  command: deploy_vps.sh --auto
+  cadence: daily 00:10 IST
+  model: none
+  serves:
+  - all
+  enabled: true
+  charter:
+    purpose: Keep the VPS running the latest commit on the working branch with zero clicks from Aman — the CoS pushes
+      a fix, the VPS picks it up.
+    thinks: Deterministic. Is origin/<branch> ahead of HEAD? If not, say 'up to date' and stop. If yes, pull, run
+      the unit tests in a throwaway container, and only then rebuild. A red test means nothing changes.
+    works: 'Cron every 10 min on the VPS (/etc/cron.d/mdo-fleet). No LLM. Steps: git fetch + ff-only pull → .env
+      gap-fill from .env.example (never overwrites) → pytest in a throwaway backend container → docker compose up
+      -d --build backend + whatsapp bridges. Logs to /var/log/mdo-deploy.log.'
+    limits: Deploys only what is already on the branch; never edits code, never rewrites cron in --auto mode, never
+      touches .env values that exist. Cannot fill API keys, set the spend cap, or scan the WhatsApp QR — those are
+      Aman's. One run at a time (flock).
+    minimum_output: 'Every run POSTs a heartbeat: ''deployed <sha> — tests passed'', ''up to date'', or the error
+      as status=error (which the backend pushes as a 💀 line). A missing heartbeat for a day = the cron is dead.'
+    rules:
+    - Tests before rebuild, always
+    - Never overwrite a value in .env
+    - Report even when nothing changed
+    - A failed deploy leaves the running services untouched
 - id: singhvi
   runs_on: vps
   cadence: 08:00-09:15 IST Mon-Fri
@@ -251,9 +278,113 @@ bots:
     minimum_output: n/a until enabled
     rules:
     - Never auto-execute
+- id: x-watch
+  name: X / web real-time scout (Grok)
+  runs_on: vps-cron
+  provider: grok
+  command: docker compose exec -T backend python mdo_agent.py x-watch
+  cadence: hourly 07:00-22:00 IST
+  model: grok-4
+  checks:
+  - x_pulse
+  - tender_watch
+  x_handles: []
+  serves: []
+  enabled: true
+  charter:
+    purpose: 'See it on X or the web before it reaches a WhatsApp group: NITs, client-site news, competitor moves,
+      coal and rail policy, Singhvi''s calls.'
+    thinks: Only what the search tools returned counts, and every finding carries its post or article URL. Nothing
+      relevant is a valid, reported result.
+    works: Hourly 07:00–22:00 IST on the VPS. xAI Responses API with x_search + web_search on grok-4. Billed per
+      call to the Grok API key (separate from the Grok app subscription); recorded in the spend ledger at the approximate
+      list price in .env.
+    limits: Cannot log in to Tender247 or any paywalled site. Cannot read DMs. X search is as good as X's own index;
+      a quiet hour is reported as quiet.
+    minimum_output: 'Hourly heartbeat or a report with one line per finding: what, where (URL), why it matters,
+      action, owner, ETA.'
+    rules:
+    - Never invent a post or a tender
+    - URL on every finding
+    - 🔴 only for a NIT closing <72h or a stoppage at a client site
+- id: share-master-refresh
+  name: Daily Share Master refresh (Claude Routine)
+  runs_on: claude-routine
+  reports_to: push
+  cadence: daily 09:25 IST
+  model: claude-sonnet-5-5
+  serves: []
+  enabled: true
+  notes: Reads Supabase share_master + desk_ideas, republishes the Share Master artifact, one push notification
+    per run. Read-only on money.
+  charter:
+    purpose: Keep the Share Master page current every trading morning.
+    thinks: 'Rules only: flags CAP >12%, L15, L30.'
+    works: Routine 09:25 IST Mon–Fri; Supabase read; artifact republish; push notification.
+    limits: Never places or suggests orders. Depends on the Angel feed being fresh; says so when stale.
+    minimum_output: One push notification per run, even when nothing changed.
+    rules:
+    - Read-only on Aman's data
+- id: weekly-finance-update
+  name: Weekly finance update (Claude Routine)
+  runs_on: claude-routine
+  reports_to: push
+  cadence: weekly Sun 08:30 IST
+  model: ''
+  serves: []
+  enabled: true
+  notes: 'LAPTOP-BOUND: edits C:\Users\Owner\claude master\finance\Family_Finance_Master.xlsx via a mounted folder.
+    Fails while the laptop is off — conflicts with Directive 11. CoS proposes moving the workbook to the VPS/Drive.'
+  charter:
+    purpose: Append the week's statements, dividends and balances to the family finance workbook from Gmail.
+    thinks: Statement emails first; PDFs only via Chrome; skips gracefully.
+    works: Routine Sun 08:30 IST; Gmail read; openpyxl append; recalc.
+    limits: Needs the laptop folder mounted. Cannot download attachments through the Gmail connector.
+    minimum_output: 'Chat summary: rows added, balances captured, recon flags, gaps.'
+    rules:
+    - Never sends email
+    - Never moves money
+- id: weekly-memory-sync
+  name: Weekly memory sync (Claude Routine)
+  runs_on: claude-routine
+  reports_to: push
+  cadence: weekly Sun 07:30 IST
+  model: ''
+  serves: []
+  enabled: true
+  notes: 'LAPTOP-BOUND: writes only to C:\Users\Owner\Desktop\BUSINESSES\_memory\. Stops loudly if the path is missing
+    — which it is while the laptop is off. Conflicts with Directive 11; CoS proposes a repo- or VPS-hosted _memory.'
+  charter:
+    purpose: Consolidate the week's durable facts into Aman's _memory with sources and a log line.
+    thinks: Every fact sourced; corrections keep history; never copy a number out of a sheet.
+    works: Routine Sun 07:30 IST; reads the week's sessions and memory files; appends _log.md.
+    limits: Writes to the laptop only. Reports 'no memory changes' rather than inventing.
+    minimum_output: Chat report of what changed, corrected, or could not be verified — every week.
+    rules:
+    - Source on every fact
+    - No fabricated entities
+- id: life-os-weekly-review
+  name: Life OS weekly review (Claude Routine)
+  runs_on: claude-routine
+  reports_to: push
+  cadence: weekly Sun 08:00 IST
+  model: ''
+  serves: []
+  enabled: true
+  notes: Notion read-only digest for Aman & Jahnavi. Cloud-only; no laptop dependency.
+  charter:
+    purpose: A warm weekly digest of events, family dates, goals and open tasks from the Life OS Notion databases.
+    thinks: Read-only; flags missing dates and stuck goals gently.
+    works: Routine Sun 08:00 IST; Notion connector.
+    limits: Modifies nothing in Notion.
+    minimum_output: The digest, every Sunday.
+    rules:
+    - Read-only
 fleet_gaps:
 - 'bank_balances check is blocked: no feed (candidate: e-statements to Gmail, then Account Aggregator)'
 - 'tender_watch has no Tender247 access (manual login); public portals only (candidate: Tender247 email alerts into
   Gmail)'
 - CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the
   domain is allowed
+- Two Routines (weekly-finance-update, weekly-memory-sync) depend on Aman's laptop being on — Directive 11 conflict;
+  CoS to propose a VPS/repo home for the workbook and _memory.

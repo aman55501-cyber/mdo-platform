@@ -133,6 +133,51 @@ def ask_claude(prompt: str, model: str, bot_id: str, max_tokens: int = 16000) ->
     return text
 
 
+GROK_KEY = os.environ.get("GROK_API_KEY", "").strip()
+
+
+def ask_grok(prompt: str, model: str, bot_id: str, handles: list[str] | None = None) -> str:
+    """Call xAI's Responses API with live X search + web search, record the
+    spend, return the text. Used by bots with provider: grok (x-watch)."""
+    from datetime import date
+    today = date.today().isoformat()
+    x_tool: dict = {"type": "x_search", "from_date": today, "to_date": today}
+    if handles:
+        x_tool["allowed_x_handles"] = handles[:50]
+    payload = json.dumps({
+        "model": model,
+        "instructions": "You are a real-time intelligence scout. Use x_search and web_search. "
+                        "Report only what the tools returned, with the post/article link as source. "
+                        "Never invent. Return ONLY the JSON object requested.",
+        "input": [{"role": "user", "content": prompt}],
+        "tools": [x_tool, {"type": "web_search"}],
+        "temperature": 0.2,
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.x.ai/v1/responses", data=payload,
+        headers={"Authorization": f"Bearer {GROK_KEY}", "Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=300) as r:
+        resp = json.loads(r.read())
+    usage = resp.get("usage") or {}
+    try:
+        api("/api/spend/record", "POST", {
+            "bot": bot_id, "model": resp.get("model") or model,
+            "input_tokens": int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
+            "output_tokens": int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
+        }, timeout=15)
+    except Exception as e:
+        log(f"spend not recorded: {e}")
+    for item in reversed(resp.get("output", [])):
+        if item.get("type") == "message":
+            for part in item.get("content", []):
+                if part.get("type") == "output_text":
+                    return part.get("text", "")
+    text = resp.get("output_text") or resp.get("text") or ""
+    if not text:
+        log(f"grok returned no text — keys={list(resp.keys())}")
+    return text
+
+
 def in_window(window: str, now_ist: datetime) -> bool:
     """Respect a check's run_window, e.g. '09:00-15:30 IST Mon-Fri'."""
     if not window:
@@ -217,6 +262,13 @@ Aman's signature, which is Aman's click. Seeded dates may be stale: flag stalene
 Aditi Investments). Thresholds: 🔴 book moves >3% in a day, a position down >5%, F&O
 expiry within 2 days unhedged; 🟡 >2% day move, unrealised <-5%, sector >25%. You never
 trade. You report.""",
+    "x-watch": """You are the X / web real-time scout for Aman Agrawal (ANS Group, Raigarh CG). Search X and
+the web NOW for: new NITs / tenders from CIL, SECL, WCL, MCL, NTPC, NALCO, GeM, CPPP in coal RCR,
+coal loading/unloading, rake handling; news at client sites (Vedanta/BALCO Korba, JSPL Raigarh,
+SAIL Bhilai, NTPC Sipat) — stoppages, strikes, accidents, rake/wagon shortages; posts by the tracked
+competitors; coal policy and rail freight changes (Ministry of Coal, Railways, CEA); Anil Singhvi's
+market calls. Every finding carries the post or article URL as its source. If the tools return
+nothing relevant, say so — an empty result is a valid result.""",
     "hotel-daily": """You are the Hotel ANS daily bot. Occupancy below 20% or no night report received
 is 🔴; below the trailing 7-day average is 🟡. Rate parity and OTA issues are 🟡.""",
 }
@@ -271,7 +323,11 @@ def run(bot_id: str) -> int:
     if not bot.get("enabled", True):
         heartbeat(bot_id, cadence_key, "disabled", "bot disabled in fleet.yaml — nothing run")
         return 0
-    if not ANTHROPIC_KEY:
+    provider = str(bot.get("provider") or "anthropic").lower()
+    if provider == "grok" and not GROK_KEY:
+        heartbeat(bot_id, cadence_key, "error", "GROK_API_KEY not set — add it to .env on the VPS")
+        return 2
+    if provider != "grok" and not ANTHROPIC_KEY:
         heartbeat(bot_id, cadence_key, "error", "ANTHROPIC_API_KEY not set — add it to .env on the VPS")
         return 2
 
@@ -286,7 +342,7 @@ def run(bot_id: str) -> int:
         heartbeat(bot_id, cadence_key, "paused",
                   f"paused: budget — ₹{spend.get('month_to_date_inr', 0):,.0f} of ₹{spend.get('cap_inr', 0):,.0f} spent this month")
         return 0
-    if mode == "economy" and model != ECONOMY_MODEL:
+    if mode == "economy" and provider != "grok" and model != ECONOMY_MODEL:
         log(f"economy mode: {model} → {ECONOMY_MODEL}")
         model = ECONOMY_MODEL
 
@@ -337,7 +393,10 @@ def run(bot_id: str) -> int:
     )
 
     def attempt(p: str, max_tokens: int):
-        raw = ask_claude(p, model, bot_id, max_tokens=max_tokens)
+        if provider == "grok":
+            raw = ask_grok(p, model, bot_id, handles=bot.get("x_handles") or None)
+        else:
+            raw = ask_claude(p, model, bot_id, max_tokens=max_tokens)
         s, e = raw.find("{"), raw.rfind("}") + 1
         if s < 0 or e <= s:
             return None, raw

@@ -202,6 +202,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
                 "SELECT status, summary, created_at FROM cos_runs WHERE bot=? ORDER BY id DESC LIMIT 1", (b["id"],))
             last = dict(last[0]) if last else None
             last_at = _utc(last["created_at"]) if last else None
+            by_push = str(b.get("reports_to", "ledger")).lower() == "push"   # Claude Routines: push notification, no ledger row
             due = next_due(str(b.get("cadence", "")), last_at, now) if b.get("enabled", True) else None
             spend = await db.execute_fetchall(
                 "SELECT ROUND(COALESCE(SUM(cost_inr),0),2) AS inr FROM spend_ledger WHERE bot=? AND created_at >= ?",
@@ -214,10 +215,11 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
                 "last_status": last["status"] if last else "never",
                 "last_summary": (last["summary"] or "")[:300] if last else "",
                 "next_due": due.isoformat() if due else None,
-                "missed": is_missed(str(b.get("cadence", "")), last_at, now) if b.get("enabled", True) else False,
+                "reports_to": "push" if by_push else "ledger",
+                "missed": (is_missed(str(b.get("cadence", "")), last_at, now) if (b.get("enabled", True) and not by_push) else False),
                 "spend_inr_mtd": float(dict(spend[0])["inr"]) if spend else 0.0,
             })
-        enabled = [b for b in out if b["enabled"]]
+        enabled = [b for b in out if b["enabled"] and b["reports_to"] == "ledger"]
         return {"bots": out, "total": len(enabled), "alive": sum(1 for b in enabled if not b["missed"]),
                 "dead": [b["id"] for b in enabled if b["missed"]], "gaps": fleet.get("fleet_gaps") or [],
                 "as_of": now.isoformat()}
@@ -492,6 +494,58 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
                     handled.append(await handle_inbound(m.get("from", ""), (m.get("text") or {}).get("body", ""),
                                                         "meta", m.get("id", "")))
         return {"handled": len(handled)}
+
+    # ── tender inbound: a locked door for external agents (Grok task, scraper, Gmail parser) ──
+    def _tender_token_ok(request: Request) -> bool:
+        tok = os.environ.get("TENDER_INBOUND_TOKEN", "").strip()
+        if not tok:
+            return False
+        got = (request.headers.get("x-tender-token") or request.query_params.get("token") or "").strip()
+        return hmac.compare_digest(got, tok)
+
+    @app.post("/api/cos/tender-inbound")
+    async def tender_inbound(request: Request):
+        """Any outside agent with TENDER_INBOUND_TOKEN may post tenders here and
+        nothing else. Payload: {buyer, title, category, due_date (YYYY-MM-DD),
+        url, volume_mt, source, notes}. Duplicates (same url, or same buyer +
+        due_date + title) are ignored. The tender bot evaluates on its next run."""
+        if not _tender_token_ok(request):
+            raise HTTPException(403, "bad or missing X-Tender-Token")
+        try:
+            body = json.loads((await request.body()) or b"{}")
+        except json.JSONDecodeError:
+            raise HTTPException(400, "bad json")
+        items = body if isinstance(body, list) else body.get("tenders") or [body]
+        db = await vdb()
+        added, skipped = 0, 0
+        for t in items[:50]:
+            if not isinstance(t, dict):
+                continue
+            buyer = str(t.get("buyer") or "")[:120].strip()
+            title = str(t.get("title") or t.get("notes") or "")[:300].strip()
+            if not buyer and not title:
+                skipped += 1
+                continue
+            url = str(t.get("url") or "")[:500].strip()
+            due = str(t.get("due_date") or "")[:10] or None
+            notes = (f"[{str(t.get('source') or 'external')[:40]}] {title}" + (" — " + str(t["notes"])[:500] if t.get("notes") and t.get("title") else ""))[:800]
+            dup = await db.execute_fetchall(
+                "SELECT id FROM vwlr_tender_pipeline WHERE (url=? AND url!='') OR (buyer=? AND COALESCE(due_date,'')=COALESCE(?, '') AND substr(notes,1,80)=substr(?,1,80)) LIMIT 1",
+                (url, buyer, due, notes))
+            if dup:
+                skipped += 1
+                continue
+            try:
+                vol = float(t.get("volume_mt") or 0)
+            except (TypeError, ValueError):
+                vol = 0.0
+            await db.execute(
+                "INSERT INTO vwlr_tender_pipeline (buyer,volume_mt,category,due_date,status,url,notes,eligibility_score) VALUES (?,?,?,?,?,?,?,?)",
+                (buyer or "Unknown buyer", vol, str(t.get("category") or "Other")[:60], due, "evaluating", url, notes, 0.0))
+            added += 1
+        await db.commit()
+        await record_run("tender-inbound", "event", "clean", f"{added} added, {skipped} skipped")
+        return {"added": added, "skipped": skipped}
 
     @app.post("/api/cos/send")
     async def cos_send(body: dict):

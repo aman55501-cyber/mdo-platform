@@ -1,0 +1,35 @@
+# CI — every push and pull request. The VPS self-deploy (deploy_vps.sh --auto)
+# runs the same pytest inside the image before it rebuilds, so a red run here
+# is the early warning; the VPS refuses the commit on its own.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: pytest + py_compile (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements_server.txt
+      - name: Unit tests
+        run: python -m pytest -q tests/
+      - name: Compile check
+        run: python -m py_compile mdo_server.py mdo_brain.py mdo_cos.py mdo_cos_api.py mdo_agent.py mdo_housekeeping.py
+
+  bridge:
+    name: WhatsApp bridge syntax (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --check whatsapp_bridge/index.js

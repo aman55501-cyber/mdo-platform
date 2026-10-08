@@ -88,8 +88,11 @@ daily, and rotate the secret if it ever leaks.
 
 ## 6. Updating after code changes
 
+Nothing to do: once §8's one-time command has run, the VPS pulls the working
+branch itself every 10 minutes (`deploy_vps.sh --auto`). To force it by hand:
+
 ```bash
-cd mdo-platform && git pull && docker compose up -d --build
+cd /docker/sharecfo/mdo-platform && sudo bash deploy_vps.sh
 ```
 
 ## 7a. Custom domain via an EXISTING Caddy on the same VPS
@@ -156,7 +159,25 @@ backend container: same key, same database, same network. Every run files a
 heartbeat even when clean, so a bot that stops is visible on the app's
 **Fleet & Memory** page within one slot and the Chief of Staff sends a 💀 line.
 
-Test by hand first:
+**One SSH session, one command** (idempotent — safe to re-run any time):
+```bash
+cd /docker/sharecfo/mdo-platform && git fetch origin claude/chief-of-staff-bot-4i2jyz && git checkout claude/chief-of-staff-bot-4i2jyz && sudo bash deploy_vps.sh
+```
+It checks out the branch, fills any missing Chief of Staff variables in `.env`
+from `.env.example` (never overwriting a value), runs the unit tests in a
+throwaway container, rebuilds `backend` + the WhatsApp bridges, installs the
+fleet crontab below as `/etc/cron.d/mdo-fleet`, removes the old per-user
+`mdo_agent` cron lines, fires a test alert to WhatsApp, and prints a summary
+with the three things only Aman can do. Run it from the repo; never pipe a
+download into bash.
+
+`--auto` is the self-update: cron runs `deploy_vps.sh --auto` every 10 minutes
+and it deploys only when `origin/<branch>` is ahead of HEAD (tests first, no
+cron rewrite), logging to `/var/log/mdo-deploy.log`. Every auto run — even
+"up to date" — files a `deploy` heartbeat to `/api/agent/report`, so a silent
+VPS shows up as a dead bot on the **Fleet & Memory** page.
+
+To exercise a bot by hand:
 ```bash
 cd /docker/sharecfo/mdo-platform
 docker compose exec backend python mdo_agent.py daily-brief
@@ -164,7 +185,9 @@ docker compose exec backend python mdo_housekeeping.py --dry-run
 ```
 Expect `heartbeat filed: …` or `filed report N — {...}`.
 
-Then replace the old two cron lines with this block (`crontab -e`). Times are
+The fleet crontab. **This block is the source `deploy_vps.sh` copies** into
+`/etc/cron.d/mdo-fleet` (it expands `$MDO`, adds the `root` user field, and
+appends its own `--auto` line). Edit it here, then re-run the script. Times are
 UTC on the host; IST in the comments. Each line = one bot: when it wakes,
 what it runs, where it logs.
 ```
@@ -179,8 +202,9 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST
 0  22   * * 6   savelog -n -c 8 /var/log/mdo-agent.log                                        # keep 8 weeks of log
 ```
-(`$MDO` is a cron variable; if your cron rejects variables, paste the full
-`cd … && docker compose exec -T backend` in each line.)
+(`$MDO` is shorthand for this document only; the script writes every line
+with the full `cd … && docker compose exec -T backend` spelled out, so the
+installed file has no cron variables.)
 
 Budget: `SPEND_CAP_INR_MONTH` in `.env`. At 90% the bots drop to Haiku; at
 100% they file "paused: budget" and stop. Both are reported, never silent.

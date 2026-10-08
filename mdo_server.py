@@ -574,6 +574,12 @@ CHECKS_SEED = [
      "WhatsApp: Vedanta Daily Report, VWLR RAKE PLACEMENT, VWLR - RKM GROUP, LOADER REPORT VWLR",
      "🔴 rake placed with no dispatch movement >6h, or dispatch <70% of placed volume", "Aman",
      "", "active", ""),
+    ("x_pulse", "X / Twitter real-time — tenders, clients, competitors, Singhvi", "hourly", "vwlr",
+     "Grok x_search + web_search: CIL/SECL/WCL/MCL/NTPC/NALCO tender & NIT posts, Vedanta/BALCO/JSPL/SAIL site news, "
+     "the 15 tracked competitors, @AnilSinghvi_, coal policy (Ministry of Coal, CEA)",
+     "🔴 NIT in a target category closing <72h, or a stoppage/strike/accident at a client site; "
+     "🟡 new NIT in target categories, competitor win, policy or rate change", "Aman",
+     "07:00-22:00 IST", "active", ""),
     ("tender_watch", "New relevant tenders — coal/RCR/handling", "hourly", "vwlr",
      "Public portals (SECL/WCL/CIL/GeM/CPPP) + web search; Tender247 is manual login",
      "🔴 eligible tender closing <72h; 🟡 new eligible tender in target categories", "Aman",
@@ -656,7 +662,8 @@ async def _require_key(request, call_next):
     if (not MDO_AUTH_TOKEN or request.method == "OPTIONS"
             or request.url.path.startswith("/mcp/")
             or request.url.path == "/api/hdfc/callback"
-            or request.url.path == "/api/cos/meta-webhook"):
+            or request.url.path == "/api/cos/meta-webhook"
+            or request.url.path == "/api/cos/tender-inbound"):
         return await call_next(request)
     supplied = (
         request.headers.get("x-mdo-key")

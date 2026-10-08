@@ -25,6 +25,14 @@ MODEL_PRICES_USD: dict[str, tuple[float, float]] = {
 ECONOMY_MODEL = "claude-haiku-4-5"
 
 
+def _grok_prices() -> tuple[float, float]:
+    """xAI list price per 1M tokens, approximate; override with GROK_PRICE_IN_USD / GROK_PRICE_OUT_USD."""
+    try:
+        return float(os.environ.get("GROK_PRICE_IN_USD", "3")), float(os.environ.get("GROK_PRICE_OUT_USD", "15"))
+    except ValueError:
+        return 3.0, 15.0
+
+
 def usd_inr() -> float:
     try:
         return float(os.environ.get("USD_INR", "84"))
@@ -35,7 +43,10 @@ def usd_inr() -> float:
 def cost_inr(model: str, input_tokens: int, output_tokens: int, cache_read_tokens: int = 0) -> float:
     """Rupee cost of one call. Unknown models are priced at Opus rates so an
     unpriced bot can never look free."""
-    p_in, p_out = MODEL_PRICES_USD.get(model, MODEL_PRICES_USD["claude-opus-5-5"])
+    if model.startswith("grok"):
+        p_in, p_out = _grok_prices()
+    else:
+        p_in, p_out = MODEL_PRICES_USD.get(model, MODEL_PRICES_USD["claude-opus-5-5"])
     usd = (max(input_tokens - cache_read_tokens, 0) * p_in
            + cache_read_tokens * p_in * 0.1
            + output_tokens * p_out) / 1_000_000
