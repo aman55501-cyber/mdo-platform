@@ -86,6 +86,8 @@ services:
       AUTH_DIR: /data/wa_auth
       TZ: Asia/Kolkata
       MDO_AUTH_TOKEN: ${MDO_AUTH_TOKEN:-}
+      # Tags every forwarded message so the backend knows which phone it came from
+      WA_ACCOUNT: "1"
       # Chief of Staff two-way chat: forward Aman's DMs / self-chat to the backend
       COS_INBOUND: ${COS_INBOUND:-1}
       COS_ALLOWED_NUMBERS: ${COS_ALLOWED_NUMBERS:-}
@@ -104,6 +106,7 @@ services:
       AUTH_DIR: /data/wa_auth
       TZ: Asia/Kolkata
       MDO_AUTH_TOKEN: ${MDO_AUTH_TOKEN:-}
+      WA_ACCOUNT: "2"
     volumes:
       - wa-auth2:/data
     depends_on:

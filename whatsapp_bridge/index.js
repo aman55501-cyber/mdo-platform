@@ -1,7 +1,9 @@
 /**
  * MDO WhatsApp Bridge
- * Connects to WhatsApp Web via Baileys, listens to VWLR ops groups,
- * forwards messages to MDO backend via HTTP.
+ * Connects to WhatsApp Web via Baileys and forwards EVERY chat on the account —
+ * groups and 1:1 DMs, incoming and Aman's own replies — to the MDO backend via
+ * HTTP. The backend classifies business vs personal and decides what to store;
+ * the bridge only drops status/broadcast/newsletter traffic and unresolved LIDs.
  */
 
 const makeWASocket = require("@whiskeysockets/baileys").default
@@ -16,6 +18,10 @@ const fs      = require("fs")
 const app  = express()
 const PORT = process.env.PORT || 3001
 const MDO_BACKEND = process.env.MDO_BACKEND_URL || "http://localhost:8501"
+
+// Which bridge this is: "1" (ops phone) or "2" (second phone). Sent on every
+// forwarded message so the backend can tell the two accounts apart.
+const WA_ACCOUNT = String(process.env.WA_ACCOUNT || "1")
 
 // Groups to monitor (normalized partial name match — see isWatchedName).
 // Rake count + daily dispatch quantity arrive inside "Vedanta Daily Report";
@@ -38,7 +44,7 @@ const WATCHED_NORM = WATCHED_GROUPS.map(normName)
 
 // Watch mode: "all" (default) ingests EVERY group on the account — reports
 // from all firms, no per-business whitelist. Set WA_WATCH_MODE=list to
-// restrict to WATCHED_GROUPS above.
+// restrict to WATCHED_GROUPS above. DMs are never filtered by this.
 const WATCH_MODE = (process.env.WA_WATCH_MODE || "all").toLowerCase()
 
 function isWatchedName(name) {
@@ -47,6 +53,16 @@ function isWatchedName(name) {
   const n = normName(name)
   return WATCHED_NORM.some(g => n.includes(g))
 }
+
+// The backend's own CoS replies start with this; never echo them back.
+const COS_PREFIX = "CoS ·"
+
+// Message kinds that carry no content (reactions, edits/deletes/ephemeral
+// settings). Forwarding them would show up as fake "[media]" replies and skew
+// response-time metrics.
+const NON_CONTENT_KEYS = new Set(["protocolMessage", "reactionMessage"])
+
+const bareNumber = jid => String(jid || "").split(":")[0].split("@")[0]
 
 app.use(express.json())
 
@@ -63,11 +79,28 @@ async function startWA() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
   const { version } = await fetchLatestBaileysVersion()
 
-  // jid → group subject. Populated in bulk on connect; per-message lookups are
-  // only a fallback. Failures are NOT cached — WhatsApp rate-limits metadata
-  // calls during the post-pairing history flood, and a cached failure would
-  // silently blackhole that group forever.
-  const groupNameCache = {}
+  // jid → { subject, participants: [jid, ...] }. Populated in bulk on connect;
+  // per-message lookups are only a fallback. Failures are NOT cached —
+  // WhatsApp rate-limits metadata calls during the post-pairing history flood,
+  // and a cached failure would silently blackhole that group forever.
+  const groupMetaCache = {}
+
+  // jid → display name, fed by contacts.upsert / contacts.update and by the
+  // pushName on incoming DMs. Used to name DM chats on Aman's own (fromMe)
+  // messages, where pushName is Aman himself, and to name group participants.
+  const contactNameCache = {}
+  function rememberContact(c) {
+    if (!c || !c.id) return
+    const name = c.notify || c.name || c.verifiedName
+    if (name) contactNameCache[c.id] = String(name)
+  }
+  function rememberGroup(jid, meta) {
+    if (!jid || !meta) return
+    groupMetaCache[jid] = {
+      subject: meta.subject || "",
+      participants: Array.isArray(meta.participants) ? meta.participants.map(p => p.id).filter(Boolean) : [],
+    }
+  }
 
   sock = makeWASocket({
     version,
@@ -91,12 +124,12 @@ async function startWA() {
     if (connection === "open") {
       isConnected = true
       qrCodeData  = null
-      console.log("WhatsApp connected")
+      console.log(`WhatsApp connected (account ${WA_ACCOUNT})`)
       try {
         const groups = await sock.groupFetchAllParticipating()
         let watched = 0
         for (const [jid, meta] of Object.entries(groups)) {
-          groupNameCache[jid] = meta.subject || ""
+          rememberGroup(jid, meta)
           if (isWatchedName(meta.subject)) {
             watched++
             if (WATCH_MODE !== "all") console.log(`watching: ${meta.subject}`)
@@ -117,7 +150,7 @@ async function startWA() {
       } catch (e) {
         console.log("group prefetch failed (falling back to per-message lookups):", e.message)
       }
-      await postToMDO("/api/whatsapp/status", { connected: true, message: "WhatsApp bridge connected" })
+      await postToMDO("/api/whatsapp/status", { connected: true, account: WA_ACCOUNT, message: "WhatsApp bridge connected" })
     }
 
     if (connection === "close") {
@@ -133,7 +166,7 @@ async function startWA() {
         try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }) } catch (e) {
           console.log("could not clear auth dir:", e.message)
         }
-        await postToMDO("/api/whatsapp/status", { connected: false, message: "WhatsApp logged out — rescan QR" })
+        await postToMDO("/api/whatsapp/status", { connected: false, account: WA_ACCOUNT, message: "WhatsApp logged out — rescan QR" })
         setTimeout(startWA, 2000)
       }
     }
@@ -141,19 +174,46 @@ async function startWA() {
 
   sock.ev.on("creds.update", saveCreds)
 
+  // Contact names — arrive in bulk during history sync and trickle in live.
+  sock.ev.on("contacts.upsert", (contacts) => { for (const c of contacts || []) rememberContact(c) })
+  sock.ev.on("contacts.update", (contacts) => { for (const c of contacts || []) rememberContact(c) })
+
   // ── Message ingestion (live + history backfill) ────────────────────────────
 
   async function resolveGroupName(jid) {
-    const cached = groupNameCache[jid]
-    if (cached !== undefined) return cached
+    const cached = groupMetaCache[jid]
+    if (cached !== undefined) return cached.subject
     try {
       const meta = await sock.groupMetadata(jid)
-      groupNameCache[jid] = meta.subject || ""
-      return groupNameCache[jid]
+      rememberGroup(jid, meta)
+      return groupMetaCache[jid].subject
     } catch (e) {
       console.log(`groupMetadata failed for ${jid}: ${e.message} (will retry on next message)`)
       return null // deliberately not cached
     }
+  }
+
+  // Up to 50 participant names (cached contact name, else bare number) — only
+  // when the metadata cache actually has them; never a metadata call here.
+  function groupParticipants(jid) {
+    const ids = groupMetaCache[jid]?.participants
+    if (!ids || !ids.length) return null
+    return ids.slice(0, 50).map(id => contactNameCache[id] || bareNumber(id))
+  }
+
+  // "group" | "dm" | null. Drops status@broadcast, @broadcast, @newsletter and
+  // anything else we cannot route. A @lid chat is accepted only when Baileys
+  // hands us the resolved phone-number jid alongside it.
+  function classifyChat(key) {
+    let jid = key?.remoteJid || ""
+    if (jid.endsWith("@lid")) {
+      const alt = key?.remoteJidAlt || key?.senderPn || ""
+      if (!alt.endsWith("@s.whatsapp.net")) return { kind: null, jid }
+      jid = alt
+    }
+    if (jid.endsWith("@g.us")) return { kind: "group", jid }
+    if (jid.endsWith("@s.whatsapp.net")) return { kind: "dm", jid }
+    return { kind: null, jid } // status@broadcast, *@broadcast, *@newsletter, unknown
   }
 
   // ── Chief of Staff: direct messages to/from Aman ──────────────────────────
@@ -177,67 +237,114 @@ async function startWA() {
     const selfChat = fromMe && number === ownNumber()
     if (!selfChat && (fromMe || (COS_ALLOWED.length && !COS_ALLOWED.includes(number)))) return false
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ""
-    if (!text || text.startsWith("CoS ·")) return false
+    if (!text || text.startsWith(COS_PREFIX)) return false
     console.log(`[CoS inbound] ${number}: ${text.slice(0, 80)}`)
     await postToMDO("/api/cos/inbound", { from: number, text, channel: "baileys", message_id: msg.key?.id || "" })
     return true
   }
 
-  // Returns true if the message was forwarded to the backend.
-  async function ingestMessage(msg, { skipFromMe = true } = {}) {
-    if (!msg?.message) return false
-    if (await routeDirectMessage(msg)) return true
-    if (skipFromMe && msg.key?.fromMe) return false
+  // Returns the chat kind ("group" | "dm") if the message was forwarded to the
+  // backend, else null. `skipFromMe` is kept for callers but defaults to false:
+  // Aman's own replies are needed for response-time metrics.
+  async function ingestMessage(msg, { skipFromMe = false } = {}) {
+    if (!msg?.message) return null
+    if (await routeDirectMessage(msg)) return "cos"
+    const fromMe = !!msg.key?.fromMe
+    if (skipFromMe && fromMe) return null
 
-    const jid = msg.key?.remoteJid || ""
-    if (!jid.endsWith("@g.us")) return false // groups only
+    const { kind, jid } = classifyChat(msg.key)
+    if (!kind) return null
 
-    const groupName = await resolveGroupName(jid)
-    if (!groupName) return false
-    if (!isWatchedName(groupName)) return false
+    // Unwrap ephemeral / view-once envelopes so the content checks below see
+    // the real node; otherwise everything inside them reads as "[media]".
+    const m = msg.message.ephemeralMessage?.message
+      || msg.message.viewOnceMessage?.message
+      || msg.message.viewOnceMessageV2?.message
+      || msg.message
+    const contentKeys = Object.keys(m).filter(k => k !== "messageContextInfo" && k !== "senderKeyDistributionMessage")
+    if (!contentKeys.length || contentKeys.every(k => NON_CONTENT_KEYS.has(k))) return null
 
     const text = (
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message.imageMessage?.caption ||
-      msg.message.documentMessage?.caption ||
+      m.conversation ||
+      m.extendedTextMessage?.text ||
+      m.imageMessage?.caption ||
+      m.videoMessage?.caption ||
+      m.documentMessage?.caption ||
       "[media]"
     )
+    // Never echo the backend's own CoS replies back to it (they arrive fromMe
+    // on a self-chat bridge, !fromMe when a dedicated CoS number sent them).
+    if (String(text).startsWith(COS_PREFIX)) return null
+
+    // ── Chat display name ──
+    let chatName
+    if (kind === "group") {
+      chatName = await resolveGroupName(jid)
+      if (!chatName) return null
+      if (!isWatchedName(chatName)) return null
+    } else {
+      const number = bareNumber(jid)
+      if (!fromMe && msg.pushName) contactNameCache[jid] = msg.pushName
+      chatName = (!fromMe && msg.pushName) || contactNameCache[jid] || number
+    }
+
+    // ── Sender ──
+    let sender
+    if (fromMe) {
+      sender = "me"
+    } else if (kind === "group") {
+      const pJid = msg.key.participantAlt || msg.key.participant || ""
+      sender = msg.pushName || contactNameCache[pJid] || bareNumber(pJid) || "Unknown"
+    } else {
+      sender = msg.pushName || contactNameCache[jid] || bareNumber(jid)
+    }
 
     // Images carry the numbers that matter here — weighbridge slips, dispatch
-    // tallies, hotel sales registers. Download and hand them to the backend,
-    // which decides whether to run vision extraction on them.
+    // tallies, hotel sales registers. For GROUPS download and hand them to the
+    // backend, which decides whether to run vision extraction. DMs: caption or
+    // "[media]" only — no download.
     let image_b64 = null, image_mime = null
-    const imgNode = msg.message.imageMessage
-      || (String(msg.message.documentMessage?.mimetype || "").startsWith("image/")
-            ? msg.message.documentMessage : null)
-    if (imgNode && (imgNode.fileLength || 0) <= 8 * 1024 * 1024) {
-      try {
-        const buf = await downloadMediaMessage(msg, "buffer", {}, { logger: pino({ level: "silent" }) })
-        if (buf && buf.length) {
-          image_b64 = buf.toString("base64")
-          image_mime = imgNode.mimetype || "image/jpeg"
+    if (kind === "group") {
+      const imgNode = m.imageMessage
+        || (String(m.documentMessage?.mimetype || "").startsWith("image/") ? m.documentMessage : null)
+      if (imgNode && (imgNode.fileLength || 0) <= 8 * 1024 * 1024) {
+        try {
+          const buf = await downloadMediaMessage(msg, "buffer", {}, { logger: pino({ level: "silent" }) })
+          if (buf && buf.length) {
+            image_b64 = buf.toString("base64")
+            image_mime = imgNode.mimetype || "image/jpeg"
+          }
+        } catch (e) {
+          console.log("image download failed:", e.message)
         }
-      } catch (e) {
-        console.log("image download failed:", e.message)
       }
     }
 
-    const sender = msg.pushName || msg.key.participant || "Unknown"
     const tsNum = Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000)
     const timestamp = new Date(tsNum * 1000).toISOString()
 
-    console.log(`[${groupName}] ${sender}: ${String(text).slice(0, 80)}`)
+    const tag = kind === "dm" ? `[dm:${chatName}]` : `[${chatName}]`
+    console.log(`${tag} ${sender}: ${String(text).slice(0, 80)}`)
 
-    await postToMDO("/api/whatsapp/message", {
-      group: groupName,
+    const participants = kind === "group" ? groupParticipants(jid) : null
+
+    await queuePost("/api/whatsapp/message", {
+      account: WA_ACCOUNT,
+      group: chatName,          // chat display name — for DMs too
       sender,
       text: String(text),
       timestamp,
       jid,
+      chat_jid: jid,
+      chat_kind: kind,
+      from_me: fromMe ? 1 : 0,
+      wa_msg_id: msg.key?.id || "",
+      ...(participants ? { participants } : {}),
       ...(image_b64 ? { image_b64, image_mime } : {}),
     })
-    return true
+    forwardedTotal++
+    if (forwardedTotal % 500 === 0) console.log(`forwarded ${forwardedTotal} messages so far (account ${WA_ACCOUNT})`)
+    return kind
   }
 
   // Live messages
@@ -250,18 +357,61 @@ async function startWA() {
 
   // History backfill — WhatsApp pushes recent chat history right after the QR
   // pairing. Ingest it so the Ops Feed is populated immediately, not empty.
-  sock.ev.on("messaging-history.set", async ({ messages, isLatest, progress }) => {
+  sock.ev.on("messaging-history.set", async ({ messages, contacts, isLatest, progress }) => {
+    for (const c of contacts || []) rememberContact(c)
     const recent = (messages || []).slice(-2000) // cap per chunk; chunks keep arriving
     console.log(`history sync: chunk of ${recent.length} messages (progress: ${progress ?? "?"}, latest: ${isLatest ?? "?"})`)
-    let ingested = 0
+    const counts = { group: 0, dm: 0, cos: 0, skipped: 0 }
     for (const msg of recent) {
       try {
-        if (await ingestMessage(msg, { skipFromMe: false })) ingested++
+        const kind = await ingestMessage(msg, { skipFromMe: false })
+        if (kind) counts[kind] = (counts[kind] || 0) + 1
+        else counts.skipped++
       } catch (e) {
         console.log("history ingest error:", e.message)
       }
     }
-    console.log(`history sync: forwarded ${ingested} messages to backend`)
+    await queueIdle()
+    console.log(`history sync: forwarded ${counts.group + counts.dm} messages to backend (groups: ${counts.group}, dms: ${counts.dm}, cos: ${counts.cos}, skipped: ${counts.skipped})`)
+  })
+}
+
+// ── Backpressure: bounded POST queue ─────────────────────────────────────────
+// History sync arrives in bursts of thousands. queuePost() resolves when the
+// job has been HANDED to the HTTP layer (a slot was free), so a caller that
+// awaits it is throttled to MAX_IN_FLIGHT concurrent requests without having
+// to wait for each response. queueIdle() resolves once everything has drained.
+
+const MAX_IN_FLIGHT = 4
+const postQueue = { pending: [], inFlight: 0, idleWaiters: [] }
+let forwardedTotal = 0
+
+function queuePost(path, body) {
+  return new Promise((accepted) => {
+    postQueue.pending.push({ path, body, accepted })
+    pumpQueue()
+  })
+}
+
+function pumpQueue() {
+  while (postQueue.inFlight < MAX_IN_FLIGHT && postQueue.pending.length) {
+    const job = postQueue.pending.shift()
+    postQueue.inFlight++
+    job.accepted()
+    postToMDO(job.path, job.body).then(() => {
+      postQueue.inFlight--
+      pumpQueue()
+      if (!postQueue.inFlight && !postQueue.pending.length) {
+        postQueue.idleWaiters.splice(0).forEach(r => r())
+      }
+    })
+  }
+}
+
+function queueIdle() {
+  return new Promise((resolve) => {
+    if (!postQueue.inFlight && !postQueue.pending.length) return resolve()
+    postQueue.idleWaiters.push(resolve)
   })
 }
 
@@ -323,7 +473,7 @@ app.get("/api/whatsapp/qr", (req, res) => {
 
 // Connection status
 app.get("/api/whatsapp/status", (req, res) => {
-  res.json({ connected: isConnected, watched_groups: WATCHED_GROUPS })
+  res.json({ connected: isConnected, account: WA_ACCOUNT, watch_mode: WATCH_MODE, watched_groups: WATCHED_GROUPS })
 })
 
 // Send a message (used by the backend to push 🔴 alerts to Aman's phone).
@@ -349,6 +499,6 @@ app.post("/api/whatsapp/send", async (req, res) => {
 app.get("/health", (req, res) => res.json({ ok: true }))
 
 app.listen(PORT, () => {
-  console.log(`WhatsApp bridge running on port ${PORT}`)
+  console.log(`WhatsApp bridge running on port ${PORT} (account ${WA_ACCOUNT})`)
   startWA()
 })
