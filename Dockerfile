@@ -11,7 +11,8 @@ ENV TZ=Asia/Kolkata
 COPY requirements_server.txt ./
 RUN pip install --no-cache-dir -r requirements_server.txt
 
-COPY mdo_server.py mdo_brain.py seed_mdo_db.py mdo_agent.py mdo_cos.py mdo_cos_api.py mdo_housekeeping.py ./
+# Every top-level module ships; a new mdo_*.py must never be left out of the image again.
+COPY *.py ./
 COPY fleet.yaml agenda.yaml CHIEF_OF_STAFF.md ./
 COPY tests ./tests
 
