@@ -76,6 +76,7 @@ async def vdb() -> aiosqlite.Connection:
         _vdb.row_factory = aiosqlite.Row
         await _ensure_schema()
         await _cos["ensure_schema"](_vdb)
+        await _wa["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -2298,25 +2299,25 @@ def _night_report_date(timestamp: str) -> str:
 
 @app.post("/api/whatsapp/message")
 async def whatsapp_message(body: dict):
-    """Receives messages forwarded from the WhatsApp bridge."""
+    """Receives messages forwarded from the WhatsApp bridge (both accounts, groups
+    and DMs). mdo_wa_intel decides whether the message may be kept: a chat Aman
+    marked personal stores nothing; an unclear chat is stored in quarantine until
+    the wa-classifier bot or Aman decides; a repeat of the same wa_msg_id (history
+    backfill) is dropped. Groups keep the hotel/vision behaviour below."""
     db = await vdb()
     group = str(body.get("group", ""))[:200]
     text = str(body.get("text", ""))[:2000]
     timestamp = str(body.get("timestamp", ""))[:50]
     sender = str(body.get("sender", ""))[:100]
-    await db.execute(
-        "INSERT INTO whatsapp_messages (group_name, sender, text, timestamp, jid) VALUES (?,?,?,?,?)",
-        (group, sender, text, timestamp, str(body.get("jid", ""))[:100])
-    )
-    await db.commit()
-    msg_id = None
-    rows = await db.execute_fetchall("SELECT last_insert_rowid() AS id")
-    if rows:
-        msg_id = dict(rows[0])["id"]
+    gate = await _wa["ingest"](db, body)
+    if not gate.get("stored"):
+        return gate
+    msg_id = gate["id"]
 
-    # Image → vision extraction, in the background so the bridge isn't blocked
+    # Image → vision extraction, in the background so the bridge isn't blocked.
+    # Groups only: a DM photo is personal until its chat is classified business.
     img = body.get("image_b64")
-    if img and _vision_group_match(group):
+    if img and gate.get("chat_kind") == "group" and _vision_group_match(group):
         asyncio.create_task(_process_image(
             msg_id, group, sender, timestamp, img,
             str(body.get("image_mime") or "image/jpeg"), text))
@@ -2338,9 +2339,9 @@ async def whatsapp_message(body: dict):
                     (date_str, parsed["total"], parsed["occupied"], parsed["pct"], note),
                 )
             await db.commit()
-            return {"received": True, "hotel_daily": date_str, **parsed}
+            return {**gate, "hotel_daily": date_str, **parsed}
 
-    return {"received": True}
+    return gate
 
 @app.post("/api/whatsapp/status")
 async def whatsapp_status_update(body: dict):
@@ -3281,6 +3282,17 @@ mdo_brain.configure({
 
 import mdo_cos_api
 _cos = mdo_cos_api.register(app, vdb, _send_whatsapp, mdo_brain)
+
+# WhatsApp Intelligence: chat classification gate on /api/whatsapp/message,
+# /api/wa/* endpoints, signals + register + weekly pulse tables.
+import mdo_wa_intel
+
+async def _wa_publish_feed(**kw):
+    return await mdo_feed.publish(await vdb(), **kw)
+
+_wa = mdo_wa_intel.register(app, vdb, _wa_publish_feed,
+                            lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp),
+                            _cos["job_add"])
 mdo_brain.configure({k: _cos[k] for k in ("agenda", "jobs", "job_add", "job_resolve", "fleet", "spend",
                                           "spend_record", "memory", "chat_load", "chat_save")})
 

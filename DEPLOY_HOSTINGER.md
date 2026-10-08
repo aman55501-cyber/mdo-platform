@@ -190,6 +190,9 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 30 2    * * *   $MDO python mdo_agent.py tender-go-no-go     >> /var/log/mdo-agent.log 2>&1   # 08:00 IST
 35 3-10 * * 1-5 $MDO python mdo_agent.py capital-watcher     >> /var/log/mdo-agent.log 2>&1   # 09:05-15:35 IST Mon-Fri
 0  17   * * *   $MDO python mdo_agent.py hotel-daily         >> /var/log/mdo-agent.log 2>&1   # 22:30 IST
+10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
+20 */6  * * *   $MDO python mdo_agent.py wa-intel            >> /var/log/mdo-agent.log 2>&1   # every 6h at :20
+30 1    * * 0   $MDO python mdo_agent.py business-pulse      >> /var/log/mdo-agent.log 2>&1   # Sun 07:00 IST
 30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST
 0  22   * * 6   savelog -n -c 8 /var/log/mdo-agent.log                                        # keep 8 weeks of log
 ```

@@ -113,12 +113,17 @@ _DOW = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 def next_due(cadence: str, last_run: datetime | None, now: datetime) -> datetime | None:
     """When a bot with this cadence string should next report.
 
-    Understands: "hourly", "hourly 09:00-15:30 IST Mon-Fri", "daily 06:57 IST",
+    Understands: "hourly", "hourly 09:00-15:30 IST Mon-Fri", "every 2h", "daily 06:57 IST",
     "weekly Sun 03:00 IST", "daily". Returns None for cadences it cannot
     parse (e.g. "on demand"), which the caller treats as never-late."""
     c = (cadence or "").strip().lower().split("+")[0].strip()  # "daily 06:30 IST + on demand" → daily part
     if not c or c.startswith("on demand"):
         return None
+    m_every = re.match(r"every\s+(\d+)\s*h", c)           # "every 2h", "every 6h"
+    if m_every:
+        hours = max(int(m_every.group(1)), 1)
+        base = last_run or now - timedelta(hours=hours)
+        return base + timedelta(hours=hours)
     if c.startswith("hourly"):
         base = last_run or now - timedelta(hours=1)
         due = base + timedelta(hours=1)

@@ -93,6 +93,7 @@ preferences win.
 | Tender inbound door | accept tenders from any outside agent, nothing else | POST /api/cos/tender-inbound + TENDER_INBOUND_TOKEN |
 | Vault (memory/, finance/) on the VPS | list, read, write; never delete; every access audited | /api/vault/* + VAULT_TOKEN, HTTPS only |
 | Specialist bots on the VPS | restart, re-run, re-prompt, pause | documented cron commands in `fleet.yaml` |
+| WhatsApp intel (classify → signals → pulse) | read business chats only; personal chats store nothing; every signal cites message ids | `mdo_wa_intel.py` + `/api/wa/*`; bots wa-classifier, wa-intel, business-pulse |
 
 The CoS never holds a broker login, a bank credential, or a signing key.
 

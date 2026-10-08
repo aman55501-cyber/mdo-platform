@@ -204,7 +204,7 @@ def run(dry: bool = False) -> int:
             c, "whatsapp_messages", "created_at < ? AND COALESCE(flagged,0)=0",
             (_cutoff(KEEP_WA_DAYS),), "whatsapp", dry)
         freed["extractions"] = _archive_rows(
-            c, "whatsapp_extractions", "created_at < ?", (_cutoff(KEEP_EXTRACT_DAYS),), "extractions", dry)
+            c, "media_extractions", "created_at < ?", (_cutoff(KEEP_EXTRACT_DAYS),), "extractions", dry)
         freed["runs"] = _archive_rows(
             c, "cos_runs", "created_at < ?", (_cutoff(KEEP_RUN_DAYS),), "runs", dry)
         freed["spend"] = _archive_rows(

@@ -26,8 +26,9 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import mdo_wa_intel as wai
 from mdo_cos import ECONOMY_MODEL, IST
 
 BASE = os.environ.get("MDO_SELF_URL", "http://localhost:8501")
@@ -327,7 +328,8 @@ def run(bot_id: str) -> int:
         log(f"FATAL: no bot '{bot_id}' in fleet.yaml")
         return 2
     cadence = str(bot.get("cadence", "daily"))
-    cadence_key = "hourly" if cadence.startswith("hourly") else ("weekly" if cadence.startswith("weekly") else "daily")
+    cadence_key = ("hourly" if cadence.startswith(("hourly", "every")) else
+                   ("weekly" if cadence.startswith("weekly") else "daily"))
 
     if not bot.get("enabled", True):
         heartbeat(bot_id, cadence_key, "disabled", "bot disabled in fleet.yaml — nothing run")
@@ -356,6 +358,17 @@ def run(bot_id: str) -> int:
         model = ECONOMY_MODEL
 
     now_ist = datetime.now(IST)
+    wa_runner = WA_BOTS.get(bot_id)
+    if wa_runner is not None:
+        # WhatsApp Intelligence bots have no checks registry; they drive /api/wa/*.
+        try:
+            return wa_runner(bot, model, cadence_key)
+        except urllib.error.HTTPError as e:
+            heartbeat(bot_id, cadence_key, "error", f"backend call failed: HTTP {e.code} {e.reason} ({e.url})")
+            return 3
+        except Exception as e:
+            heartbeat(bot_id, cadence_key, "error", f"{type(e).__name__}: {str(e)[:200]}")
+            return 3
     try:
         registry = api("/api/checks").get("checks", [])
     except Exception as e:
@@ -472,6 +485,225 @@ def run(bot_id: str) -> int:
     if wanted & {"acct_positions", "fo_update"}:
         check_broker_sessions()
     return 0
+
+
+# ── WhatsApp Intelligence bots (fleet.yaml: wa-classifier, wa-intel, business-pulse) ──
+# The pipeline lives in mdo_wa_intel.py (pure helpers + /api/wa/*). These three
+# functions only orchestrate: read via the API, ask the model, write via the API,
+# heartbeat. Every run heartbeats, including an empty one (CHIEF_OF_STAFF.md §1.5).
+MAX_CLASSIFY_PER_RUN = 40          # chats per classifier run (Haiku, ~1 call each)
+MAX_INTEL_MSGS_PER_RUN = 2000      # messages per wa-intel run; the watermark carries the rest
+INTEL_BATCH = 80                   # messages per extraction call
+
+
+def _bot_memory_get(bot_id: str, key: str) -> str | None:
+    try:
+        for r in api("/api/cos/memory").get("bot_memory", []):
+            if r.get("bot") == bot_id and r.get("key") == key and r.get("status") == "active":
+                return r.get("value")
+    except Exception as e:
+        log(f"bot_memory read failed: {str(e)[:120]}")
+    return None
+
+
+def _bot_memory_set(bot_id: str, key: str, value: str, source: str) -> None:
+    # A watermark is operational state, not a fact about the business, so it is
+    # stored active (not proposed) — Aman never needs to approve it.
+    try:
+        api("/api/cos/memory", "POST", {"bot": bot_id, "key": key, "value": value, "source": source, "status": "active"})
+    except Exception as e:
+        log(f"bot_memory write failed: {str(e)[:120]}")
+
+
+def run_wa_classifier(bot: dict, model: str, cadence_key: str) -> int:
+    """Unclear chats → business/personal. Confident → applied (decided_by auto);
+    otherwise one needs_choice job for Aman, asked once. Also applies the
+    answers Aman already gave."""
+    bot_id = "wa-classifier"
+    errors: list[str] = []
+    try:
+        applied = api("/api/wa/verdicts/apply", "POST", {})
+        n_applied = int(applied.get("applied") or 0)
+        if n_applied:
+            log(f"applied {n_applied} verdict(s) from Aman: {applied.get('details')}")
+    except Exception as e:
+        n_applied = 0
+        errors.append(f"verdicts: {str(e)[:80]}")
+    chats = api("/api/wa/chats?classification=unclear&with_samples=1&limit=400").get("chats", [])
+    candidates = [c for c in chats if not c.get("asked_job_id")
+                  and (int(c.get("msg_count") or 0) >= 3 or c.get("kind") == "group")]
+    auto = asked = 0
+    for chat in candidates[:MAX_CLASSIFY_PER_RUN]:
+        name, account = str(chat.get("name") or chat.get("jid")), str(chat.get("account") or "1")
+        try:
+            raw = ask_claude(wai.classify_prompt(chat, chat.get("samples") or []), model, bot_id, max_tokens=400)
+        except Exception as e:
+            errors.append(f"{name[:30]}: {type(e).__name__}")
+            continue
+        v = wai.parse_classification(raw)
+        if v and v["classification"] in ("business", "personal") and v["confidence"] >= wai.AUTO_CONFIDENCE:
+            try:
+                api("/api/wa/chats/classify", "POST", {
+                    "jid": chat["jid"], "classification": v["classification"], "entity": v["entity"],
+                    "decided_by": "auto", "confidence": v["confidence"], "reason": v["reason"]})
+                auto += 1
+                log(f"auto: {name[:40]} ({account}) → {v['classification']} {v['entity']} ({v['confidence']:.2f})")
+                continue
+            except Exception as e:
+                errors.append(f"{name[:30]}: classify {str(e)[:60]}")
+                continue
+        guess = (v or {}).get("entity") or ""
+        options = ([f"business: {guess}", "personal", "business: other entity"] if guess
+                   else ["business", "personal"])
+        try:
+            job = api("/api/cos/jobs", "POST", {
+                "title": f'chat "{name[:60]}" ({account}) — business or personal?', "kind": "needs_choice",
+                "bot": bot_id, "options": options, "eta": "",
+                "payload": {"action": "wa_classify", "jid": chat["jid"], "guess_entity": guess,
+                            "model_reason": (v or {}).get("reason", "")[:200],
+                            "model_confidence": (v or {}).get("confidence")}})
+            api("/api/wa/chats/asked", "POST", {"jid": chat["jid"], "job_id": job.get("id")})
+            asked += 1
+            log(f"asked Aman: job #{job.get('id')} for {name[:40]} ({account})")
+        except Exception as e:
+            errors.append(f"{name[:30]}: job {str(e)[:60]}")
+    pending = len(chats) - auto                   # still unclear after this run (asked ones included)
+    line = f"wa-classifier: {auto} classified auto, {asked} asked, {pending} pending"
+    if n_applied:
+        line += f" · {n_applied} verdict(s) from Aman applied"
+    if errors:
+        line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
+    heartbeat(bot_id, cadence_key, "warning" if errors else "clean", line)
+    return 0
+
+
+def run_wa_intel(bot: dict, model: str, cadence_key: str) -> int:
+    """Business chats → biz_signals, from the watermark forward, ≤80 messages a
+    call, every signal with evidence ids. Fingerprint dedup and the 🔴 push
+    happen server-side on insert."""
+    bot_id = "wa-intel"
+    watermark = int(_bot_memory_get(bot_id, "watermark_msg_id") or 0)
+    res = api(f"/api/wa/messages?classification=business&since_id={watermark}&limit={MAX_INTEL_MSGS_PER_RUN}")
+    msgs = res.get("messages", [])
+    open_total = (api("/api/wa/stats").get("signals") or {}).get("open_total", "?")
+    if not msgs:
+        heartbeat(bot_id, cadence_key, "clean",
+                  f"wa-intel: scanned 0 msgs in 0 chats → 0 new signals (open total {open_total}) · watermark {watermark}")
+        return 0
+    by_chat: dict[str, list[dict]] = {}
+    for m in msgs:
+        by_chat.setdefault(str(m.get("chat_jid") or ""), []).append(m)
+    now = datetime.now(IST)
+    new_total = dup_total = alerts = 0
+    errors: list[str] = []
+    for jid, rows in by_chat.items():
+        chat = {"jid": jid, "name": rows[0].get("chat_name"), "entity": rows[0].get("entity"),
+                "account": rows[0].get("account"), "kind": rows[0].get("chat_kind")}
+        for i in range(0, len(rows), INTEL_BATCH):
+            batch = rows[i:i + INTEL_BATCH]
+            try:
+                raw = ask_claude(wai.extract_prompt(chat, batch, now=now), model, bot_id, max_tokens=4000)
+            except Exception as e:
+                errors.append(f"{str(chat['name'])[:30]}: {type(e).__name__}")
+                continue
+            sigs = wai.parse_signals(raw, allowed_ids={m["id"] for m in batch})
+            for s in sigs:
+                s["entity"] = s["entity"] or chat["entity"] or ""
+                s["chat_jid"], s["chat_name"] = jid, chat["name"]
+            if not sigs:
+                continue
+            try:
+                out = api("/api/wa/signals", "POST", {"signals": sigs, "bot_id": bot_id}, timeout=60)
+            except Exception as e:
+                errors.append(f"{str(chat['name'])[:30]}: insert {str(e)[:60]}")
+                continue
+            new_total += int(out.get("inserted") or 0)
+            dup_total += int(out.get("duplicates") or 0)
+            alerts += len(out.get("alerts") or [])
+    max_id = max(int(m["id"]) for m in msgs)
+    _bot_memory_set(bot_id, "watermark_msg_id", str(max_id), f"wa-intel run {now:%Y-%m-%d %H:%M} IST")
+    try:
+        open_total = (api("/api/wa/stats").get("signals") or {}).get("open_total", "?")
+    except Exception:
+        pass
+    line = (f"wa-intel: scanned {len(msgs)} msgs in {len(by_chat)} chats → {new_total} new signals "
+            f"(open total {open_total})")
+    if dup_total:
+        line += f" · {dup_total} duplicate(s) skipped"
+    if alerts:
+        line += f" · {alerts} 🔴 pushed"
+    if res.get("count", 0) >= MAX_INTEL_MSGS_PER_RUN:
+        line += " · backlog remains, next run continues"
+    if errors:
+        line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
+    heartbeat(bot_id, cadence_key, "warning" if errors else "clean", line)
+    return 0
+
+
+def run_business_pulse(bot: dict, model: str, cadence_key: str) -> int:
+    """Weekly: open signals (90d) + response metrics (14d) + register →
+    pulse_compute → the model narrates with ≤5 next steps. Any number the model
+    writes that is not in its input is rejected (one retry, then the
+    deterministic summary stands alone)."""
+    bot_id = "business-pulse"
+    inp = api("/api/wa/pulse/input?days=90&metric_days=14", timeout=60)
+    signals, metrics, register = inp.get("signals", []), inp.get("metrics", []), inp.get("register", [])
+    now = datetime.now(IST)
+    computed = wai.pulse_compute(signals, metrics, now=now)
+    known_ids = {s.get("id") for s in signals}
+    prompt = wai.pulse_prompt(computed, signals, register, now)
+    allowed = {"computed": computed, "signals": signals, "register": register, "now": now.strftime("%Y-%m-%d")}
+    narrative: dict | None = None
+    rejected: list[str] = []
+    for attempt in range(2):
+        p = prompt if not rejected else prompt + (
+            "\n\nYOUR PREVIOUS ANSWER WAS REJECTED. These figures are not in the input: "
+            + ", ".join(rejected[:20]) + ". Remove them or replace them with figures that are, citing #id.")
+        raw = ask_claude(p, model, bot_id, max_tokens=6000)
+        out = wai.parse_pulse(raw)
+        if not out:
+            rejected = ["(no JSON object returned)"]
+            continue
+        text = out["narrative"] + " " + out["headline"] + " " + " ".join(
+            f"{st['step']} {st['eta']}" for st in out["next_steps"])
+        bad = wai.verify_numbers(text, allowed)
+        bad_ids = [f"#{i}" for st in out["next_steps"] for i in st["signal_ids"] if i not in known_ids]
+        missing = [st["step"][:40] for st in out["next_steps"] if not (st["owner"] and st["eta"])]
+        if not bad and not bad_ids and not missing:
+            narrative = out
+            break
+        rejected = bad + bad_ids + [f"step without owner/ETA: {m}" for m in missing]
+        log(f"pulse attempt {attempt + 1} rejected: {rejected[:10]}")
+    n_open, n_gap = computed["totals"]["open"], len(computed["sales_gap"])
+    n_bot, n_dec = len(computed["bottlenecks"]), len(computed["decisions_needed"])
+    period_end, period_start = now.date(), now.date() - timedelta(days=7)
+    if narrative is None:
+        headline = (f"Business pulse {period_end:%d %b}: {n_open} open signals · {n_gap} sales gaps · "
+                    f"{n_bot} recurring bottlenecks · {n_dec} decisions waiting — narrative withheld (uncited figures)")
+        steps: list = []
+        body_text = ""
+    else:
+        headline = narrative["headline"] or f"Business pulse {period_end:%d %b}"
+        steps, body_text = narrative["next_steps"], narrative["narrative"]
+    summary = headline + "\n" + "\n".join(
+        f"{i + 1}. {st['step']} — {st['owner']} · ETA {st['eta']} · " + ", ".join(f"#{x}" for x in st["signal_ids"])
+        for i, st in enumerate(steps))
+    report = {"computed": computed, "narrative": body_text, "next_steps": steps, "headline": headline,
+              "rejected": rejected if narrative is None else [], "model": model,
+              "signals": [{"id": s.get("id"), "kind": s.get("kind")} for s in signals],
+              "messages_scanned": inp.get("messages_scanned")}
+    res = api("/api/wa/pulse", "POST", {
+        "period_start": period_start.isoformat(), "period_end": period_end.isoformat(), "entity": "group",
+        "report_json": report, "summary": summary, "headline": headline}, timeout=60)
+    status = "clean" if narrative is not None else "warning"
+    heartbeat(bot_id, cadence_key, status,
+              f"business-pulse: {n_open} open signals · {n_gap} sales gaps · {n_bot} recurring bottlenecks · "
+              f"{n_dec} decisions · {len(steps)} next steps → pulse #{res.get('id')}"
+              + (" · narrative withheld: " + "; ".join(rejected[:5]) if narrative is None else ""))
+    return 0
+
+
+WA_BOTS = {"wa-classifier": run_wa_classifier, "wa-intel": run_wa_intel, "business-pulse": run_business_pulse}
 
 
 def check_broker_sessions() -> None:

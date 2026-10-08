@@ -154,6 +154,11 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         avoids re-entering vdb() while it is still being set up)."""
         db = db if db is not None else await vdb()
         await db.executescript(SCHEMA)
+        # payload_json: machine-readable context on a job (e.g. {"action": "wa_classify", "jid": ...})
+        # so a bot can find and apply Aman's answer. Guarded ALTER for databases created before it.
+        cols = {r[1] for r in await db.execute_fetchall("PRAGMA table_info(cos_jobs)")}
+        if "payload_json" not in cols:
+            await db.execute("ALTER TABLE cos_jobs ADD COLUMN payload_json TEXT DEFAULT '{}'")
         await db.commit()
 
     # ── runs & spend ──────────────────────────────────────────────────────
@@ -279,6 +284,10 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
     def _job(r) -> dict:
         d = dict(r)
         d["options"] = json.loads(d.pop("options_json") or "[]")
+        try:
+            d["payload"] = json.loads(d.pop("payload_json", None) or "{}")
+        except json.JSONDecodeError:
+            d["payload"] = {}
         return d
 
     async def jobs_list(status: str | None = "open", limit: int = 50) -> dict:
@@ -295,11 +304,12 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         if kind not in ("info", "needs_click", "needs_choice", "proposal", "stuck", "done"):
             raise HTTPException(400, "bad kind")
         db = await vdb()
+        payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
         cur = await db.execute(
-            "INSERT INTO cos_jobs (title,kind,objective,bot,options_json,eta,status) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO cos_jobs (title,kind,objective,bot,options_json,eta,status,payload_json) VALUES (?,?,?,?,?,?,?,?)",
             (str(body.get("title") or "")[:300], kind, str(body.get("objective") or "")[:80],
              str(body.get("bot") or "cos")[:60], json.dumps(body.get("options") or [])[:4000],
-             str(body.get("eta") or "")[:60], "done" if kind == "done" else "open"))
+             str(body.get("eta") or "")[:60], "done" if kind == "done" else "open", json.dumps(payload)[:4000]))
         await db.commit()
         rows = await db.execute_fetchall("SELECT * FROM cos_jobs WHERE id=?", (cur.lastrowid,))
         job = _job(rows[0])

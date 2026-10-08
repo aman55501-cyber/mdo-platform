@@ -188,6 +188,86 @@ bots:
     rules:
     - Never invent occupancy
     - Refund/comp above the GM limit is Aman's click
+- id: wa-classifier
+  name: WhatsApp chat classifier (business / personal gate)
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py wa-classifier
+  cadence: every 2h
+  model: claude-haiku-4-5
+  heartbeat: 'every run: "wa-classifier: N classified auto, M asked, K pending", even when all zero'
+  checks: []
+  serves: []
+  enabled: true
+  charter:
+    purpose: Decide, for every chat on Aman's two phones, whether it is business or personal — so personal chats are
+      never stored and business chats reach the intel bot. Apply the answers Aman gives by reply.
+    thinks: 'A wrong ''personal'' deletes history for good, so doubt means ask. Confidence ≥0.85 → apply (decided_by
+      auto). Below → one needs_choice job for Aman, asked once, never re-asked. Entity must be one of Aman''s registry:
+      VWLR, Hotel ANS International, ANS Inn Pvt Ltd (holding, not hotel ops), Dadu Developers, Dadu Builders,
+      Raigarh Land Venture, Rukmani Infrastructure, Aditi Investments, Eureka, MD''s Office, family/personal.'
+    works: Every 2h on the VPS. Model claude-haiku-4-5. Reads unclear chats with ≥3 messages (≥1 for groups), up to
+      30 sample texts + name + participants each; applies resolved cos_jobs with payload action=wa_classify; writes
+      via /api/wa/chats/classify and /api/cos/jobs.
+    limits: Sees only text samples, never media. Cannot undo a deletion. Does not read chats already decided.
+    minimum_output: 'Heartbeat every run: "wa-classifier: N classified auto, M asked, K pending".'
+    rules:
+    - Never invent an entity
+    - Below 0.85 confidence → ask Aman, once
+    - A personal verdict stores nothing and deletes the chat's history
+- id: wa-intel
+  name: WhatsApp business signals (leads, money, delays, decisions)
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py wa-intel
+  cadence: every 6h
+  model: claude-sonnet-5-5
+  heartbeat: 'every run: "wa-intel: scanned N msgs in C chats → S new signals (open total T)", even when N is 0'
+  checks: []
+  serves: []
+  enabled: true
+  charter:
+    purpose: Turn business chats into a signal ledger — lead, quote, order, receivable, payable, payment_done, delay,
+      bottleneck, decision_needed, commitment, complaint, asset, liability, capital, debt, resource, risk, idea —
+      each citing the message ids it rests on.
+    thinks: Only what the messages say. An amount is a number written in a message, never computed. No evidence id
+      → no signal. Same entity + kind + counterparty + due date (or week) = the same signal, stored once.
+    works: Every 6h on the VPS. Model claude-sonnet-5-5. Watermark (last whatsapp_messages.id) in bot_memory. Business
+      chats only, ≤80 messages per call, ≤2000 per run. Inserts via /api/wa/signals; the backend pushes a 🔴 line
+      for decision_needed, complaint, and a payable due within 3 days.
+    limits: Text only; photos arrive as their vision summary. Reads nothing from unclear or personal chats. Cannot
+      act on a signal — it records and reports.
+    minimum_output: 'Heartbeat every run: "wa-intel: scanned N msgs in C chats → S new signals (open total T)".'
+    rules:
+    - Every signal cites evidence message ids and a verbatim snippet
+    - Never invent a number, a counterparty or an entity
+    - 🔴 only for decision_needed, complaint, payable due ≤3 days
+- id: business-pulse
+  name: Weekly business pulse (sales gap · efficiency · bottlenecks · register)
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py business-pulse
+  cadence: weekly Sun 07:00 IST + on demand
+  model: claude-opus-5-5
+  heartbeat: 'every run: "business-pulse: N open signals · G sales gaps · B recurring bottlenecks · D decisions · K
+    next steps → pulse #id"'
+  checks: []
+  serves: []
+  enabled: true
+  charter:
+    purpose: 'One weekly picture from the signal ledger: leads and quotes going cold, who answers slowly and what
+      is left unanswered, bottlenecks that recur, money owed both ways, register changes to post, decisions waiting
+      on Aman — with at most five next steps, each owned and dated.'
+    thinks: The numbers are computed first (pulse_compute); the model only narrates them. Every figure cites its
+      signal ids. A figure not present in the input is rejected — once retried, then the narrative is withheld
+      and the computed summary stands alone.
+    works: Weekly Sun 07:00 IST on the VPS + on demand. Model claude-opus-5-5. Reads open signals (90d), response
+      metrics over 14d of business messages, the register. Saves biz_pulse, publishes one Decision Feed item,
+      pushes one roll-up line.
+    limits: Only as good as the signal ledger beneath it. No ERP, bank or CRM feed. Proposes next steps; starts
+      none of them.
+    minimum_output: 'Heartbeat every run, and a saved pulse row even when every count is zero.'
+    rules:
+    - Every number cites signal ids; uncited numbers are rejected
+    - ≤5 next steps, each with owner + ETA
+    - Never invent a counterparty, an amount or an entity
 - id: classifier
   name: dedup / urgency classification / heartbeat lines
   runs_on: vps (library, called by other bots)
