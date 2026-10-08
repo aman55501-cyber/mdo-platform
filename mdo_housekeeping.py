@@ -86,9 +86,68 @@ def compact_chats(c: sqlite3.Connection, dry: bool) -> int:
         if not ids:
             continue
         marks = ",".join("?" * len(ids))
+        old_turns = c.execute(
+            f"SELECT role, content FROM cos_chat WHERE id IN ({marks}) AND created_at < ? ORDER BY id",
+            (*ids, _cutoff(KEEP_CHAT_DAYS))).fetchall()
+        if old_turns and not dry:
+            _roll_summary(c, chat, [(r[0], r[1]) for r in old_turns])
         removed += _archive_rows(
             c, "cos_chat", f"id IN ({marks}) AND created_at < ?", (*ids, _cutoff(KEEP_CHAT_DAYS)), "chat", dry)
     return removed
+
+
+def _roll_summary(c: sqlite3.Connection, chat_id: str, turns: list[tuple[str, str]]) -> None:
+    """Fold the turns about to be archived into cos_chat_summary so the brain
+    keeps the gist. Uses Haiku when a key exists; otherwise keeps a plain
+    extract of the last lines, so the summary is never silently empty."""
+    prev = c.execute("SELECT summary FROM cos_chat_summary WHERE chat_id=?", (chat_id,)).fetchone()
+    prev = prev[0] if prev else ""
+    transcript = "\n".join(f"{r}: {t[:600]}" for r, t in turns)[:30000]
+    summary = ""
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if key:
+        try:
+            payload = json.dumps({
+                "model": "claude-haiku-4-5", "max_tokens": 1200,
+                "messages": [{"role": "user", "content":
+                    "Rolling memory for Aman Agrawal's Chief of Staff. Merge the EXISTING SUMMARY and the "
+                    "NEW TURNS into one summary under 250 words: decisions Aman made, standing preferences he "
+                    "stated, open threads, names and dates. Keep every number with its source turn; drop "
+                    "pleasantries. Never invent.\n\nEXISTING SUMMARY:\n" + prev + "\n\nNEW TURNS:\n" + transcript}],
+            }).encode()
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages", data=payload,
+                headers={"x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                method="POST")
+            with urllib.request.urlopen(req, timeout=120) as r:
+                resp = json.loads(r.read())
+            summary = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text").strip()
+            usage = resp.get("usage") or {}
+            _record_spend("claude-haiku-4-5", int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0))
+        except Exception as e:
+            log(f"summary model call failed for chat {chat_id}: {e} — falling back to extract")
+    if not summary:
+        tail = "\n".join(f"{r}: {t[:160]}" for r, t in turns[-12:])
+        summary = (prev + "\n" if prev else "") + f"[extract {datetime.now(IST):%Y-%m-%d}]\n" + tail
+        summary = summary[-6000:]
+    c.execute(
+        "INSERT INTO cos_chat_summary (chat_id, summary, updated_at) VALUES (?, ?, datetime('now')) "
+        "ON CONFLICT(chat_id) DO UPDATE SET summary=excluded.summary, updated_at=datetime('now')",
+        (chat_id, summary))
+
+
+def _record_spend(model: str, inp: int, out: int) -> None:
+    if not KEY:
+        return
+    try:
+        req = urllib.request.Request(
+            BASE + "/api/spend/record",
+            data=json.dumps({"bot": "housekeeping", "model": model, "input_tokens": inp, "output_tokens": out}).encode(),
+            headers={"X-MDO-Key": KEY, "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            r.read()
+    except Exception as e:
+        log(f"spend not recorded: {e}")
 
 
 def run(dry: bool = False) -> int:
