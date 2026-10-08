@@ -184,3 +184,102 @@ export interface SignalEvent {
 }
 
 export type LiveEvent = MarketEvent | SentimentEvent | SignalEvent
+
+// ── WhatsApp intelligence (Business Intel) ────────────────────────────
+
+export type WaClassification = "business" | "personal" | "unclear"
+export type WaSignalStatus = "open" | "done" | "dismissed"
+
+export interface WaStats {
+  chats: { business: number; personal: number; unclear: number }
+  signals_open_by_kind: Record<string, number>
+  msgs_7d: number
+  last_pulse_at: string | null
+}
+
+export interface WaChat {
+  jid: string
+  account: string
+  name: string
+  kind: "group" | "dm"
+  classification: WaClassification
+  entity: string | null
+  confidence: number | null
+  reason: string | null
+  decided_by: string | null
+  last_seen: string | null
+  msg_count: number
+  participants: number | null
+}
+
+export interface WaSignal {
+  id: number
+  created_at: string
+  entity: string | null
+  chat_name: string | null
+  kind: string
+  counterparty: string | null
+  amount: number | null
+  currency: string | null
+  due_date: string | null
+  summary: string
+  evidence_ids: number[]
+  confidence: number | null
+  status: WaSignalStatus
+  owner: string | null
+}
+
+export interface WaRegisterItem {
+  id: number
+  category: string
+  entity: string | null
+  item: string
+  value: number | string | null
+  unit: string | null
+  as_of: string | null
+  source: string | null
+  status: string | null
+  notes: string | null
+  updated_at: string | null
+}
+
+export interface WaRegisterInput {
+  category: string
+  entity: string
+  item: string
+  value: string | number | null
+  unit: string
+  as_of: string
+  source: string
+  notes: string
+}
+
+export interface WaPulseEfficiencyRow {
+  chat: string
+  sender: string
+  median_reply_min: number | null
+  unanswered_24h: number | null
+}
+
+export interface WaPulseNextStep {
+  step: string
+  owner: string | null
+  eta: string | null
+  cites: number[]
+}
+
+export interface WaPulseReport {
+  sales_gap: unknown[]
+  efficiency: WaPulseEfficiencyRow[]
+  bottlenecks: unknown[]
+  register_changes: unknown[]
+  next_steps: WaPulseNextStep[]
+}
+
+export interface WaPulse {
+  id: number
+  period_start: string
+  period_end: string
+  summary: string
+  report: Partial<WaPulseReport> | null
+}

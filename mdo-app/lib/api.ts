@@ -2,7 +2,9 @@ import type {
   Status, Position, Holding, Funds, PnlStats,
   WatchlistItem, IntelItem, Urgency, IntelCategory,
   Tender, Lead, BidResult, GrokMessage,
-  FeedItem, FeedsResponse
+  FeedItem, FeedsResponse,
+  WaStats, WaChat, WaSignal, WaRegisterItem, WaRegisterInput, WaPulse,
+  WaClassification, WaSignalStatus,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -127,5 +129,28 @@ export const api = {
   briefing: {
     today:    () => get<{ briefing: any; fresh: boolean }>("/api/briefing/today"),
     generate: () => post<{ briefing: any; error: string | null }>("/api/briefing/generate", {}),
+  },
+
+  // ── WhatsApp intelligence (Business Intel) ────────────────────────
+  wa: {
+    stats: () => get<WaStats>("/api/wa/stats"),
+    chats: (classification?: WaClassification) =>
+      get<{ chats: WaChat[] }>(`/api/wa/chats${classification ? "?classification=" + classification : ""}`).then(r => r.chats ?? []),
+    classify: (body: { jid: string; classification: "business" | "personal"; entity: string }) =>
+      post<{ ok: boolean }>("/api/wa/chats/classify", { ...body, decided_by: "aman" }),
+    signals: (params?: { status?: WaSignalStatus; entity?: string; kind?: string; limit?: number }) => {
+      const q = new URLSearchParams()
+      q.set("status", params?.status ?? "open")
+      if (params?.entity) q.set("entity", params.entity)
+      if (params?.kind)   q.set("kind", params.kind)
+      q.set("limit", String(params?.limit ?? 200))
+      return get<{ signals: WaSignal[] }>(`/api/wa/signals?${q}`).then(r => r.signals ?? [])
+    },
+    setSignalStatus: (id: number, status: WaSignalStatus) =>
+      post<{ ok: boolean }>(`/api/wa/signals/${id}/status`, { status }),
+    register: (category?: string) =>
+      get<{ items: WaRegisterItem[] }>(`/api/wa/register${category ? "?category=" + encodeURIComponent(category) : ""}`).then(r => r.items ?? []),
+    addRegister: (item: WaRegisterInput) => post<{ ok: boolean; id: number }>("/api/wa/register", item),
+    pulseLatest: () => get<{ pulse: WaPulse | null }>("/api/wa/pulse/latest").then(r => r.pulse ?? null),
   },
 }
