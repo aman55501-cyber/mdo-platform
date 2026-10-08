@@ -198,3 +198,26 @@ def rollup_line(now: datetime, live: int, moved: int, blocked: int, ran: int, to
              f"Findings: {findings}" + (" · needs you: " + ", ".join(f"#{j}" for j in needs_you) if needs_you else " · nothing needs you"),
              f"Spend: ₹{spend_inr:,.0f} of " + (f"₹{cap_inr:,.0f}" if cap_inr else "no cap set")]
     return "\n".join(parts)
+
+
+# ── vault: private files on the VPS (memory, finance workbook) ───────────────
+VAULT_AREAS = ("memory", "finance")
+VAULT_MAX_BYTES = 25 * 1024 * 1024
+
+
+def safe_vault_path(root: str, rel: str) -> str | None:
+    """Resolve `rel` inside `root`. Returns the absolute path, or None when the
+    request escapes the vault, names a hidden file, or sits outside an allowed
+    area (memory/ or finance/)."""
+    import os.path as _p
+    rel = (rel or "").replace("\\", "/").strip().lstrip("/")
+    if not rel or ".." in rel.split("/") or any(part.startswith(".") for part in rel.split("/")):
+        return None
+    area = rel.split("/")[0]
+    if area not in VAULT_AREAS:
+        return None
+    base = _p.realpath(root)
+    full = _p.realpath(_p.join(base, rel))
+    if full != base and not full.startswith(base + _p.sep):
+        return None
+    return full

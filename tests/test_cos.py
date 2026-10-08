@@ -91,3 +91,15 @@ def test_rollup_line_never_blank():
     assert "nothing needs you" in line
     line2 = c.rollup_line(now, 2, 1, 0, 10, 11, 3, [14, 17], 812.5, None, ["ops-hourly"])
     assert "ops-hourly dead" in line2 and "#14, #17" in line2 and "no cap set" in line2
+
+
+def test_safe_vault_path_confines(tmp_path):
+    root = str(tmp_path)
+    assert c.safe_vault_path(root, "memory/entity-registry.md") == str(tmp_path / "memory" / "entity-registry.md")
+    assert c.safe_vault_path(root, "finance/Family_Finance_Master.xlsx").endswith("Family_Finance_Master.xlsx")
+    assert c.safe_vault_path(root, "../etc/passwd") is None
+    assert c.safe_vault_path(root, "memory/../../x") is None
+    assert c.safe_vault_path(root, "/memory/x.md") is not None          # leading slash tolerated
+    assert c.safe_vault_path(root, "other/x.md") is None                 # unknown area
+    assert c.safe_vault_path(root, "memory/.env") is None                # hidden files never
+    assert c.safe_vault_path(root, "") is None

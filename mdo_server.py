@@ -663,7 +663,10 @@ async def _require_key(request, call_next):
             or request.url.path.startswith("/mcp/")
             or request.url.path == "/api/hdfc/callback"
             or request.url.path == "/api/cos/meta-webhook"
-            or request.url.path == "/api/cos/tender-inbound"):
+            or request.url.path == "/api/cos/tender-inbound"
+            # the vault carries its own, separate token (X-Vault-Token); the app
+            # key alone must never open it, and vault callers need not hold the app key
+            or request.url.path.startswith("/api/vault/")):
         return await call_next(request)
     supplied = (
         request.headers.get("x-mdo-key")

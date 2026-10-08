@@ -326,20 +326,22 @@ bots:
     rules:
     - Read-only on Aman's data
 - id: weekly-finance-update
-  name: Weekly finance update (Claude Routine)
+  name: Weekly finance update (Claude Routine, cloud, vault)
   runs_on: claude-routine
   reports_to: push
   cadence: weekly Sun 08:30 IST
   model: ''
   serves: []
   enabled: true
-  notes: 'LAPTOP-BOUND: edits C:\Users\Owner\claude master\finance\Family_Finance_Master.xlsx via a mounted folder.
-    Fails while the laptop is off — conflicts with Directive 11. CoS proposes moving the workbook to the VPS/Drive.'
+  notes: Cloud Routine 'Weekly finance update (cloud, vault)' created 2026-10-08. The original laptop-bound Routine
+    is disabled, not deleted (history kept). Needs Gmail connector + VAULT_TOKEN + MDO_SELF_URL in the cloud environment.
   charter:
     purpose: Append the week's statements, dividends and balances to the family finance workbook from Gmail.
     thinks: Statement emails first; PDFs only via Chrome; skips gracefully.
-    works: Routine Sun 08:30 IST; Gmail read; openpyxl append; recalc.
-    limits: Needs the laptop folder mounted. Cannot download attachments through the Gmail connector.
+    works: Routine Sun 08:30 IST; Gmail read; GET the workbook from the vault, openpyxl append, recalc, PUT it back
+      (previous version kept as .prev).
+    limits: Cannot download Gmail attachments through the connector; PDF-only data is listed as a gap. Needs VAULT_TOKEN
+      + MDO_SELF_URL in the cloud environment.
     minimum_output: 'Chat summary: rows added, balances captured, recon flags, gaps.'
     rules:
     - Never sends email
@@ -352,13 +354,14 @@ bots:
   model: ''
   serves: []
   enabled: true
-  notes: 'LAPTOP-BOUND: writes only to C:\Users\Owner\Desktop\BUSINESSES\_memory\. Stops loudly if the path is missing
-    — which it is while the laptop is off. Conflicts with Directive 11; CoS proposes a repo- or VPS-hosted _memory.'
+  notes: Reads/writes memory/*.md in the VPS vault via /api/vault (VAULT_TOKEN); appends memory/_log.md. Laptop
+    no longer needed once vault_import.sh has run.
   charter:
     purpose: Consolidate the week's durable facts into Aman's _memory with sources and a log line.
     thinks: Every fact sourced; corrections keep history; never copy a number out of a sheet.
-    works: Routine Sun 07:30 IST; reads the week's sessions and memory files; appends _log.md.
-    limits: Writes to the laptop only. Reports 'no memory changes' rather than inventing.
+    works: Routine Sun 07:30 IST; reads the week's sessions; GET memory files from the vault; PUT changed files
+      back; append _log.md.
+    limits: Writes only to the vault. If the vault is unreachable it stops and reports loudly — never writes elsewhere.
     minimum_output: Chat report of what changed, corrected, or could not be verified — every week.
     rules:
     - Source on every fact
@@ -386,5 +389,5 @@ fleet_gaps:
   Gmail)'
 - CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the
   domain is allowed
-- Two Routines (weekly-finance-update, weekly-memory-sync) depend on Aman's laptop being on — Directive 11 conflict;
-  CoS to propose a VPS/repo home for the workbook and _memory.
+- 'Vault import pending: run the two scp lines + vault_import.sh once (DEPLOY_HOSTINGER §9); until then the two
+  Sunday Routines have nothing to read.'

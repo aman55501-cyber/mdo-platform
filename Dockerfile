@@ -4,7 +4,7 @@ WORKDIR /app
 
 # ffmpeg needed by yt-dlp for audio extraction; gcc for faster-whisper build
 # tzdata so TZ=Asia/Kolkata gives correct IST market hours
-RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg tzdata \
+RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg tzdata openssl \
     && rm -rf /var/lib/apt/lists/*
 ENV TZ=Asia/Kolkata
 

@@ -150,6 +150,46 @@ def _record_spend(model: str, inp: int, out: int) -> None:
         log(f"spend not recorded: {e}")
 
 
+VAULT_DIR = os.environ.get("VAULT_DIR", os.path.join(os.path.dirname(DB_PATH), "vault"))
+KEEP_VAULT_BACKUPS = int(os.environ.get("HK_KEEP_VAULT_BACKUPS", "8"))
+
+
+def backup_vault(dry: bool) -> str:
+    """Weekly encrypted tarball of the vault (memory/ + finance/) into
+    archive/vault-YYYY-MM-DD.tar.gz.enc using AES-256 with the passphrase in
+    VAULT_BACKUP_PASSPHRASE. Without a passphrase the backup is skipped and
+    said so — an unencrypted copy of the finance workbook is not a backup,
+    it is a leak. Keeps the newest KEEP_VAULT_BACKUPS."""
+    import subprocess
+    if not os.path.isdir(VAULT_DIR):
+        return "vault: no directory yet"
+    files = sum(len(f) for _, _, f in os.walk(VAULT_DIR))
+    if files == 0:
+        return "vault: empty, nothing to back up"
+    passphrase = os.environ.get("VAULT_BACKUP_PASSPHRASE", "").strip()
+    if not passphrase:
+        return f"vault: {files} files, backup SKIPPED — set VAULT_BACKUP_PASSPHRASE in .env"
+    if dry:
+        return f"vault: {files} files would be backed up (dry run)"
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    out = os.path.join(ARCHIVE_DIR, f"vault-{datetime.now(IST):%Y-%m-%d}.tar.gz.enc")
+    try:
+        tar = subprocess.run(["tar", "-czf", "-", "-C", os.path.dirname(VAULT_DIR), os.path.basename(VAULT_DIR)],
+                             capture_output=True, check=True).stdout
+        subprocess.run(["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-pass", "env:VAULT_BACKUP_PASSPHRASE",
+                        "-out", out], input=tar, check=True, capture_output=True,
+                       env={**os.environ, "VAULT_BACKUP_PASSPHRASE": passphrase})
+        os.chmod(out, 0o600)
+    except FileNotFoundError as e:
+        return f"vault: backup FAILED — {e.filename} not installed in the image"
+    except subprocess.CalledProcessError as e:
+        return f"vault: backup FAILED — {e.stderr.decode(errors='replace')[-120:]}"
+    old = sorted(f for f in os.listdir(ARCHIVE_DIR) if f.startswith("vault-") and f.endswith(".enc"))
+    for f in old[:-KEEP_VAULT_BACKUPS]:
+        os.remove(os.path.join(ARCHIVE_DIR, f))
+    return f"vault: {files} files → {os.path.basename(out)} ({os.path.getsize(out)//1024} KB, AES-256), {min(len(old), KEEP_VAULT_BACKUPS)} kept"
+
+
 def run(dry: bool = False) -> int:
     if not os.path.exists(DB_PATH):
         _report("error", f"database not found at {DB_PATH}")
@@ -184,6 +224,8 @@ def run(dry: bool = False) -> int:
     after = os.path.getsize(DB_PATH)
     usage = shutil.disk_usage(os.path.dirname(DB_PATH) or "/")
     pct_free = usage.free / usage.total * 100 if usage.total else 0
+    vault_note = backup_vault(dry)
+    log(vault_note)
     archives = len(os.listdir(ARCHIVE_DIR)) if os.path.isdir(ARCHIVE_DIR) else 0
     mb = lambda b: b / 1_048_576  # noqa: E731
 
@@ -191,8 +233,10 @@ def run(dry: bool = False) -> int:
     summary = (f"{'DRY RUN — ' if dry else ''}archived {rows} rows "
                f"({', '.join(f'{k} {v}' for k, v in freed.items() if v)}) · "
                f"db {mb(before):.1f}→{mb(after):.1f} MB · disk {pct_free:.0f}% free "
-               f"({mb(usage.free):,.0f} MB) · {archives} archive files")
+               f"({mb(usage.free):,.0f} MB) · {archives} archive files · {vault_note}")
     status = "clean"
+    if "FAILED" in vault_note or "SKIPPED" in vault_note:
+        status = "warning"
     if pct_free < DISK_ALERT_PCT_FREE:
         status = "warning"
         summary = f"🔴 DISK LOW: {pct_free:.0f}% free. " + summary

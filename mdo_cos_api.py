@@ -26,7 +26,8 @@ from fastapi import HTTPException, Request
 from starlette.responses import PlainTextResponse
 
 import mdo_cos
-from mdo_cos import IST, budget_mode, cost_inr, is_missed, job_line, next_due, parse_reply, spend_cap_inr
+from mdo_cos import (IST, VAULT_MAX_BYTES, budget_mode, cost_inr, is_missed, job_line, next_due, parse_reply,
+                     safe_vault_path, spend_cap_inr)
 
 ROOT = Path(__file__).resolve().parent
 FLEET_PATH = Path(os.environ.get("FLEET_PATH", ROOT / "fleet.yaml"))
@@ -72,6 +73,12 @@ CREATE TABLE IF NOT EXISTS cos_chat (
 CREATE INDEX IF NOT EXISTS idx_cos_chat ON cos_chat(chat_id, id);
 CREATE TABLE IF NOT EXISTS cos_chat_summary (
     chat_id TEXT PRIMARY KEY, summary TEXT DEFAULT '', updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS vault_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL, path TEXT NOT NULL, bytes INTEGER DEFAULT 0,
+    actor TEXT DEFAULT '', ok INTEGER DEFAULT 1, note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS bot_memory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -546,6 +553,106 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         await db.commit()
         await record_run("tender-inbound", "event", "clean", f"{added} added, {skipped} skipped")
         return {"added": added, "skipped": skipped}
+
+    # ── vault: Aman's private files (memory/, finance/) on the VPS ────────────
+    # Separate token from the app key, so a bot with the app key cannot read the
+    # finance workbook. Every access is audited. No delete over HTTP.
+    VAULT_DIR = os.environ.get("VAULT_DIR", os.path.join(
+        os.path.dirname(os.path.abspath(os.environ.get("VEGA_DB_PATH", "/data/vega_data.db"))), "vault"))
+
+    def _vault_ok(request: Request) -> bool:
+        tok = os.environ.get("VAULT_TOKEN", "").strip()
+        got = (request.headers.get("x-vault-token") or "").strip()
+        return bool(tok) and hmac.compare_digest(got, tok)
+
+    async def _audit(action: str, path: str, nbytes: int, actor: str, ok: bool, note: str = ""):
+        db = await vdb()
+        await db.execute("INSERT INTO vault_audit (action,path,bytes,actor,ok,note) VALUES (?,?,?,?,?,?)",
+                         (action, path[:300], nbytes, actor[:80], 1 if ok else 0, note[:200]))
+        await db.commit()
+
+    def _actor(request: Request) -> str:
+        return (request.headers.get("x-actor") or request.headers.get("user-agent") or "")[:80]
+
+    @app.get("/api/vault/list")
+    async def vault_list(request: Request, area: str = ""):
+        if not _vault_ok(request):
+            await _audit("list", area, 0, _actor(request), False, "bad token")
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        out = []
+        for a in ("memory", "finance"):
+            if area and a != area:
+                continue
+            base = os.path.join(VAULT_DIR, a)
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for fn in filenames:
+                    if fn.startswith("."):
+                        continue
+                    full = os.path.join(dirpath, fn)
+                    st = os.stat(full)
+                    out.append({"path": os.path.relpath(full, VAULT_DIR).replace(os.sep, "/"),
+                                "bytes": st.st_size, "modified": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()})
+        await _audit("list", area or "*", len(out), _actor(request), True)
+        return {"files": sorted(out, key=lambda f: f["path"]), "root": VAULT_DIR}
+
+    @app.get("/api/vault/get")
+    async def vault_get(request: Request, path: str):
+        if not _vault_ok(request):
+            await _audit("get", path, 0, _actor(request), False, "bad token")
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        full = safe_vault_path(VAULT_DIR, path)
+        if not full or not os.path.isfile(full):
+            await _audit("get", path, 0, _actor(request), False, "not found or outside vault")
+            raise HTTPException(404, "no such file in the vault")
+        data = Path(full).read_bytes()
+        await _audit("get", path, len(data), _actor(request), True)
+        text_like = full.endswith((".md", ".txt", ".yaml", ".yml", ".json", ".csv"))
+        import base64
+        return {"path": path, "bytes": len(data), "encoding": "utf-8" if text_like else "base64",
+                "content": data.decode("utf-8", "replace") if text_like else base64.b64encode(data).decode()}
+
+    @app.put("/api/vault/put")
+    async def vault_put(request: Request):
+        """Body: {"path": "memory/_log.md", "content": "...", "encoding": "utf-8"|"base64", "append": false}.
+        Writes atomically (temp file + rename) and keeps the previous version as <name>.prev."""
+        if not _vault_ok(request):
+            await _audit("put", "?", 0, _actor(request), False, "bad token")
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        try:
+            body = json.loads((await request.body()) or b"{}")
+        except json.JSONDecodeError:
+            raise HTTPException(400, "bad json")
+        rel = str(body.get("path") or "")
+        full = safe_vault_path(VAULT_DIR, rel)
+        if not full:
+            await _audit("put", rel, 0, _actor(request), False, "outside vault")
+            raise HTTPException(400, "path must be under memory/ or finance/, no dot-files, no ..")
+        import base64
+        raw = body.get("content") or ""
+        data = base64.b64decode(raw) if body.get("encoding") == "base64" else str(raw).encode("utf-8")
+        if len(data) > VAULT_MAX_BYTES:
+            await _audit("put", rel, len(data), _actor(request), False, "too large")
+            raise HTTPException(413, f"max {VAULT_MAX_BYTES} bytes")
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        if body.get("append") and os.path.exists(full):
+            data = Path(full).read_bytes() + data
+        if os.path.exists(full):
+            shutil.copy2(full, full + ".prev")
+        tmp = full + ".tmp"
+        Path(tmp).write_bytes(data)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, full)
+        await _audit("put", rel, len(data), _actor(request), True, "append" if body.get("append") else "")
+        return {"stored": True, "path": rel, "bytes": len(data)}
+
+    @app.get("/api/vault/audit")
+    async def vault_audit(request: Request, limit: int = 50):
+        if not _vault_ok(request):
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        db = await vdb()
+        rows = await db.execute_fetchall("SELECT * FROM vault_audit ORDER BY id DESC LIMIT ?", (min(int(limit), 500),))
+        return {"audit": [dict(r) for r in rows]}
 
     @app.post("/api/cos/send")
     async def cos_send(body: dict):

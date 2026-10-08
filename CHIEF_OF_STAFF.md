@@ -91,6 +91,7 @@ preferences win.
 | Worker sessions | spawn, instruct, read results | Agent tool / create_session |
 | Grok API (xAI) | real-time X/Twitter + web search, read only | x-watch bot on the VPS, GROK_API_KEY |
 | Tender inbound door | accept tenders from any outside agent, nothing else | POST /api/cos/tender-inbound + TENDER_INBOUND_TOKEN |
+| Vault (memory/, finance/) on the VPS | list, read, write; never delete; every access audited | /api/vault/* + VAULT_TOKEN, HTTPS only |
 | Specialist bots on the VPS | restart, re-run, re-prompt, pause | documented cron commands in `fleet.yaml` |
 
 The CoS never holds a broker login, a bank credential, or a signing key.

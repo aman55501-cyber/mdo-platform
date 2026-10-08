@@ -223,6 +223,26 @@ Either way `COS_ALLOWED_NUMBERS` lists who may talk to it.
 
 Watch it: `tail -f /var/log/mdo-agent.log` · app: **Fleet & Memory** page.
 
+## 9. The vault — Aman's private files, off the laptop
+
+`/data/vault/{memory,finance}` inside the `mdo-data` Docker volume. Never in the
+repo, never in a public path. Reached only through `/api/vault/list|get|put`
+with `X-Vault-Token` (`VAULT_TOKEN` in `.env`, separate from the app key), over
+the HTTPS domain. No delete over HTTP. Every access lands in `vault_audit`.
+Writes are atomic and keep a `.prev` copy. Housekeeping makes a weekly
+AES-256 backup (`archive/vault-YYYY-MM-DD.tar.gz.enc`, passphrase
+`VAULT_BACKUP_PASSPHRASE`) and keeps eight.
+
+One-time import from the laptop (PowerShell, then SSH):
+```
+scp -r "C:\Users\Owner\Desktop\BUSINESSES\_memory"  root@<VPS>:/docker/sharecfo/mdo-platform/vault-import/memory
+scp -r "C:\Users\Owner\claude master\finance"        root@<VPS>:/docker/sharecfo/mdo-platform/vault-import/finance
+ssh root@<VPS> "cd /docker/sharecfo/mdo-platform && sudo bash vault_import.sh"
+```
+The two Sunday Routines (memory sync, finance update) read and write through
+the vault API from then on, laptop off. After their first clean run, rename the
+laptop folders `*.OLD`: memory points at one place, never two.
+
 ## Data safety
 
 - SQLite lives in the Docker volume `mdo-data` — it survives rebuilds,
