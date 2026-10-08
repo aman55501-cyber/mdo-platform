@@ -69,8 +69,9 @@
 - **Trading account:** AngelOne #A1504046 (the firm's trading account)
   - Aditi also holds an HDFC Securities account (demat/holdings side)
   - Note: HDFC Securities #4016900 is **Aman's personal** account, not the firm's
-  - Live broker sessions for all accounts run through the sharecfo service on
-    the same VPS; MDO reads them via `/api/capital/summary`
+  - Live broker sessions for all accounts run through the Shares CFO service
+    (`shares_cfo/`), now part of this repo and this compose stack; MDO reads
+    them via `/api/capital/summary`
 - **Holdings spread:**
   - 200+ Indian equities
   - F&O on NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY
@@ -445,6 +446,11 @@ Every alert MUST include:
 | 2026-04-25 | Rename VEGA → Capital → MDO | MDO = Management Decision Office (more general) |
 | 2026-04-26 | Park WhatsApp bridge | Free tier Chromium crash; not blocker for Monday |
 | 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on Railway; manual is reliable |
+| 2026-08-01 | Merge Shares CFO into MDO — one repo, one stack | Two codebases, two front doors, two brains; the capital surface was behind a cross-stack bridge |
+| 2026-08-01 | Decision Feed is the product surface | One queue of what needs Aman, pushed to phone, with the action drafted for one-tap approval |
+| 2026-08-01 | Money actions never execute from an approval tap | Real money, four live accounts; refusal is enforced on the approval path, not by omitting a button |
+| 2026-08-01 | Hotel occupancy comes from the site server over VPN, not Staah | Only an ID/password exists, no API token; Staah is cloud so the VPN cannot reach it, and credentialed portal scraping is fragile |
+| 2026-08-01 | One hostname (`srv1641037.hstgr.cloud`) routed by path | HDFC's registered redirect is the fixed point; `/hdfc/*` must reach Shares CFO or the daily login breaks silently |
 | 2026-10-07 | Purged "Rashi Steel" (and its court case 3616/2026) from every file and seed | Entity was fabricated by earlier AI memory; Aman confirmed it does not exist. Previously listed as X1 external, corrected to removed on 2026-10-07 |
 | 2026-10-07 | Father's name corrected: previously "Narendra Agrawal", corrected to Ashok Agrawal | Source: Aman's standing preferences. Mother: Sudha. Partners in Aditi Investments: Aman, Ashok, Sudha |
 | 2026-10-08 | Aman approved: cloud env secrets + domain, connectors on the CoS Routine, self-deploy from the branch every 10 min gated by tests, ₹10,000/month API cap, Shares CFO reconnect | "approve all and build". Repercussions were stated first (CHIEF_OF_STAFF §1.14) |

@@ -12,7 +12,13 @@ class HdfcConfig(BaseSettings):
     api_key: str = ""
     api_secret: str = ""
     redirect_url: str = "http://localhost:8080/callback"
-    base_url: str = "https://developer.hdfcsec.com"
+    # Read from VEGA_HDFC_BASE_URL, not HDFC_BASE_URL: since the merge, one .env
+    # feeds both stacks, and Shares CFO's HDFC_BASE_URL points at the API host
+    # (.../oapi/v1) while vega appends its own /api/v1 to the auth host.
+    base_url: str = Field(
+        default="https://developer.hdfcsec.com",
+        validation_alias="VEGA_HDFC_BASE_URL",
+    )
     static_ip: str = ""
     max_orders_per_sec: int = 10
 

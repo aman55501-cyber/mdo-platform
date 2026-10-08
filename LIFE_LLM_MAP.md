@@ -36,9 +36,21 @@ flying blind. The map makes those gaps visible.
 2. ✅ `/lifemap` UI — layered columns, connection lines, click-to-edit, add nodes/edges
 3. ✅ Seeded from MDO_VISION.md / MDO_INTEL.md
 
+### Phase 1b — Fold the capital surface in (done)
+Shares CFO was a second codebase on a second Docker stack. It now lives in this
+repo at `shares_cfo/` and runs as the `sharescfo` service in the same compose
+file. That closes the Layer 3 gap for the Wealth OS domain: the broker
+connectors, the consolidated book and the execution engine are no longer behind
+a cross-stack bridge — the MDO backend reads them at `http://sharescfo:8000`
+over the shared network. See `README.md` for the merged tree.
+
 ### Phase 2 — Close the connector gaps (highest leverage per hour)
 1. **HDFC OAuth callback** → register the VPS/domain URL, run the OTP test (unblocks live execution)
-2. **Staah token** → hotel occupancy becomes a live feed instead of manual entry
+2. ~~**Staah token**~~ → **parked (2026-08-01)**. Only an ID/password exists, no API
+   token. Staah is a cloud service, so the hotel VPN cannot reach it, and driving the
+   portal with credentials means a headless browser on the VPS — fragile, and it breaks
+   whenever they reskin the page. Hotel occupancy now comes from the site's **own server
+   over the hotel VPN** (`mdo_sites.py`). Revisit only if Staah issues an API token.
 3. **MCP servers** → connect Gmail / Calendar / Drive / Notion to the agent runtime —
    zero scraping, instant coverage of the Legacy/personal domains
 4. **WhatsApp**: decide Meta Business API vs Tasker-webhook (Chromium bridge stays parked)

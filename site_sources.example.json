@@ -1,0 +1,30 @@
+[
+  {
+    "_comment": "Template. Copy to site_sources.json and replace with REAL addresses discovered inside each site LAN — see docs/PLAN_VPN_SITE_ACCESS.md Phase 3. Nothing here is a guessed hostname; the addresses below are placeholders and will simply fail to resolve until you replace them.",
+    "site": "hotel",
+    "key": "occupancy",
+    "label": "Rooms sold today",
+    "url": "http://REPLACE-ME.hotel.lan/api/stats",
+    "json_path": "rooms.occupied"
+  },
+  {
+    "site": "hotel",
+    "key": "arrivals",
+    "label": "Expected arrivals",
+    "url": "http://REPLACE-ME.hotel.lan/api/arrivals",
+    "json_path": "count"
+  },
+  {
+    "site": "vedanta",
+    "key": "dispatch_today",
+    "label": "Tonnes dispatched today",
+    "url": "http://REPLACE-ME.vedanta.lan/api/dispatch",
+    "json_path": "today.tonnes"
+  },
+  {
+    "site": "vedanta",
+    "key": "weighbridge_last",
+    "label": "Last weighbridge entry",
+    "url": "http://REPLACE-ME.vedanta.lan/api/weighbridge/latest"
+  }
+]

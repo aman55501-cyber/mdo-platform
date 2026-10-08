@@ -221,6 +221,15 @@ def gather(bot: dict) -> dict:
     if wants & {"compliance_due"}:
         grab("filings", "/api/compliance/filings")
         grab("tasks", "/api/ops/tasks?status=open")
+    if wants & {"dispatch_rakes", "dispatch_trend", "projects_update", "hotel_daily"}:
+        # Site servers over the VPN sidecars. A down tunnel arrives as an explicit
+        # error here, so the bot reports a gap instead of reasoning over silence.
+        grab("sites", "/api/sites")
+        grab("site_hotel", "/api/sites/hotel")
+        grab("site_vedanta", "/api/sites/vedanta")
+    # What is already queued for Aman — so the bot doesn't re-raise a live item.
+    grab("decision_feed", "/api/feed?limit=40")
+    if not hourly:
         grab("entities", "/api/entities")
     if wants & {"hotel_daily"}:
         grab("hotel", "/api/hotel/daily?days=7")
@@ -434,6 +443,8 @@ def run(bot_id: str) -> int:
     # Hourly bots stay quiet on the phone when clean, but ALWAYS file a heartbeat.
     if cadence_key == "hourly" and not actionable:
         heartbeat(bot_id, cadence_key, "clean", f"clean — {len(active)} checks ran, nothing crossed a threshold", codes)
+        if wanted & {"acct_positions", "fo_update"}:
+            check_broker_sessions()
         return 0
 
     try:
@@ -456,7 +467,80 @@ def run(bot_id: str) -> int:
         log(f"FATAL: could not file report: {e}")
         heartbeat(bot_id, cadence_key, "error", f"report produced but could not be filed: {e}", codes)
         return 4
+
+    publish_to_feed(actionable, bot_id)
+    if wanted & {"acct_positions", "fo_update"}:
+        check_broker_sessions()
     return 0
+
+
+def check_broker_sessions() -> None:
+    """Broker logins expire daily and fail silently — the capital side just goes empty.
+    Checked every cycle so the gap announces itself instead of being discovered."""
+    try:
+        res = api("/api/feed/check-sessions", "POST", {})
+        n = res.get("published", 0)
+        if n:
+            log(f"broker sessions: {n} finding(s) published to the feed")
+        else:
+            accounts = res.get("accounts", [])
+            log(f"broker sessions: all {len(accounts)} logged in" if accounts
+                else "broker sessions: nothing to report")
+    except Exception as e:
+        log(f"broker session check failed: {str(e)[:150]}")
+
+
+# Severity mapping [A4] — matches the n_critical/n_important/n_info counters the
+# reports table already uses, so one vocabulary runs end to end.
+_LEVEL_TO_SEVERITY = {"critical": "critical", "important": "important"}
+
+
+def publish_to_feed(findings: list, cadence: str) -> int:
+    """Route the agent's actionable findings into the Decision Feed.
+
+    The report stays where it was — this is additive. Dedup, cooldown and severity
+    routing all happen inside the feed's publish(), so a finding repeated hour after
+    hour interrupts once, not every hour. A finding that proposes a follow-up arrives
+    with the task already drafted for one-tap approval.
+    """
+    published = 0
+    for f in findings:
+        level = str(f.get("level", "")).lower()
+        severity = _LEVEL_TO_SEVERITY.get(level)
+        if not severity:
+            continue
+        title = str(f.get("title") or "").strip()
+        if not title:
+            continue
+        # Stable dedup identity: same check + same headline = the same finding.
+        code = str(f.get("code") or f.get("check") or "").strip()
+        key = f"agent.{code or title.lower()[:60]}"
+        payload = {
+            "key": key, "title": title[:200], "severity": severity,
+            "source": f"{cadence}-agent", "domain": str(f.get("domain") or "general"),
+            "body": str(f.get("detail") or ""),
+            "evidence": [{"cadence": cadence, "level": level,
+                          "owner": f.get("owner"), "entity": f.get("entity")}],
+        }
+        # The agent names an action -> draft it as a task he can approve with one tap.
+        if f.get("action"):
+            payload["action_type"] = "add_task"
+            payload["action_payload"] = {
+                "title": str(f["action"])[:200],
+                "description": str(f.get("detail") or ""),
+                "priority": "critical" if severity == "critical" else "high",
+                "entity": f.get("entity") or "",
+            }
+        try:
+            res = api("/api/feed/publish", "POST", payload)
+            if res.get("published"):
+                published += 1
+        except Exception as e:
+            # Never let feed publication break a report that already filed.
+            log(f"feed publish failed for {key}: {str(e)[:150]}")
+    log(f"decision feed: {published} of {len(findings)} findings published "
+        f"({len(findings) - published} suppressed as duplicates or unmapped)")
+    return published
 
 
 if __name__ == "__main__":

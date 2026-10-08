@@ -5,8 +5,10 @@
 # while SSH, the website, the WhatsApp bridges and the agents keep running.
 FROM debian:stable-slim
 
+# socat carries the non-HTTP protocols an HTTP proxy cannot: the hotel's IDS Next
+# PMS is a SQL Server application, so its data arrives over TCP/1433, not HTTP.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        openvpn tinyproxy iproute2 iputils-ping curl ca-certificates nmap \
+        openvpn tinyproxy socat iproute2 iputils-ping curl ca-certificates nmap \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
