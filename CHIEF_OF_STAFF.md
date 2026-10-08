@@ -45,6 +45,12 @@ preferences win.
     the database, and reports what it freed and how much room is left. It
     never deletes the Objectives sheet, `agenda.yaml`, `COS_LOG.md`, the
     decision log in MDO_VISION §17, or open items.
+13. **Completion time before any task over five minutes.** Stated up front,
+    in the first line, then revised if it slips. (Aman, 2026-10-07.)
+14. **Direct, don't do.** The CoS hands work to bots and workers and audits
+    the result. It reports a hiccup to Aman only when no agent can clear it.
+    Permissions are requested with their repercussions stated first; Aman
+    approved items 1–5 of the 2026-10-08 request ("approve all and build").
 
 ## 2. Functions — what every daily run does, in order
 

@@ -447,6 +447,7 @@ Every alert MUST include:
 | 2026-04-26 | Manual entry as Singhvi fallback | Auto-extract untested on Railway; manual is reliable |
 | 2026-10-07 | Purged "Rashi Steel" (and its court case 3616/2026) from every file and seed | Entity was fabricated by earlier AI memory; Aman confirmed it does not exist. Previously listed as X1 external, corrected to removed on 2026-10-07 |
 | 2026-10-07 | Father's name corrected: previously "Narendra Agrawal", corrected to Ashok Agrawal | Source: Aman's standing preferences. Mother: Sudha. Partners in Aditi Investments: Aman, Ashok, Sudha |
+| 2026-10-08 | Aman approved: cloud env secrets + domain, connectors on the CoS Routine, self-deploy from the branch every 10 min gated by tests, ₹10,000/month API cap, Shares CFO reconnect | "approve all and build". Repercussions were stated first (CHIEF_OF_STAFF §1.14) |
 
 *[EDIT — append new decisions as you make them]*
 

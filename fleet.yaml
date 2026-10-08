@@ -4,101 +4,256 @@
 
 cos:
   name: Chief of Staff
-  runs_on: claude-code-routine        # cloud; arms only after Aman's "go"
-  cadence: "daily 06:22 IST + on demand"
+  runs_on: claude-code-routine
+  cadence: daily 06:22 IST + on demand
   model: claude-fable-5-1
   reports_via: POST /api/agent/report cadence=cos
-  command: "Claude Code Routine 'Chief of Staff morning run' — CRON_TZ=Asia/Kolkata 22 6 * * * (fresh cloud session each fire)"
-  reads: [Objectives sheet (Claude Doc), agenda.yaml, fleet.yaml, /api/agent/reports, /api/checks, /api/intel, /api/ops/tasks, /api/capital/summary, gmail, calendar]
+  command: Claude Code Routine 'Chief of Staff morning run' — CRON_TZ=Asia/Kolkata 22 6 * * * (fresh cloud session
+    each fire)
+  reads:
+  - Objectives sheet (Claude Doc)
+  - agenda.yaml
+  - fleet.yaml
+  - /api/agent/reports
+  - /api/checks
+  - /api/intel
+  - /api/ops/tasks
+  - /api/capital/summary
+  - gmail
+  - calendar
   enabled: true
-
+  charter:
+    purpose: Single point of contact. Turns Aman's confirmed objectives into jobs, hands them to bots, audits every
+      heartbeat, comes back with one line per event and a morning roll-up.
+    thinks: Reads the Objectives sheet first, then the ledger. What is confirmed, what moved, what is blocked, who
+      is dead, what needs Aman. Proposes; never decides for him.
+    works: 'Fresh cloud session daily 06:22 IST (Routine) + on demand via WhatsApp/app/MCP. Model claude-fable-5-1.
+      Reads: sheet, agenda, fleet, /api/* ledger, Gmail + Calendar when attached. Writes: agenda mirror, jobs, intel,
+      drafts (never sends), repo fixes.'
+    limits: Cannot touch VPS cron (files a stuck job instead). Cannot read the sheet without the Claude Docs connector
+      on the Routine. Holds no broker, bank, or signing credential. Never sends email.
+    minimum_output: 'Every run: the roll-up (even all zeros), a COS_LOG.md line pushed, one job per item that needs
+      Aman. A run with no roll-up is a dead run.'
+    rules:
+    - Objectives are Aman's alone
+    - 'No assumed decisions: options + one recommendation, then wait'
+    - No unasked tasks
+    - Money · sign · regulator = click
+    - Never send email
+    - Every fact has a source or is marked UNVERIFIED
+    - ETA on every job when estimable
+    - Completion time stated before any task over 5 minutes
 bots:
-  - id: ops-hourly
-    name: Ops hourly watcher (WhatsApp groups + photos)
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py hourly"
-    cadence: hourly
-    model: claude-sonnet-5-5
-    checks: [dispatch_rakes, tender_watch, mkt_pulse, acct_positions, fo_update]
-    heartbeat: every run posts a one-line report even when clean
-    serves: []            # fill from agenda.yaml once objectives are confirmed
-    enabled: true
-
-  - id: daily-brief
-    name: Daily brief
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py daily"
-    cadence: "daily 06:57 IST"
-    model: claude-sonnet-5-5
-    checks: [dispatch_trend, market_close, compliance_due, hotel_daily, projects_update, bank_balances]
-    serves: []
-    enabled: true
-
-  # ── specialists (same runner, own checks + model; enable per Aman's go) ───
-  - id: tender-go-no-go
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py tender-go-no-go"
-    cadence: "daily 08:00 IST"
-    model: claude-opus-5-5
-    checks: [tender_watch]
-    skill: skills/tender-go-no-go.md   # does not exist yet
-    serves: []
-    enabled: true
-  - id: compliance-sentinel
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py compliance-sentinel"
-    cadence: "daily 07:30 IST"
-    model: claude-opus-5-5
-    checks: [compliance_due]
-    serves: []
-    enabled: true
-  - id: capital-watcher
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py capital-watcher"
-    cadence: "hourly 09:00-15:30 IST Mon-Fri"
-    model: claude-opus-5-5
-    checks: [acct_positions, fo_update, mkt_pulse]
-    serves: []
-    enabled: true
-  - id: hotel-daily
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_agent.py hotel-daily"
-    cadence: "daily 22:30 IST"
-    model: claude-sonnet-5-5
-    checks: [hotel_daily]
-    serves: []
-    enabled: true
-  - id: classifier
-    name: dedup / urgency classification / heartbeat lines
-    runs_on: vps (library, called by other bots)
-    model: claude-haiku-4-5
-    enabled: false
-  - id: housekeeping
-    name: Memory purge + disk health (Directive 12)
-    runs_on: vps-cron
-    command: "docker compose exec -T backend python mdo_housekeeping.py"
-    cadence: "weekly Sun 03:00 IST"
-    model: none            # deterministic; no LLM call
-    does:
-      - archive agent_reports older than 60 days to /data/archive/YYYY-MM.jsonl.gz
-      - trim whatsapp_messages older than 90 days (group text; photos' extracted text kept 180 days)
-      - rotate /var/log/mdo-agent.log, keep 8 weeks
-      - VACUUM sqlite; measure free disk; alert at <20% free
-      - compact per-chat brain memory older than 30 turns into a dated summary
-    never_touches: [agenda.yaml, COS_LOG.md, Objectives sheet, open intel_items, open ops_tasks, checks]
-    report: "housekeeping: freed X MB · disk Y% free · archived N reports — every run, even when nothing was freed"
-    serves: [all]
-    enabled: true
-
-  - id: singhvi
-    runs_on: vps
-    cadence: "08:00-09:15 IST Mon-Fri"
-    model: grok-4
-    checks: []
-    serves: []
-    enabled: false
-
-fleet_gaps:   # true today; each is a CoS finding until closed
-  - "bank_balances check is blocked: no feed (candidate: e-statements to Gmail, then Account Aggregator)"
-  - "tender_watch has no Tender247 access (manual login); public portals only (candidate: Tender247 email alerts into Gmail)"
-  - "CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the domain is allowed"
+- id: ops-hourly
+  name: Ops hourly watcher (WhatsApp groups + photos)
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py hourly
+  cadence: hourly
+  model: claude-sonnet-5-5
+  checks:
+  - dispatch_rakes
+  - tender_watch
+  - mkt_pulse
+  - acct_positions
+  - fo_update
+  heartbeat: every run posts a one-line report even when clean
+  serves: []
+  enabled: true
+  charter:
+    purpose: 'Catch a site problem inside the hour: rakes idle, loader down, safety, payment failure, a tender closing
+      inside 72h.'
+    thinks: Default answer is NOTHING. Only a threshold breach is a finding. Chit-chat, greetings, context-free
+      photos and anything already reported are ignored.
+    works: Hourly on the VPS. Model claude-sonnet-5-5 (Haiku at 90% budget). Reads the last ~120 WhatsApp group
+      messages + photo extractions, open intel, recent reports, agenda.
+    limits: Sees only what the groups say; no weighbridge or ERP feed. Tender247 is manual, so tender_watch is public
+      portals only. Cannot act, only report.
+    minimum_output: 'A heartbeat every hour: ''clean — N checks ran'' or the finding. Only 🔴 reaches the phone between
+      roll-ups.'
+    rules:
+    - Never invent a number
+    - Blocked check = report the gap
+    - What changed → why it matters → action + owner + ETA
+- id: daily-brief
+  name: Daily brief
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py daily
+  cadence: daily 06:57 IST
+  model: claude-sonnet-5-5
+  checks:
+  - dispatch_trend
+  - market_close
+  - compliance_due
+  - hotel_daily
+  - projects_update
+  - bank_balances
+  serves: []
+  enabled: true
+  charter:
+    purpose: 'The morning picture: yesterday''s dispatch and rakes, equipment, project progress, compliance due,
+      decisions needed today.'
+    thinks: Yesterday vs trailing week vs month. Trend, not incident. Staleness is flagged, never silently trusted.
+    works: Daily 06:57 IST on the VPS. Model claude-sonnet-5-5. Reads ~300 group messages, hotel 7-day, filings,
+      open tasks, pools, entities.
+    limits: bank_balances has no feed and is reported as a gap every day until one exists. Seeded compliance dates
+      are from April 2026 and may be stale.
+    minimum_output: Always files a report, even 'nothing changed'. Summary 2–4 lines, findings with level, owner,
+      ETA.
+    rules:
+    - Never invent
+    - Flag stale seeds
+    - Lakh/crore
+- id: tender-go-no-go
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py tender-go-no-go
+  cadence: daily 08:00 IST
+  model: claude-opus-5-5
+  checks:
+  - tender_watch
+  skill: skills/tender-go-no-go.md
+  serves: []
+  enabled: true
+  charter:
+    purpose: 'For every tender in the pipeline or feed: eligible or not, closing date, decision deadline, go/no-go
+      with reason.'
+    thinks: Eligibility comes from Aman's criteria in the agenda, not from memory. A tender closing inside 72h with
+      no decision is 🔴.
+    works: Daily 08:00 IST. Model claude-opus-5-5. Reads /api/vwlr/pipeline, feeds, agenda.
+    limits: 'No Tender247 API: only public portals and whatever lands in the pipeline table or Gmail. Never submits
+      a bid.'
+    minimum_output: 'Daily heartbeat or a report with one line per live tender: id, closes, eligible?, recommendation.'
+    rules:
+    - Bid decisions are Aman's click
+    - 'No pricing invented: bid calculator inputs must be sourced'
+- id: compliance-sentinel
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py compliance-sentinel
+  cadence: daily 07:30 IST
+  model: claude-opus-5-5
+  checks:
+  - compliance_due
+  serves: []
+  enabled: true
+  charter:
+    purpose: No filing, notice or court date surprises Aman.
+    thinks: Overdue or ≤3 days = 🔴; 4–14 days = 🟡. Owner is CA Vimal unless a signature is needed, which is Aman's
+      click. Stale seed dates are called out.
+    works: Daily 07:30 IST. Model claude-opus-5-5. Reads filings, compliance tasks, intel, entities.
+    limits: Knows only the filings table and intel. No MCA/GST portal access. Cannot file anything.
+    minimum_output: Daily heartbeat or report. Every 🔴 names the entity, the filing, the date, the owner.
+    rules:
+    - Never file
+    - Regulator = Aman's click
+    - Entity register is the 20 + 5 Aman confirmed; anything else is UNVERIFIED
+- id: capital-watcher
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py capital-watcher
+  cadence: hourly 09:00-15:30 IST Mon-Fri
+  model: claude-opus-5-5
+  checks:
+  - acct_positions
+  - fo_update
+  - mkt_pulse
+  serves: []
+  enabled: true
+  charter:
+    purpose: Watch the four broker accounts and the F&O book for threshold breaches during market hours.
+    thinks: 🔴 book >3% day move, position down >5%, expiry ≤2 days unhedged; 🟡 >2% day, unrealised <−5%, sector
+      >25%. Reports; never trades.
+    works: Hourly 09:05–15:35 IST Mon–Fri. Model claude-opus-5-5. Reads /api/capital/summary via sharecfo, watchlist.
+    limits: Depends on the sharecfo sessions being logged in (daily OTP is Aman's). Stale sessions are reported
+      as stale, never as a number.
+    minimum_output: Hourly heartbeat in window. A 🔴 is one line with account, instrument, move, suggested action,
+      ETA.
+    rules:
+    - Never place or modify an order
+    - Stale data is reported as stale
+- id: hotel-daily
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py hotel-daily
+  cadence: daily 22:30 IST
+  model: claude-sonnet-5-5
+  checks:
+  - hotel_daily
+  serves: []
+  enabled: true
+  charter:
+    purpose: Occupancy, sales and OTA parity for Hotel ANS International, every night.
+    thinks: No night report received = 🔴. Occupancy <20% = 🔴; below the 7-day average = 🟡. Parity and OTA issues
+      are 🟡.
+    works: Daily 22:30 IST. Model claude-sonnet-5-5. Reads the Daily Sales / Night Report group parse and hotel_daily.
+    limits: No Staah feed until the token is set. ANS Inn Pvt Ltd is a holding company and is never conflated with
+      hotel ops.
+    minimum_output: Nightly heartbeat or report with occupancy, revenue, and the one thing to fix.
+    rules:
+    - Never invent occupancy
+    - Refund/comp above the GM limit is Aman's click
+- id: classifier
+  name: dedup / urgency classification / heartbeat lines
+  runs_on: vps (library, called by other bots)
+  model: claude-haiku-4-5
+  enabled: false
+  charter:
+    purpose: 'Cheap helper: dedup titles, urgency labels, heartbeat phrasing.'
+    thinks: Pattern matching, no judgment.
+    works: Library call on claude-haiku-4-5 when enabled.
+    limits: Never the final word on urgency.
+    minimum_output: n/a (not scheduled)
+    rules:
+    - Never promotes a finding to 🔴 on its own
+- id: housekeeping
+  name: Memory purge + disk health (Directive 12)
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_housekeeping.py
+  cadence: weekly Sun 03:00 IST
+  model: none
+  does:
+  - archive agent_reports older than 60 days to /data/archive/YYYY-MM.jsonl.gz
+  - trim whatsapp_messages older than 90 days (group text; photos' extracted text kept 180 days)
+  - rotate /var/log/mdo-agent.log, keep 8 weeks
+  - VACUUM sqlite; measure free disk; alert at <20% free
+  - compact per-chat brain memory older than 30 turns into a dated summary
+  never_touches:
+  - agenda.yaml
+  - COS_LOG.md
+  - Objectives sheet
+  - open intel_items
+  - open ops_tasks
+  - checks
+  report: 'housekeeping: freed X MB · disk Y% free · archived N reports — every run, even when nothing was freed'
+  serves:
+  - all
+  enabled: true
+  charter:
+    purpose: Keep the memory lean so the system runs for months with the laptop off.
+    thinks: Deterministic. Archive, trim, vacuum, measure. Never judge content.
+    works: Weekly Sun 03:00 IST. No LLM. Archives reports >60d, group messages >90d, extractions >180d, compacts
+      chats to the last 20 turns, vacuums, checks disk.
+    limits: Never touches the Objectives sheet, agenda, COS_LOG.md, open items, bot_memory, the checks registry.
+      Cannot enlarge the disk.
+    minimum_output: 'Every run: ''freed X MB · disk Y% free · archived N rows'', even when zero. Disk <20% free
+      = 🔴.'
+    rules:
+    - Archive before delete
+    - Report even when nothing was freed
+- id: singhvi
+  runs_on: vps
+  cadence: 08:00-09:15 IST Mon-Fri
+  model: grok-4
+  checks: []
+  serves: []
+  enabled: false
+  charter:
+    purpose: Extract Anil Singhvi's morning calls into the Morning Setup queue.
+    thinks: Transcribe → extract → queue for Aman's approval. Nothing executes without his click.
+    works: 08:00–09:15 IST Mon–Fri when enabled. Grok 4 for X/live context; whisper for audio.
+    limits: Hindi transcription may mis-hear tickers; YouTube may block. Untested on this VPS.
+    minimum_output: n/a until enabled
+    rules:
+    - Never auto-execute
+fleet_gaps:
+- 'bank_balances check is blocked: no feed (candidate: e-statements to Gmail, then Account Aggregator)'
+- 'tender_watch has no Tender247 access (manual login); public portals only (candidate: Tender247 email alerts into
+  Gmail)'
+- CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the
+  domain is allowed

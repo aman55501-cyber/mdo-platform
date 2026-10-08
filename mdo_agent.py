@@ -316,8 +316,12 @@ def run(bot_id: str) -> int:
 
     data = gather(bot)
     agenda = data.pop("agenda", {}) or {}
+    charter = bot.get("charter") or {}
     prompt = (
         BOT_RULES.get(bot_id, GENERIC_RULES)
+        + ("\n\nYOUR CHARTER (fleet.yaml — Aman's standing orders for this bot):\n"
+           + "\n".join(f"- {k}: {v if not isinstance(v, list) else '; '.join(map(str, v))}" for k, v in charter.items())
+           if charter else "")
         + "\n\nNOW: " + now_ist.strftime("%A %d %B %Y, %H:%M IST")
         + "\n\nAGENDA (Aman's confirmed objectives — the only things you work toward):\n"
         + json.dumps(agenda.get("objectives") or [], default=str)[:6000]
