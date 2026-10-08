@@ -173,10 +173,22 @@ step_tests() {
     # Building does not touch the running containers; only `up` in step d does.
     # A failed test therefore leaves the live services exactly as they were.
     docker compose build backend || die "docker compose build backend failed"
-    if ! docker compose run --rm --no-deps -T backend python -m pytest -q tests/; then
+    # Run on the bare image with `docker run`, NOT `docker compose run`: compose would
+    # mount the live data volume at /data, and the image's VEGA_DB_PATH points there —
+    # a test that wipes a table would wipe production. Scratch paths only, no volumes.
+    # tests/test_core.py belongs to the Shares CFO service (its own container) and is
+    # skipped here; CI runs it from the full checkout.
+    local img
+    img="$(docker compose config --images backend 2>/dev/null | head -1)"
+    [[ -n "$img" ]] || img="mdo-platform-backend"
+    if ! docker run --rm --network none \
+            -e VEGA_DB_PATH=/tmp/t/vega.db -e VEDANTA_DB_PATH=/tmp/t/vedanta.db \
+            -e VAULT_DIR=/tmp/t/vault -e MDO_AUTH_TOKEN= -e MDO_MCP_SECRET= \
+            -e ANTHROPIC_API_KEY= -e GROK_API_KEY= -e WA_BRIDGE_URL= -e ALERT_WHATSAPP_TO= \
+            "$img" sh -c "mkdir -p /tmp/t/vault && python -m pytest -q tests/ --ignore=tests/test_core.py"; then
         die "unit tests FAILED — live services left untouched, nothing deployed"
     fi
-    say "tests passed"
+    say "tests passed (backend suite, scratch DB, no volumes)"
 }
 
 # ── d. bring services up ─────────────────────────────────────────────────────
