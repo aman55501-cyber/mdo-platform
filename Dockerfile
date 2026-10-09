@@ -18,6 +18,7 @@ COPY fleet.yaml agenda.yaml CHIEF_OF_STAFF.md DEPLOY_HOSTINGER.md .env.example d
 COPY tests ./tests
 COPY tools ./tools
 COPY data ./data
+COPY briefs ./briefs
 
 # /data is mounted as a Railway persistent volume — SQLite lives here
 ENV VEGA_DB_PATH=/data/vega_data.db
