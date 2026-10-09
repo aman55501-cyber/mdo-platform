@@ -206,7 +206,6 @@ Objectives in `agenda.yaml` (working tree, all `confirmed: true`, source "Aman, 
 | wa-classifier | vps-cron | every 2 h (:10) | claude-haiku-4-5 | unclear chats (≥3 msgs; ≥1 for groups), ≤30 samples each; resolved `cos_jobs` | `/api/wa/chats/classify`, `/api/cos/jobs` (needs_choice when <0.85) | heartbeat line | enabled, serves [] |
 | wa-intel | vps-cron | every 6 h (:20) | claude-sonnet-5-5 | business messages since watermark (`bot_memory`), ≤80/call, ≤2000/run; open receivables | `/api/wa/signals` (backend pushes 🔴 for decision_needed / complaint / payable ≤3 d); **new**: sweep files 🔴 per receivable open >`RECEIVABLE_OVERDUE_DAYS` (default 30) once each | heartbeat line | enabled, serves [] |
 | business-pulse | vps-cron | Sun 07:00 + on demand | claude-opus-5-5 | open signals 90 d, reply metrics 14 d, register (`/api/wa/pulse/input`) | `biz_pulse`, one Decision Feed item, one roll-up line | heartbeat line | enabled, serves [] |
-| classifier | library | — | claude-haiku-4-5 | — | — | — | **disabled** |
 | housekeeping | vps-cron | daily 03:00 (`--daily`) + Sun 03:00 | none | DBs, reports, messages, chats, disk | snapshots (keep 14), archive >60 d reports / >90 d messages, VACUUM, chat compaction, weekly AES-256 bundle (keep 8; skipped without `VAULT_BACKUP_PASSPHRASE`) | `/api/agent/report` one line | enabled, serves all |
 | backup-offsite | cloud-routine | Sun 08:00 | claude-fable-5-1 | `GET /api/vault/backup/latest` (vault token) | Google Drive › "MDO Backups" | push | enabled in yaml; **Routine not yet created** (fleet_gaps) |
 | deploy | vps-cron | every 10 min (`deploy_vps.sh --auto`) | none | origin/branch | pull → pytest in throwaway container → `docker compose up -d --build` | heartbeat `/api/agent/report` (bot=deploy) | enabled, serves all |
@@ -308,7 +307,6 @@ COS_LOG.md shows three logged runs (2026-10-08 11:40, 13:05; 2026-10-09 10:20), 
 | `mdo_sites.py` | No site sources configured; hostnames inside the two LANs undiscovered (docs/PLAN_VPN_SITE_ACCESS.md Phase 3) |
 | `fleet.yaml` `tender-go-no-go.skill: skills/tender-go-no-go.md` | File does not exist; `skills/` contains only `escalation-routing.md` (with ⚠️ blank thresholds — agenda candidate `escalation-thresholds`) |
 | `fleet.yaml` `x-watch` | Enabled with a cron command, but DEPLOY_HOSTINGER §8 has no cron line for it, so it is never scheduled |
-| `fleet.yaml` `classifier` | `enabled: false` (library helper, never scheduled) |
 | `fleet.yaml` `singhvi` (working tree) | Now `enabled: true` via Grok search of written-up calls; the audio path (yt-dlp → Whisper) remains the `/morning` page "Extract" button only, "untested on this VPS" per MDO_VISION §18 |
 | `whatsapp_bridge/server.js` | Legacy whatsapp-web.js bridge left in the folder, unused |
 | `/api/intelligence/scan` | Runs only when the Daily Briefing page button is pressed — not on any schedule |

@@ -7,6 +7,7 @@ import type {
   WaClassification, WaSignalStatus,
   LevelsResponse,
   ShareMasterResponse, PortfolioImportResult,
+  WaSweepFlagsResponse, WaSweepChatsResponse, WaSweepChat,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -167,6 +168,15 @@ export const api = {
         if (!r.ok) throw new Error(`API /api/levels/${ticker} → ${r.status}`)
         return r.json() as Promise<LevelsResponse & { deleted: string }>
       }),
+  },
+
+  // ── WhatsApp sweep (wa-sweep bot): open flags + ack, the watched chats ──
+  waSweep: {
+    flags:       (status: "open" | "ack" | "" = "open") => get<WaSweepFlagsResponse>(`/api/wa/sweep/flags?status=${status}`),
+    ack:         (id: number) => post<{ ok: boolean; id: number; status: string }>(`/api/wa/sweep/flags/${id}/ack`, {}),
+    chats:       () => get<WaSweepChatsResponse>("/api/wa/sweep/chats"),
+    setPriority: (jid: string, priority: WaSweepChat["priority"]) =>
+      post<{ ok: boolean; jid: string; priority: string }>(`/api/wa/sweep/chats/${encodeURIComponent(jid)}/priority`, { priority }),
   },
 
   // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──

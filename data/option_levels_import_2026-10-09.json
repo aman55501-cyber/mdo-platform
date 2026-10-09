@@ -1,0 +1,15 @@
+{
+ "as_of": "2026-10-09",
+ "source": "Aman, chat 2026-10-09 (AMAN_PENDING A24)",
+ "rule": "Research alert. Nothing here is an order; the push ends 'Research only'.",
+ "options": [
+  {
+   "instrument": "NIFTY 29-Dec-26 25000 CE",
+   "alert_below": 30,
+   "alert_above": null,
+   "note": "Aman 2026-10-09: alert when price goes below 30; AA account holds 29,250",
+   "held": "AA 29,250",
+   "active": 1
+  }
+ ]
+}

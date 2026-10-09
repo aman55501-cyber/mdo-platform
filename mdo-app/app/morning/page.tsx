@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel, PortfolioImportResult } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -467,6 +467,9 @@ export default function MorningSetupPage() {
       {/* ── Share buy/sell levels (levels-alert bot) ── */}
       <LevelsCard />
 
+      {/* ── WhatsApp sweep (wa-sweep bot): Mausaji share lines, site-group bottlenecks, silence ── */}
+      <WaSweepCard />
+
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
         {/* ── Left: Pending calls ── */}
@@ -689,6 +692,113 @@ function LevelsCard() {
         <div className="mt-3" style={{ fontSize: 12, color: "var(--text2)" }}>
           hits today: {hits.map(h => `${h.ticker} ${h.side} ₹${fmtN(h.ltp)} vs ₹${fmtN(h.level)} (${String(h.hit_at).slice(11, 16)})`).join("; ")}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── WhatsApp sweep card — open flags from the wa-sweep bot, one ack button each ────────────────
+// Aman, chat 2026-10-09. Rule-based, no model. Directive 17: nothing is drawn until both the flags and the
+// chat list have arrived; an error says so instead of showing half a card.
+
+const KIND_LABEL: Record<WaSweepFlag["kind"], { text: string; color: string }> = {
+  call:       { text: "CALL",       color: "var(--green)" },
+  mention:    { text: "SHARE",      color: "var(--amber)" },
+  bottleneck: { text: "BOTTLENECK", color: "var(--red)" },
+  silence:    { text: "SILENT",     color: "var(--text2)" },
+}
+
+function istClock(iso: string | null | undefined) {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return String(iso).slice(11, 16)
+  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false })
+}
+
+function WaSweepCard() {
+  const qc = useQueryClient()
+  const flagsQ = useQuery({ queryKey: ["wa-sweep-flags"], queryFn: () => api.waSweep.flags("open"), refetchInterval: 60_000 })
+  const chatsQ = useQuery({ queryKey: ["wa-sweep-chats"], queryFn: api.waSweep.chats, refetchInterval: 5 * 60_000 })
+  const ack = useMutation({
+    mutationFn: (id: number) => api.waSweep.ack(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-sweep-flags"] }),
+  })
+  const loading = flagsQ.isLoading || chatsQ.isLoading
+  const error = flagsQ.error || chatsQ.error
+  const flags: WaSweepFlag[] = flagsQ.data?.flags ?? []
+  const chats: WaSweepChat[] = chatsQ.data?.chats ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <MessageCircle size={15} style={{ color: "var(--green)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            WHATSAPP SWEEP{!loading && !error ? ` (${flagsQ.data?.open ?? 0} open · ${chats.length} chats watched)` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!loading && !error && chatsQ.data && (
+            <span>Mausaji chat "{chatsQ.data.mausaji_chat}": {chatsQ.data.mausaji_found ? "found" : "not seen yet"} · idle &gt; {chatsQ.data.idle_hours}h</span>
+          )}
+          <button onClick={() => { flagsQ.refetch(); chatsQ.refetch() }} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {loading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!loading && error && <div style={{ fontSize: 12, color: "var(--red)" }}>Sweep unavailable: {String((error as Error).message)}</div>}
+      {!loading && !error && (
+        <>
+          <div className="mb-3" style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
+            {chats.length === 0
+              ? <>No chat matches yet — WA_SWEEP_CHATS / WA_SWEEP_GROUPS in .env decide the set.</>
+              : <>watching: {chats.map(c => (
+                  <span key={c.jid} style={{ marginRight: 10, color: c.mode === "mausaji" ? "var(--amber)" : "var(--text)" }}>
+                    {c.name}
+                    <span style={{ color: "var(--text2)" }}> ({c.mode}{c.priority !== "normal" ? ` · ${c.priority}` : ""} · last {istClock(c.last_message_at)})</span>
+                  </span>
+                ))}</>}
+          </div>
+          {flags.length === 0 && <div style={{ fontSize: 12, color: "var(--text2)" }}>0 open flags. The bot reports every run even when it finds nothing.</div>}
+          {flags.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>When</th><th style={th}>Chat</th><th style={th}>Kind</th><th style={th}>Who</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Said</th><th style={th}>Pushed</th><th style={th}></th>
+                </tr></thead>
+                <tbody>
+                  {flags.map(f => {
+                    const k = KIND_LABEL[f.kind] ?? { text: f.kind.toUpperCase(), color: "var(--text2)" }
+                    const tag = f.kind === "silence"
+                      ? `silent ${f.detail?.silent_hours ?? "?"}h`
+                      : f.ticker ? f.ticker : (f.detail?.words ?? []).slice(0, 3).join(", ")
+                    return (
+                      <tr key={f.id}>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace" }}>{f.day.slice(5)} {istClock(f.msg_at)}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 600 }}>{f.chat_name || f.chat_jid}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          <span style={{ color: k.color, fontWeight: 700, fontSize: 11 }}>{k.text}</span>
+                          {tag && <span style={{ color: "var(--text2)", fontSize: 11 }}> {tag}</span>}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", color: "var(--text2)" }}>{f.sender || "—"}</td>
+                        <td style={{ ...td, whiteSpace: "normal", minWidth: 240 }}>{f.kind === "silence" ? `no message since ${istClock(f.msg_at)} IST` : f.text}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11, color: f.pushed_at ? "var(--green)" : "var(--red)" }}>{f.pushed_at ? istClock(f.pushed_at) : "not sent"}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          <button onClick={() => ack.mutate(f.id)} disabled={ack.isPending}
+                            className="px-2 py-1 rounded text-xs flex items-center gap-1"
+                            style={{ border: "1px solid var(--border)", color: "var(--text2)", opacity: ack.isPending ? 0.6 : 1 }} title="acknowledge">
+                            <CheckCircle size={12} /> ack
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -80,6 +80,8 @@ async def vdb() -> aiosqlite.Connection:
         await _grok["ensure_schema"](_vdb)
         await _levels["ensure_schema"](_vdb)
         await _share_master["ensure_schema"](_vdb)
+        await _wa_sweep["ensure_schema"](_vdb)
+        await _options["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3318,6 +3320,17 @@ mdo_brain.configure({"levels_list": _levels["levels_list"], "levels_set": _level
 # it is share-master-daily in mdo_agent.py; the workbook lands in the vault at finance/Share_Master.xlsx.
 import mdo_share_master
 _share_master = mdo_share_master.register(app, vdb, _levels)
+
+# wa-sweep (Aman, chat 2026-10-09): rule-based sweep of the Mausaji chat and the site groups — reads the
+# message store above, keeps wa_sweep_state / wa_sweep_flags / wa_sweep_runs, /api/wa/sweep/*. Pushes go
+# through the same send_cos that POST /api/cos/send wraps. Zero LLM spend; run by mdo_agent.py wa-sweep <mode>.
+import mdo_wa_sweep
+_wa_sweep = mdo_wa_sweep.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _levels)
+
+# Option levels (AMAN_PENDING A24): option_levels table, /api/levels/options*, NSE option-chain price,
+# once-per-crossing push. Checked from the wa-sweep mausaji run in market hours.
+import mdo_option_levels
+_options = mdo_option_levels.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp))
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

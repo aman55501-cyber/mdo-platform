@@ -429,3 +429,56 @@ export interface PortfolioImportResult {
   skipped: { row: number; code?: string; reason: string }[]
   holdings: { ticker: string; hdfc_code: string; company: string; qty: number; avg_price: number | null; cmp: number | null; pnl_pct: number | null; ticker_verified: boolean }[]
 }
+
+// ── WhatsApp sweep (wa-sweep bot): Mausaji share lines, site-group bottlenecks, silence ──
+export type WaSweepKind = "call" | "mention" | "bottleneck" | "silence"
+
+export interface WaSweepFlag {
+  id: number
+  chat_jid: string
+  chat_name: string
+  account: string
+  message_id: number | null
+  sender: string
+  kind: WaSweepKind
+  ticker: string
+  text: string
+  detail: { tickers?: string[]; call?: Record<string, number | string | null>; words?: string[]; silent_hours?: number }
+  msg_at: string
+  day: string
+  created_at: string
+  status: "open" | "ack"
+  pushed_at: string | null
+  acked_at: string | null
+}
+
+export interface WaSweepFlagsResponse {
+  flags: WaSweepFlag[]
+  count: number
+  open: number
+  as_of: string
+}
+
+export interface WaSweepChat {
+  jid: string
+  name: string
+  account: string
+  kind: string
+  mode: "mausaji" | "ops"
+  priority: "high" | "normal" | "low"
+  watermark: number
+  last_push_at: string | null
+  last_message_at: string | null
+  msg_count: number
+}
+
+export interface WaSweepChatsResponse {
+  chats: WaSweepChat[]
+  count: number
+  mausaji_chat: string
+  mausaji_found: boolean
+  watch_chats: string[]
+  groups_regex: string
+  idle_hours: number
+  groups_seen: string[]
+}

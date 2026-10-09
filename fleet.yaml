@@ -281,6 +281,59 @@ bots:
     - Every call keeps Mausaji's own words
     - Outcomes computed from prices only
     - Stale data is reported as stale, per account
+- id: wa-sweep
+  name: WhatsApp sweep — Aman's eyes on Mausaji and the site groups
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py wa-sweep ops
+  command_mausaji: docker compose exec -T backend python mdo_agent.py wa-sweep mausaji
+  command_daily: docker compose exec -T backend python mdo_agent.py wa-sweep daily
+  cadence: every 15 min 09:00-15:45 IST Mon-Fri (mausaji) + every 30 min 08:00-22:00 IST (ops) + daily 21:00 IST (daily)
+  model: none
+  heartbeat: 'every run, even when all zero: "wa-sweep <mode>: C chats swept, N new msgs, F flags (K pushed)"; the
+    mausaji run adds the option check ("option NIFTY … ₹x (above 30)" or "option price unavailable")'
+  checks: []
+  serves:
+  - capital-rules
+  - vwlr-dispatch
+  enabled: true
+  objective: Aman's eyes on Mausaji and site groups
+  notes: 'Aman, chat 2026-10-09: "be sweeping whatsapp constantly specially during market hours for Bantu Mausaji
+    chat for shares, and other washery, siding, hotel groups for project bottlenecks resolving in real time …
+    does not involve capital upfront." Answered same day (AMAN_PENDING A13): watched chats = WA_SWEEP_CHATS
+    (Bantu Mausaji; Vedanta Daily Report; Washery Civil Update; Ans Management; VWLR Indent Planning; Core
+    Group), WA_SWEEP_GROUPS regex as an extra matcher, silence over WA_SWEEP_IDLE_HOURS=1 is intolerable,
+    chat priorities later (POST /api/wa/sweep/chats/{jid}/priority). A24: NIFTY 29-Dec-26 25000 CE alert
+    below 30 rides in the mausaji run (option_levels, seeded from data/option_levels_import_2026-10-09.json).'
+  charter:
+    purpose: Every new Mausaji message about a share reaches Aman at once with the price, the list level and
+      who holds it; every bottleneck word in a site group reaches him within the half hour; a group that goes
+      silent for more than an hour in working hours is flagged (Aman, chat 2026-10-09).
+    thinks: 'Rules only, no model. Mausaji: a message is about a share when it names a ticker on the levels
+      list, an NSE symbol (cached EQUITY_L.csv) or a company word from the list notes, or carries a call word
+      (buy/lelo/entry/target/sl/sell/bech …) with a number. Ops: the bottleneck words (pending, ruka, band,
+      breakdown, stuck, nahi aaya, delay, late, shortage, kami, payment, urgent, problem, issue, fail, kharab,
+      accident, strike, no diesel, diesel, rake nahi, wagon, demurrage, penalty, complaint, guest complaint,
+      cancel). Silence = more than WA_SWEEP_IDLE_HOURS of 08:00–20:00 IST with no message, one flag per episode.'
+    works: 'Reads whatsapp_messages/wa_chats (both bridges, WA_WATCH_MODE=all) from a per-chat watermark
+      (wa_sweep_state). mausaji: cron */15 3-10 UTC Mon–Fri → one line per message: ticker · Mausaji''s words
+      (≤200 chars) · Yahoo price · list level · HELD BY · research only; then the option check in market hours.
+      ops: cron */30 2-16 UTC → bottleneck flags pushed at once when that chat had no push in 30 min, else one
+      batched message; silence flags pushed at once; the first ops run announces the matched chats. daily: cron
+      30 15 UTC → one line with the day''s totals and the chats matched. Flags: /api/wa/sweep/flags, acked on
+      the Morning page.'
+    limits: Does not read a chat the bridges have not forwarded or that is classified personal (nothing is stored
+      for it). Word rules miss paraphrase and catch some noise ("payment received" is a payment flag; the
+      regex "ans" also matches "Transport") — Aman corrects the chat set via WA_SWEEP_CHATS / WA_SWEEP_GROUPS.
+      Yahoo and NSE prices may be missing ("price n/a" / "option price unavailable"). No LLM, no capital.
+    minimum_output: 'Every run: the heartbeat line with counts, including all zeros. Every share message: one
+      WhatsApp line. Daily 21:00 IST: the totals line with the chat list.'
+    rules:
+    - Nothing is an order — every share line ends "research only"
+    - Never invents a price, a holder or a chat; "n/a" is said out loud
+    - Holder on every share line (Directive 18)
+    - No LLM call, ever (Directive 15)
+    - Every run reports, especially an empty one (Directive 5)
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron
@@ -394,19 +447,6 @@ bots:
     - Every number cites signal ids; uncited numbers are rejected
     - ≤5 next steps, each with owner + ETA
     - Never invent a counterparty, an amount or an entity
-- id: classifier
-  name: dedup / urgency classification / heartbeat lines
-  runs_on: vps (library, called by other bots)
-  model: claude-haiku-4-5
-  enabled: false
-  charter:
-    purpose: 'Cheap helper: dedup titles, urgency labels, heartbeat phrasing.'
-    thinks: Pattern matching, no judgment.
-    works: Library call on claude-haiku-4-5 when enabled.
-    limits: Never the final word on urgency.
-    minimum_output: n/a (not scheduled)
-    rules:
-    - Never promotes a finding to 🔴 on its own
 - id: credit-guard
   name: Claude credit guard (never run out again)
   runs_on: cloud-routine

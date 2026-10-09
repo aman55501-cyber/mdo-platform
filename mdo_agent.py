@@ -8,6 +8,7 @@ kept firing and delivering nothing, with no visible failure.
 Usage (inside the backend container):
     python mdo_agent.py ops-hourly          # any bot id from fleet.yaml
     python mdo_agent.py daily-brief
+    python mdo_agent.py wa-sweep ops        # a bot with modes: the word after the id
     python mdo_agent.py hourly              # legacy alias → ops-hourly
     python mdo_agent.py daily               # legacy alias → daily-brief
 
@@ -38,6 +39,7 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 DEFAULT_MODEL = os.environ.get("MDO_AGENT_MODEL", "claude-sonnet-5-5")
 FLEET_PATH = os.environ.get("FLEET_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "fleet.yaml"))
 LEGACY = {"hourly": "ops-hourly", "daily": "daily-brief"}
+RUN_ARGS: list[str] = []            # argv after the bot id, e.g. `mdo_agent.py wa-sweep ops` → ["ops"]
 
 
 def log(msg: str) -> None:
@@ -1136,9 +1138,48 @@ def run_share_master(bot: dict, model: str, cadence_key: str, now: datetime | No
     return 0
 
 
+# ── wa-sweep: Aman's eyes on the Mausaji chat and the site groups — rule-based, zero LLM spend ──
+# Aman, chat 2026-10-09. All the work is the backend's (mdo_wa_sweep.run: watermarks, rules, pushes);
+# this only picks the mode from argv, triggers the run, adds the option check in market hours
+# (mdo_option_levels, AMAN_PENDING A24) and files the heartbeat — even when every count is zero.
+def run_wa_sweep(bot: dict, model: str, cadence_key: str, now: datetime | None = None, mode: str | None = None) -> int:
+    import mdo_levels as lv
+    bot_id = "wa-sweep"
+    now = now or datetime.now(IST)
+    mode = str(mode or (RUN_ARGS[0] if RUN_ARGS else "") or "ops").strip().lower()
+    if mode not in ("mausaji", "ops", "daily"):
+        heartbeat(bot_id, cadence_key, "error", f"wa-sweep: unknown mode '{mode}' — use mausaji | ops | daily")
+        return 2
+    res = api("/api/wa/sweep/run", "POST", {"mode": mode, "now": now.isoformat()}, timeout=180)
+    line = str(res.get("line") or f"wa-sweep {mode}: {res.get('chats', 0)} chats swept, {res.get('new_msgs', 0)} new msgs, "
+                                  f"{res.get('flags', 0)} flags ({res.get('pushed', 0)} pushed)")
+    status = "clean"
+    if mode == "mausaji":
+        if lv.market_open(now):
+            try:
+                opt = api("/api/levels/options/check", "POST", {"now": now.isoformat()}, timeout=60)
+                line += " · " + str(opt.get("line") or "option check: no reply")
+                if opt.get("unavailable"):
+                    status = "warning"
+            except Exception as e:
+                line += f" · option price unavailable ({type(e).__name__})"
+                status = "warning"
+        else:
+            line += " · options: market closed"
+    if res.get("push_failed"):
+        status = "warning"
+        line += f" · {res['push_failed']} push(es) NOT delivered"
+    if res.get("note"):
+        line += " · " + str(res["note"])
+    heartbeat(bot_id, cadence_key, status, line)
+    for text in res.get("pushes") or []:
+        log(f"wa-sweep {mode} pushed: {text[:160]}")
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
 CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
-               "share-master-daily": run_share_master}
+               "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep}
 
 
 def check_broker_sessions() -> None:
@@ -1212,6 +1253,7 @@ def publish_to_feed(findings: list, cadence: str) -> int:
 
 if __name__ == "__main__":
     arg = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
+    RUN_ARGS = [a.strip().lower() for a in sys.argv[2:] if a.strip()]
     if not arg:
         print(__doc__)
         sys.exit(1)
