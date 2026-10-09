@@ -18,8 +18,9 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A13 | Bot targets table: reply row number + ok/edit; the five people whose reply time matters; idle threshold hours (default 2); keep or kill the old `classifier` bot | pulse and ops-hourly tuning | 2026-10-09 |
 | A14 | Vision session, 30 min, VISION_INTAKE.md blocks 2–4 | top-line objectives the bots run toward | 2026-10-08 |
 | A15 | Vault import from the laptop (`_memory` folder + Family_Finance_Master.xlsx) via scp + vault_import.sh; then Shares CFO reconnect | memory and finance bots have nothing to read | 2026-10-08 |
-| A16 | Send the Shashank Nashine WhatsApp (draft in chat 2026-10-09) for the hotel floor layouts PDF + CAD | hotel objective | 2026-10-09 |
+| A16 | Send the Shashank Nashine WhatsApp (final urgent draft, chat 2026-10-09) for the hotel floor layouts PDF + CAD today | hotel objective, time-sensitive | 2026-10-09 |
 | A17 | Run `bash vps_harden.sh` once on the VPS; reboot after | firewall, fail2ban, security updates | 2026-10-09 |
 | A18 | Review and drop the old VPS stash: `git stash show -p stash@{0}` | leftover local Dockerfile edit | 2026-10-08 |
+| A19 | Send the Ayush (Sultania) quote request for curcumin 95% + boswellia 65%, 500 kg FOB (draft in chat 2026-10-09) | botanicals G0 lane; contact was HELD, Aman's send = approval | 2026-10-09 |
 
 Removed items (only on Aman's word): A1 key rotation, A10 Vimal filings check — Aman, chat 2026-10-09 ("forget A1 A10").
