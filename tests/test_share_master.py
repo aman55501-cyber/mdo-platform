@@ -198,6 +198,38 @@ def test_parse_hdfc_csv_resolves_codes_and_flags_unverified():
     p2 = sm.parse_hdfc_csv(("﻿" + HDFC_CSV).encode("utf-8"), "Aditi")
     assert [h["ticker"] for h in p2["holdings"]] == ["ETERNAL", "TATACOMM", "DECGOL", "XYZABC"] and p2["unverified"] == ["DECGOL", "XYZABC"]
     assert sm.parse_hdfc_csv("a,b\n1,2\n")["holdings"] == [] and "Stock Name" in sm.parse_hdfc_csv("a,b\n1,2\n")["skipped"][0]["reason"]
+
+
+def test_hdfc_codes_mapped_after_2026_10_09_refresh():
+    """Three of the eight codes the live refresh left unresolved are NSE-listed; the HDFC export's spelling
+    of the company defeats the name normaliser, so the seed map carries them. The other five are not in
+    EQUITY_L (BSE-only, an ETF, a delisting) and must stay unverified — never guessed."""
+    # the exact "Company Name" strings from the 2026-10-09 exports; mapped regardless of the NSE list
+    for code, company, ticker in (("AVTNATEQ", "A V T NATURAL PRODUCTS LIMITED", "AVTNPL"),
+                                  ("PHICAREQ", "PCBL CHEMICALS LIMITED", "PCBL"),
+                                  ("RAIALLEQ", "SARDA ENERGY & MINERRALS LTD.", "SARDAEN")):
+        assert sm.hdfc_code_to_ticker(code) == (ticker, True)
+        assert sm.resolve_ticker(code, company, NSE) == (ticker, True, "map")
+        assert sm.resolve_ticker(code, company, None) == (ticker, True, "map")
+        assert sm.resolve_by_name(company, NSE) is None               # the normaliser alone would not have caught it
+    # the five that are not NSE equities keep the stripped code, unverified, with or without the list
+    for code, company in (("DIATEAEQ", "DIANA TEA COMPANY LIMITED"), ("DUROFLXEQ", "VERITAS (INDIA) LIMITED"),
+                          ("HDFCMFGETFEQ", "HDFC GOLD ETF"), ("JAIASSEQ", "JAIPRAKASH ASSOCIATES LIMITED"),
+                          ("JSGLEASINGEQ", "COLAB PLATFORMS LIMITED")):
+        stripped = code[:-2]
+        assert stripped not in sm.HDFC_CODE_MAP
+        assert sm.resolve_ticker(code, company, NSE) == (stripped, False, "unresolved")
+    csv_text = "\n".join([
+        ",".join(sm.HDFC_CSV_COLUMNS),
+        "AVTNATEQ,A V T NATURAL PRODUCTS LIMITED,93.27,270479.99,90.16,9330.01,279810.00,3000.0",
+        "PHICAREQ,PCBL CHEMICALS LIMITED,316.00,1962962.0,392.5924,-382962.0,1580000.00,5000.0",
+        "RAIALLEQ,SARDA ENERGY & MINERRALS LTD.,483.35,1036526.19,518.2631,-69826.19,966700.00,2000.0",
+        "DIATEAEQ,DIANA TEA COMPANY LIMITED,28.46,1367085.95,45.5695,-513285.95,853800.00,30000.0",
+    ])
+    p = sm.parse_hdfc_csv(csv_text, "Ashok", NSE)
+    assert [(h["ticker"], h["ticker_verified"], h["resolved_by"]) for h in p["holdings"]] == [
+        ("AVTNPL", True, "map"), ("PCBL", True, "map"), ("SARDAEN", True, "map"), ("DIATEA", False, "unresolved")]
+    assert p["unverified"] == ["DIATEA"] and p["resolved_by"]["map"] == 3
     # the CoS's transcribed JSON (pf/<holder>_<date>.json): '?' marks unverified, re-resolved when the list knows the name
     doc = {"holder": "Aman", "as_of": "2026-10-09", "holdings": [
         {"code": "AFFLEEQ", "ticker": "AFFLE?", "name": "AFFLE 3I LIMITED", "qty": 500.0, "avg": 1438.75, "cmp": 1424.6, "cur": 712300.0, "pl_pct": -1.0},

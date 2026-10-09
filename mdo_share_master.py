@@ -345,6 +345,13 @@ HDFC_CODE_MAP = {
     "RELINF": "RIIL", "ROLEXRINGS": "ROLEXRINGS", "SANSERA": "SANSERA", "JARITEX": "SGMART", "SHYAMMETL": "SHYAMMETL",
     "SONACOMS": "SONACOMS", "STEOPT": "STLTECH", "VSNLTD": "TATACOMM", "TATELX": "TATAELXSI", "TATPOW": "TATAPOWER",
     "HUGTEL": "TTML", "WOCLTD": "WOCKPHARMA", "ZAGGLE": "ZAGGLE",
+    # 2026-10-09 refresh left eight codes unresolved by name. These three are in NSE EQUITY_L (matched on
+    # the VPS list by ISIN and by NSE-spelled name); the HDFC export spells the name differently
+    # ("A V T NATURAL PRODUCTS", "PCBL CHEMICALS", "SARDA ENERGY & MINERRALS"), so the normaliser missed.
+    # Not mapped, not in EQUITY_L: DIATEA (Diana Tea, BSE only), DUROFLX (Veritas (India), BSE only),
+    # HDFCMFGETF (HDFC Gold ETF — ETF list, not equity), JAIASS (Jaiprakash Associates, delisted Jun 2026),
+    # JSGLEASING (Colab Platforms, BSE only). They stay "unverified ticker" until Aman says otherwise.
+    "AVTNAT": "AVTNPL", "PHICAR": "PCBL", "RAIALL": "SARDAEN",
 }
 HDFC_CSV_COLUMNS = ("Stock Name", "Company Name", "CMP", "Invested Value", "Average Cost Value",
                     "Unrealized Profit/Loss", "Current Value", "Qty")
