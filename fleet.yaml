@@ -361,6 +361,22 @@ bots:
     minimum_output: One line every run, including "no change".
     rules:
     - Never book, never pay, never invent a price
+- id: janitor
+  name: Janitor (weekly cleanup proposals)
+  runs_on: cloud-routine
+  cadence: weekly Sun 18:53 IST
+  model: cheapest available (Aman decides; proposed claude-haiku-5-5)
+  heartbeat: one block per week, first line is the count summary, then ≤8 numbered proposals
+  serves: []
+  enabled: true
+  charter:
+    purpose: The mess never piles up again — every duplicate Routine, failing bot, high-frequency burner and stale Notion click is proposed for pause, merge, fix or delete once a week.
+    thinks: Proposals only. It disables nothing, deletes nothing, edits nothing. Aman approves with "janitor ok 1,3"; the CoS executes.
+    works: Routine trig_01WVoRXSWLKKfqQftfGSbFMM; reads list_triggers, /api/fleet, /api/spend, Notion "Needs Aman click" when attached.
+    limits: Cannot see Grok desks or the laptop; depends on connectors being attached.
+    minimum_output: One block every Sunday, including "nothing to clean".
+    rules:
+    - Never changes anything itself
 - id: housekeeping
   name: Memory purge + disk health + backups (Directive 12, DEPLOY_HOSTINGER §10)
   runs_on: vps-cron
