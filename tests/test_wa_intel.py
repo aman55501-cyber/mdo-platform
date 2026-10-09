@@ -187,6 +187,29 @@ def test_red_rules():
     assert line.startswith("🔴 wa#5 payable [VWLR] diesel bill · INR 85,000 · due 2026-10-10") and "msgs 1,2" in line
 
 
+def test_receivable_overdue_rule_is_env_driven(monkeypatch):
+    """Aman, chat 2026-10-09: a receivable still open after 30 days past due is 🔴.
+    The threshold is RECEIVABLE_OVERDUE_DAYS (default 30); a bad value never becomes 0."""
+    today = NOW.date()
+    monkeypatch.delenv("RECEIVABLE_OVERDUE_DAYS", raising=False)
+    assert w.receivable_overdue_days() == 30
+    due_30 = (today - timedelta(days=30)).isoformat()
+    due_31 = (today - timedelta(days=31)).isoformat()
+    assert not w.is_red({"kind": "receivable", "due_date": due_30}, today=today)      # exactly 30 → not yet
+    assert w.is_red({"kind": "receivable", "due_date": due_31}, today=today)          # after 30 days → 🔴
+    assert not w.is_red({"kind": "receivable", "due_date": (today + timedelta(days=2)).isoformat()}, today=today)
+    assert not w.is_red({"kind": "receivable", "due_date": "not-a-date"}, today=today)
+    assert not w.is_red({"kind": "receivable"}, today=today)
+    monkeypatch.setenv("RECEIVABLE_OVERDUE_DAYS", "7")
+    assert w.receivable_overdue_days() == 7
+    assert w.is_red({"kind": "receivable", "due_date": (today - timedelta(days=8)).isoformat()}, today=today)
+    assert not w.is_red({"kind": "receivable", "due_date": (today - timedelta(days=7)).isoformat()}, today=today)
+    monkeypatch.setenv("RECEIVABLE_OVERDUE_DAYS", "lots")
+    assert w.receivable_overdue_days() == 30
+    # the payable rule is untouched by the env
+    assert w.is_red({"kind": "payable", "due_date": (today + timedelta(days=3)).isoformat()}, today=today)
+
+
 def test_every_n_hours_cadence_is_understood():
     last = NOW - timedelta(hours=1)
     assert c.next_due("every 2h", last, NOW) == last + timedelta(hours=2)

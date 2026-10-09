@@ -26,7 +26,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import mdo_wa_intel as wai
 from mdo_cos import ECONOMY_MODEL, IST
@@ -245,12 +245,18 @@ def gather(bot: dict) -> dict:
 
 BOT_RULES = {
     "ops-hourly": """You are the MDO Ops Hourly Watcher for Aman Agrawal (ANS Group, Raigarh CG):
-VWLR coal washery (Kharsia, commissioning), Hotel ANS International, group entities.
+VWLR coal washery (Kharsia), Hotel ANS International, group entities.
 
 YOUR DEFAULT ANSWER IS "NOTHING". Most hours nothing has crossed a line. Reporting
 routine noise trains him to ignore you. Only escalate genuine threshold breaches:
 site stoppages, equipment faults, rakes idle with no dispatch movement, safety issues,
 payment failures, a tender deadline inside 72 hours, or a compliance item turning overdue.
+VWLR standing orders (Aman, chat 2026-10-09): dispatch target 15,000 MT/day MINIMUM —
+a day's MT below target, seen by 10:00 IST the next day, is a finding; any loader,
+excavator or tipper idle while rakes or stock are waiting is a finding; a machine down
+more than 30 minutes is 🔴; a manpower shortfall against the work on hand is a finding.
+EV loader-4 is a new machine in the fleet. MT figures come only from the dispatch
+messages and cite them.
 Ignore chit-chat, greetings, photos with no context, and anything already reported in
 the recent agent reports below.""",
     "daily-brief": """You are the MDO Daily Brief for Aman Agrawal (ANS Group, Raigarh CG):
@@ -258,29 +264,54 @@ VWLR coal washery (Kharsia, commissioning), Hotel ANS International (88 rooms),
 Aditi Investments (NSE cash + F&O), the group entities. This reaches his phone first
 thing in the morning.
 
-Cover: yesterday's site operations and dispatch/rake movement, equipment faults and
-project progress (hotel renovation, washery development, siding/civil works),
-compliance items due or overdue, and anything needing a decision today.""",
-    "tender-go-no-go": """You are the VWLR Tender bot. Target categories: RCR of coal, loading/unloading
-of coal, handling of rakes (ROM coal). For every tender in the pipeline or feed: eligible
-or not against the criteria in the agenda, closing date, decision deadline, and a one-line
-go / no-go with the reason. A tender closing inside 72 hours with no decision is 🔴.""",
+LEAD with yesterday's dispatch in MT against the 15,000 MT/day minimum, then equipment
+availability (what ran, what was down and for how long, anything idle while work waited;
+EV loader-4 is in the fleet) — Aman, chat 2026-10-09. Then: rake movement, project
+progress (hotel renovation, washery development, siding/civil works), compliance items
+due or overdue, and anything needing a decision today. Hotel occupancy and sales are no
+longer reported.""",
+    "tender-go-no-go": """You are the VWLR Tender bot. Aman's perspective (chat 2026-10-09): only two things
+matter — win ONE coal washing contract and ONE RCR contract, each with an upfront profit
+margin good enough that no cuts are needed elsewhere. Everything else is secondary.
+For every coal-washing or RCR tender in the pipeline or feed: evaluate the MARGIN FIRST
+(inputs sourced, never invented), then eligible or not against the agenda criteria, closing
+date, decision deadline, and a one-line go / no-go with the reason. Every other tender is
+listed in ONE line and not analysed. A qualifying coal-washing or RCR tender is 🔴 the hour
+it appears; one closing inside 72 hours with no decision is 🔴.""",
     "compliance-sentinel": """You are the Compliance Sentinel across the ANS Group entities. Overdue or due
 inside 3 days is 🔴; 4 to 14 days is 🟡. Owner is CA Vimal Agrawal unless the filing needs
 Aman's signature, which is Aman's click. Seeded dates may be stale: flag staleness.""",
     "capital-watcher": """You are the Capital Watcher for the 4 broker accounts (Aman, Sudha, Ashok,
 Aditi Investments). Thresholds: 🔴 book moves >3% in a day, a position down >5%, F&O
 expiry within 2 days unhedged; 🟡 >2% day move, unrealised <-5%, sector >25%. You never
-trade. You report.""",
+trade. You report.
+Aman's capital rules (chat 2026-10-09): no fixed P&L targets. NEVER suggest booking a
+loss. Suggest a trade only at >80% conviction, and then with the reasoning and the
+invalidation level. Averaging a position may be suggested only when a later exit scope is
+stated. Crude and major global factors are the prime drivers to watch: report any
+crude-moving news (Brent/WTI, OPEC, inventories, geopolitics, INR) during market hours
+within the hour, tagged positive/negative for Indian equities, with the source piece.""",
     "x-watch": """You are the X / web real-time scout for Aman Agrawal (ANS Group, Raigarh CG). Search X and
-the web NOW for: new NITs / tenders from CIL, SECL, WCL, MCL, NTPC, NALCO, GeM, CPPP in coal RCR,
-coal loading/unloading, rake handling; news at client sites (Vedanta/BALCO Korba, JSPL Raigarh,
-SAIL Bhilai, NTPC Sipat) — stoppages, strikes, accidents, rake/wagon shortages; posts by the tracked
-competitors; coal policy and rail freight changes (Ministry of Coal, Railways, CEA); Anil Singhvi's
-market calls. Every finding carries the post or article URL as its source. If the tools return
-nothing relevant, say so — an empty result is a valid result.""",
-    "hotel-daily": """You are the Hotel ANS daily bot. Occupancy below 20% or no night report received
-is 🔴; below the trailing 7-day average is 🟡. Rate parity and OTA issues are 🟡.""",
+the web NOW for: new NITs / tenders from CIL, SECL, WCL, MCL, NTPC, NALCO, GeM, CPPP — coal washing
+and RCR contracts matter most (a qualifying one is 🔴 the hour it appears), then coal loading/unloading
+and rake handling; news at client sites (Vedanta/BALCO Korba, JSPL Raigarh, SAIL Bhilai, NTPC Sipat) —
+stoppages, strikes, accidents, rake/wagon shortages; posts by the tracked competitors; coal policy and
+rail freight changes (Ministry of Coal, Railways, CEA); Anil Singhvi's market calls.
+Market watch (Aman, chat 2026-10-09): genuine accounts — exchanges, companies, regulators (SEBI, RBI),
+verified journalists, named analysts — posting about listed entities in Indian and global markets.
+Classify each such post market-positive / market-negative / neutral with one-line reasoning; forward
+the piece only when it can move the market or Aman's holdings. Crude watch keywords: Brent, WTI, OPEC,
+OPEC+, crude inventories (EIA/API), Strait of Hormuz, sanctions, INR/USD — crude-moving news is tagged
+positive/negative for Indian equities with the source piece.
+Every finding carries the post or article URL as its source. If the tools return nothing relevant,
+say so — an empty result is a valid result.""",
+    "hotel-daily": """You are the Hotel ANS International renovation + management-contract tracker.
+Aman's two agenda points (chat 2026-10-09): (1) the renovation, (2) closing the management
+contract with Guptasons (Sameer). Track renovation progress from the civil/renovation groups,
+Guptasons contract milestones, and the open deliverable: floor layout of the entire hotel in
+PDF and CAD, owner Shashank Nashine (son of lead architect Sukumar Nashine). No update >48h
+on either point, or a blocker/stoppage, is a finding. Operations, occupancy, sales and OTA
+are no longer the fleet's concern — do not report them.""",
 }
 GENERIC_RULES = """You are a specialist bot in Aman Agrawal's MDO fleet (ANS Group, Raigarh CG).
 Run only the checks listed. Escalate only threshold breaches."""
@@ -358,9 +389,9 @@ def run(bot_id: str) -> int:
         model = ECONOMY_MODEL
 
     now_ist = datetime.now(IST)
-    wa_runner = WA_BOTS.get(bot_id)
+    wa_runner = CUSTOM_BOTS.get(bot_id)
     if wa_runner is not None:
-        # WhatsApp Intelligence bots have no checks registry; they drive /api/wa/*.
+        # WhatsApp Intelligence bots and singhvi have no checks registry; they drive /api/wa/* or /api/singhvi/*.
         try:
             return wa_runner(bot, model, cadence_key)
         except urllib.error.HTTPError as e:
@@ -577,18 +608,62 @@ def run_wa_classifier(bot: dict, model: str, cadence_key: str) -> int:
     return 0
 
 
+def sweep_overdue_receivables(bot_id: str = "wa-intel", cadence_key: str = "hourly",
+                              today: date | None = None) -> tuple[int, str]:
+    """Open receivables more than RECEIVABLE_OVERDUE_DAYS (default 30) past due →
+    one 🔴 finding each, filed through /api/agent/report (Aman, chat 2026-10-09).
+    The report path dedups on the open intel title, so a receivable alerts once,
+    not every run. Returns (overdue count, note for the heartbeat line)."""
+    try:
+        sigs = api("/api/wa/signals?status=open&kind=receivable&limit=500").get("signals") or []
+    except Exception as e:
+        return 0, f"receivable sweep failed: {str(e)[:80]}"
+    today = today or datetime.now(IST).date()
+    overdue = [s for s in sigs if wai.is_red(s, today=today)]
+    if not overdue:
+        return 0, ""
+    limit = wai.receivable_overdue_days()
+    findings = []
+    for s in overdue:
+        age = (today - date.fromisoformat(str(s["due_date"])[:10])).days
+        amt = s.get("amount")
+        money = f" · {s.get('currency') or 'INR'} {amt:,.0f}" if isinstance(amt, (int, float)) else ""
+        ids = ",".join(str(i) for i in (s.get("evidence_ids") or [])[:5])
+        findings.append({
+            "level": "critical", "domain": "banking", "entity": s.get("entity") or "",
+            "title": (f"receivable overdue >{limit}d: {s.get('counterparty') or 'counterparty?'} "
+                      f"[{s.get('entity') or 'entity?'}]{money} · wa#{s.get('id')}")[:200],
+            "detail": (f"{str(s.get('summary') or '')[:200]} — due {str(s['due_date'])[:10]}, {age} days past due "
+                       f"(threshold RECEIVABLE_OVERDUE_DAYS={limit}). Source: {s.get('chat_name') or s.get('chat_jid') or '?'} "
+                       f"(msgs {ids})"),
+            "action": "chase the receivable or decide escalation", "owner": s.get("owner") or "Aman", "eta": "today",
+        })
+    try:
+        api("/api/agent/report", "POST", {
+            "bot": bot_id, "cadence": cadence_key, "status": "reported", "agent": f"{bot_id} (vps)",
+            "title": f"wa-intel: {len(findings)} receivable(s) overdue >{limit} days",
+            "summary": "\n".join(f["title"] for f in findings[:10]), "body": "", "findings": findings, "checks_run": [],
+        }, timeout=60)
+    except Exception as e:
+        return len(overdue), f"{len(overdue)} receivable(s) overdue >{limit}d but report failed: {str(e)[:60]}"
+    return len(overdue), f"{len(overdue)} receivable(s) overdue >{limit}d → 🔴"
+
+
 def run_wa_intel(bot: dict, model: str, cadence_key: str) -> int:
     """Business chats → biz_signals, from the watermark forward, ≤80 messages a
     call, every signal with evidence ids. Fingerprint dedup and the 🔴 push
-    happen server-side on insert."""
+    happen server-side on insert. Every run also sweeps open receivables past
+    RECEIVABLE_OVERDUE_DAYS (default 30) and files a 🔴 for each."""
     bot_id = "wa-intel"
     watermark = int(_bot_memory_get(bot_id, "watermark_msg_id") or 0)
     res = api(f"/api/wa/messages?classification=business&since_id={watermark}&limit={MAX_INTEL_MSGS_PER_RUN}")
     msgs = res.get("messages", [])
     open_total = (api("/api/wa/stats").get("signals") or {}).get("open_total", "?")
+    _, overdue_note = sweep_overdue_receivables(bot_id, cadence_key)
     if not msgs:
         heartbeat(bot_id, cadence_key, "clean",
-                  f"wa-intel: scanned 0 msgs in 0 chats → 0 new signals (open total {open_total}) · watermark {watermark}")
+                  f"wa-intel: scanned 0 msgs in 0 chats → 0 new signals (open total {open_total}) · watermark {watermark}"
+                  + (f" · {overdue_note}" if overdue_note else ""))
         return 0
     by_chat: dict[str, list[dict]] = {}
     for m in msgs:
@@ -634,6 +709,8 @@ def run_wa_intel(bot: dict, model: str, cadence_key: str) -> int:
         line += f" · {alerts} 🔴 pushed"
     if res.get("count", 0) >= MAX_INTEL_MSGS_PER_RUN:
         line += " · backlog remains, next run continues"
+    if overdue_note:
+        line += f" · {overdue_note}"
     if errors:
         line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
     heartbeat(bot_id, cadence_key, "warning" if errors else "clean", line)
@@ -704,6 +781,157 @@ def run_business_pulse(bot: dict, model: str, cadence_key: str) -> int:
 
 
 WA_BOTS = {"wa-classifier": run_wa_classifier, "wa-intel": run_wa_intel, "business-pulse": run_business_pulse}
+
+
+# ── singhvi (fleet.yaml: provider grok) — Anil Singhvi's morning calls → Morning Setup queue ──
+# The queue is the singhvi_calls table (POST /api/singhvi/calls, status 'pending'); the
+# Morning Setup surface and the daily briefing already read pending rows from it. This bot
+# only PROPOSES: it never calls approve, never touches trading_signals, never executes.
+SINGHVI_MIN_CONVICTION = 80            # Aman, chat 2026-10-09: trade suggestions only at >80% conviction
+SINGHVI_SOURCE = "singhvi-bot (grok x_search+web_search)"
+_SINGHVI_ACTIONS = {"buy": "BUY", "long": "BUY", "sell": "SELL", "short": "SELL"}
+
+
+def _num(v) -> float | None:
+    if v is None or v == "" or isinstance(v, bool):
+        return None
+    try:
+        return float(str(v).replace(",", "").replace("₹", "").strip())
+    except ValueError:
+        return None
+
+
+def singhvi_prompt(now_ist: datetime) -> str:
+    return (
+        f"Find Anil Singhvi's (Zee Business, @AnilSinghvi_) morning market calls for TODAY, "
+        f"{now_ist:%A %d %B %Y} IST, using x_search and web_search: his own posts, Zee Business' own "
+        "X account and zeebiz.com write-ups of the 08:00-09:15 IST show, and verified reposts. "
+        "Only calls published today count; yesterday's calls are not today's.\n"
+        "For each call extract exactly what the source states. Return ONLY this JSON object:\n"
+        '{"calls": [{"stock": "NSE symbol or company name as written", "action": "BUY|SELL",\n'
+        '  "entry": number or null, "stop": number or null, "target": number or null,\n'
+        '  "timeframe": "Intraday|Positional|...", "rationale": "why, in the source\'s words, one line",\n'
+        '  "conviction": 0-100 (how sure you are the call is genuine, from today, and complete),\n'
+        '  "source_url": "the post or article URL", "quote": "verbatim snippet"}],\n'
+        ' "note": "one line: what was searched and what was found, or why nothing"}\n'
+        "Rules: never invent a level, a stock or a URL — a number not in the source is null. "
+        'No calls found today is a valid answer: {"calls": [], "note": "..."}.'
+    )
+
+
+def parse_singhvi_calls(text) -> dict:
+    """Grok text → {"calls": [normalised call dicts], "note": str}. Tolerates fences,
+    prose, a bare list, missing fields. Never raises."""
+    data = wai.extract_json(text)
+    if isinstance(data, list):
+        data = {"calls": data}
+    if not isinstance(data, dict):
+        return {"calls": [], "note": ""}
+    items = data.get("calls")
+    calls = []
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        conv = _num(it.get("conviction") if it.get("conviction") is not None else it.get("confidence"))
+        if conv is not None and 0 < conv <= 1.0:
+            conv *= 100
+        calls.append({
+            "stock": str(it.get("stock") or it.get("ticker") or it.get("symbol") or "").strip().upper()[:40],
+            "action": _SINGHVI_ACTIONS.get(str(it.get("action") or it.get("direction") or "").strip().lower(), ""),
+            "entry": _num(it.get("entry") if it.get("entry") is not None else it.get("entry_price")),
+            "stop": _num(it.get("stop") if it.get("stop") is not None else it.get("stop_loss")),
+            "target": _num(it.get("target") if it.get("target") is not None else it.get("target_price")),
+            "timeframe": (str(it.get("timeframe") or "").strip() or "Intraday")[:40],
+            "rationale": str(it.get("rationale") or it.get("reason") or "").strip()[:500],
+            "conviction": conv,
+            "source_url": str(it.get("source_url") or it.get("url") or it.get("source") or "").strip()[:400],
+            "quote": str(it.get("quote") or it.get("snippet") or "").strip()[:300],
+        })
+    return {"calls": calls, "note": str(data.get("note") or "").strip()[:300]}
+
+
+def singhvi_call_gate(c: dict) -> str:
+    """'' when the call may be queued; otherwise the one-word reason it is not.
+    Every queued proposal carries stock, direction, entry, stop (the invalidation
+    level), target, the reasoning, its source URL, and >80% conviction."""
+    if not c.get("stock"):
+        return "no stock"
+    if c.get("action") not in ("BUY", "SELL"):
+        return "no action"
+    if not all(isinstance(c.get(k), (int, float)) and c[k] > 0 for k in ("entry", "stop", "target")):
+        return "missing entry/stop/target"
+    if not c.get("rationale"):
+        return "no rationale"
+    if not str(c.get("source_url") or "").startswith("http"):
+        return "no source URL"
+    if c.get("conviction") is None or c["conviction"] <= SINGHVI_MIN_CONVICTION:
+        return f"conviction ≤{SINGHVI_MIN_CONVICTION}%"
+    return ""
+
+
+def run_singhvi(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    """Weekdays 08:05 IST: pull today's Singhvi calls via Grok, queue the ones that
+    pass the gate as PROPOSALS (singhvi_calls.status='pending'), heartbeat even
+    when nothing was found. Never approves, never executes."""
+    bot_id = "singhvi"
+    now = now or datetime.now(IST)
+    if now.weekday() > 4:
+        heartbeat(bot_id, cadence_key, "clean", "singhvi: weekend — no market session, nothing searched")
+        return 0
+    errors: list[str] = []
+    try:
+        existing = api("/api/singhvi/today").get("calls") or []
+    except Exception as e:
+        existing = []
+        errors.append(f"today's queue unreadable: {str(e)[:60]}")
+    seen = {(str(c.get("ticker") or "").upper(), str(c.get("direction") or "").upper()) for c in existing}
+    raw = ask_grok(singhvi_prompt(now), model, bot_id, handles=bot.get("x_handles") or None)
+    parsed = parse_singhvi_calls(raw)
+    calls, note = parsed["calls"], parsed["note"]
+    queued: list[str] = []
+    skipped: dict[str, int] = {}
+    dups = 0
+    for c in calls:
+        why = singhvi_call_gate(c)
+        if why:
+            skipped[why] = skipped.get(why, 0) + 1
+            continue
+        key = (c["stock"], c["action"])
+        if key in seen:
+            dups += 1
+            continue
+        payload = {
+            "ticker": c["stock"], "exchange": "NSE", "instrument": "EQ", "direction": c["action"],
+            "entry_price": c["entry"], "stop_loss": c["stop"], "target_price": c["target"], "quantity": 1,
+            "timeframe": c["timeframe"],
+            "notes": (f"{c['rationale']} · conviction {c['conviction']:.0f}% · invalidation (stop) {c['stop']:g} "
+                      f"· source {c['source_url']}")[:1000],
+            "source": SINGHVI_SOURCE, "raw_text": c["quote"], "status": "pending",
+        }
+        try:
+            res = api("/api/singhvi/calls", "POST", payload)
+            seen.add(key)
+            queued.append(f"{c['action']} {c['stock']} @{c['entry']:g} SL {c['stop']:g} TG {c['target']:g} (#{res.get('id')})")
+        except Exception as e:
+            errors.append(f"{c['stock']}: {str(e)[:60]}")
+    line = (f"singhvi: {len(calls)} call(s) found · {len(queued)} queued as PROPOSALS "
+            f"(>{SINGHVI_MIN_CONVICTION}% conviction, status pending — nothing executed)")
+    if queued:
+        line += ": " + "; ".join(queued[:6])
+    if dups:
+        line += f" · {dups} already in today's queue"
+    if skipped:
+        line += " · not queued: " + ", ".join(f"{n} {why}" for why, n in skipped.items())
+    if note:
+        line += f" · {note[:160]}"
+    if errors:
+        line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
+    heartbeat(bot_id, cadence_key, "warning" if errors else "clean", line)
+    return 0
+
+
+# Bots with their own runner instead of the checks registry (run() dispatches here first).
+CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi}
 
 
 def check_broker_sessions() -> None:

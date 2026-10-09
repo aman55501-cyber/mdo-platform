@@ -53,7 +53,8 @@ _ENTITY_LOOKUP = {e[0].lower(): e[0] for e in ENTITIES}
 SIGNAL_KINDS = ("lead", "quote", "order", "receivable", "payable", "payment_done", "delay", "bottleneck",
                 "decision_needed", "commitment", "complaint", "asset", "liability", "capital", "debt",
                 "resource", "risk", "idea")
-RED_KINDS = ("decision_needed", "complaint")      # plus payable due within 3 days
+RED_KINDS = ("decision_needed", "complaint")      # plus payable due ≤3 days, receivable overdue > RECEIVABLE_OVERDUE_DAYS
+RECEIVABLE_OVERDUE_DAYS_DEFAULT = 30               # Aman, chat 2026-10-09: receivable overdue alert after 30 days
 REGISTER_KINDS = ("asset", "liability", "capital", "debt", "resource", "commitment")
 FOLLOWUP_KINDS = ("lead", "quote", "order", "receivable", "payment_done", "commitment")   # what closes a sales gap
 REGISTER_CATEGORIES = ("asset", "liability", "capital", "debt", "resource", "commitment", "vision")
@@ -435,17 +436,30 @@ def parse_signals(text: Any, allowed_ids: set | None = None) -> list[dict]:
     return out
 
 
+def receivable_overdue_days() -> int:
+    """Days past due_date after which an open receivable is 🔴. Env RECEIVABLE_OVERDUE_DAYS,
+    default 30 (Aman, chat 2026-10-09). A bad value falls back to the default, never to 0."""
+    try:
+        return max(0, int(str(os.environ.get("RECEIVABLE_OVERDUE_DAYS", "")).strip() or RECEIVABLE_OVERDUE_DAYS_DEFAULT))
+    except ValueError:
+        return RECEIVABLE_OVERDUE_DAYS_DEFAULT
+
+
 def is_red(signal: dict, today: date | None = None) -> bool:
-    """🔴 on the phone: a decision for Aman, a complaint, or a payable due within 3 days."""
+    """🔴 on the phone: a decision for Aman, a complaint, a payable due within 3 days, or a
+    receivable still open more than RECEIVABLE_OVERDUE_DAYS (default 30) past its due date."""
     kind = signal.get("kind")
     if kind in RED_KINDS:
         return True
-    if kind == "payable" and signal.get("due_date"):
+    if kind in ("payable", "receivable") and signal.get("due_date"):
         try:
             due = date.fromisoformat(str(signal["due_date"])[:10])
         except ValueError:
             return False
-        return due <= (today or datetime.now(timezone.utc).date()) + timedelta(days=3)
+        today = today or datetime.now(timezone.utc).date()
+        if kind == "payable":
+            return due <= today + timedelta(days=3)
+        return (today - due).days > receivable_overdue_days()
     return False
 
 

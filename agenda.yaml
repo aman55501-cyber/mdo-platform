@@ -18,7 +18,63 @@ cap:
   spend_inr_month: null        # Aman to set. CoS proposal: 10000 (≈ US$120 at current rates)
   outbound_email: never      # Aman, 2026-10-07 — drafts only, he sends
 
-objectives: []                 # ← empty on purpose. Aman fills this.
+# Objectives below were stated by Aman in chat on 2026-10-09 ("Aman, chat 2026-10-09").
+# They are not yet on the Objectives sheet (the CoS comments on the sheet, never edits it).
+# A sheet refresh must not drop them until Aman adds them to the sheet himself.
+objectives:
+  - id: vwlr-dispatch
+    title: "VWLR dispatch ≥ 15,000 MT/day minimum; resources and manpower maintained, no breakdowns while work is ongoing; no idle equipment when work exists"
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-09"
+    next_action: null
+    blocker: null
+    click_needed: false
+    notes:
+      - "New machine added: EV loader-4 (Aman, chat 2026-10-09)"
+  - id: tenders-washing-rcr
+    title: "Tenders: win ONE coal washing contract and ONE RCR contract with a good enough upfront profit margin so no cuts are needed elsewhere. Everything else is secondary."
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-09"
+    next_action: null
+    blocker: null
+    click_needed: "bid decision (CHIEF_OF_STAFF.md §1.4)"
+  - id: hotel-renovation-contract
+    title: "Hotel ANS International: only two agenda points — renovation, and closing the management contract with Guptasons (Sameer). Operations and sales are no longer the fleet's concern."
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-09"
+    next_action: "Open item: floor layout of the entire hotel in PDF and CAD — owner Shashank Nashine (son of lead architect Sukumar Nashine)"
+    blocker: null
+    click_needed: "management-contract signature (CHIEF_OF_STAFF.md §1.4)"
+  - id: capital-rules
+    title: "Capital: no fixed targets; never book a loss; patient, will average a position if there is scope to exit later; trade suggestions only at >80% conviction; crude and major global factors are the prime market drivers to watch"
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-09"
+    next_action: null
+    blocker: null
+    click_needed: "every trade (CHIEF_OF_STAFF.md §1.4) — bots propose, never execute"
+    rules:
+      - "No fixed targets"
+      - "Never book a loss"
+      - "Patient: average a position only if there is scope to exit later"
+      - "Trade suggestions only at >80% conviction"
+      - "Crude and major global factors are the prime market drivers to watch"
+  - id: battery-plant
+    title: "Battery plant: exploratory, meeting on 2026-10-09; no objective yet"
+    owner: Aman
+    status: exploratory           # Aman: "no objective yet" — listed so nothing is invented around it
+    confirmed: true
+    source: "Aman, chat 2026-10-09"
+    next_action: "Meeting on 2026-10-09 (Aman, chat 2026-10-09)"
+    blocker: null
+    click_needed: false
 
 candidates:                    # from Aman's files; unconfirmed; CoS lists these once, never acts
   - id: hdfc-oauth

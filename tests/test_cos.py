@@ -103,3 +103,10 @@ def test_safe_vault_path_confines(tmp_path):
     assert c.safe_vault_path(root, "other/x.md") is None                 # unknown area
     assert c.safe_vault_path(root, "memory/.env") is None                # hidden files never
     assert c.safe_vault_path(root, "") is None
+
+
+def test_next_due_weekdays_skips_weekend():
+    sat = datetime(2026, 10, 10, 4, 30, tzinfo=timezone.utc)   # Saturday 10:00 IST
+    due = c.next_due("weekdays 08:05 IST", sat - timedelta(days=1), sat).astimezone(c.IST)
+    assert due.weekday() == 0 and due.strftime("%H:%M") == "08:05"
+    assert not c.is_missed("weekdays 08:05 IST", sat - timedelta(days=1), sat)

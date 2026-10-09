@@ -146,12 +146,15 @@ def next_due(cadence: str, last_run: datetime | None, now: datetime) -> datetime
     m = _HHMM.search(c)
     hh, mm = (int(m.group(1)), int(m.group(2))) if m else (6, 30)
     local_now = now.astimezone(IST)
-    if c.startswith("daily"):
+    if c.startswith("daily") or c.startswith("weekdays"):
         candidate = local_now.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if last_run is not None and last_run.astimezone(IST) >= candidate - timedelta(hours=1):
             candidate += timedelta(days=1)
         elif candidate <= local_now - timedelta(minutes=1) and last_run is None:
             pass
+        if c.startswith("weekdays"):                      # "weekdays 08:05 IST" → Mon-Fri only
+            while candidate.weekday() > 4:
+                candidate += timedelta(days=1)
         return candidate.astimezone(timezone.utc)
     if c.startswith("weekly"):
         dow = next((v for k, v in _DOW.items() if k in c), 6)

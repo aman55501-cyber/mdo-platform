@@ -57,23 +57,32 @@ bots:
   - acct_positions
   - fo_update
   heartbeat: every run posts a one-line report even when clean
-  serves: []
+  serves:
+  - vwlr-dispatch
+  - tenders-washing-rcr
   enabled: true
   charter:
-    purpose: 'Catch a site problem inside the hour: rakes idle, loader down, safety, payment failure, a tender closing
-      inside 72h.'
-    thinks: Default answer is NOTHING. Only a threshold breach is a finding. Chit-chat, greetings, context-free
-      photos and anything already reported are ignored.
-    works: Hourly on the VPS. Model claude-sonnet-5-5 (Haiku at 90% budget). Reads the last ~120 WhatsApp group
-      messages + photo extractions, open intel, recent reports, agenda.
-    limits: Sees only what the groups say; no weighbridge or ERP feed. Tender247 is manual, so tender_watch is public
-      portals only. Cannot act, only report.
+    purpose: 'Catch a site problem inside the hour: rakes idle, a loader/excavator/tipper idle while work waits,
+      a machine down, safety, payment failure, a tender closing inside 72h, a day''s dispatch under the 15,000
+      MT/day minimum.'
+    thinks: 'Default answer is NOTHING. Only a threshold breach is a finding. Idle-equipment watch: any loader,
+      excavator or tipper idle while rakes or stock are waiting = finding. Breakdown watch: a machine down >30
+      min = 🔴. Dispatch target 15,000 MT/day minimum: the day''s MT below target, seen by 10:00 IST the next
+      day = finding. Manpower shortfall against the work on hand = finding. (Aman, chat 2026-10-09.) Chit-chat,
+      greetings, context-free photos and anything already reported are ignored.'
+    works: 'Hourly on the VPS. Model claude-sonnet-5-5 (Haiku at 90% budget). Reads the last ~120 WhatsApp group
+      messages + photo extractions, open intel, recent reports, agenda. The fleet it watches includes the new
+      EV loader-4 (Aman, chat 2026-10-09).'
+    limits: Sees only what the groups say; no weighbridge or ERP feed, so MT/day comes from the dispatch messages
+      and cites them. Tender247 is manual, so tender_watch is public portals only. Cannot act, only report.
     minimum_output: 'A heartbeat every hour: ''clean — N checks ran'' or the finding. Only 🔴 reaches the phone between
       roll-ups.'
     rules:
     - Never invent a number
     - Blocked check = report the gap
     - What changed → why it matters → action + owner + ETA
+    - 'Idle equipment while work exists = finding; machine down >30 min = 🔴; day under 15,000 MT = finding; manpower
+      short = finding (Aman, chat 2026-10-09)'
 - id: daily-brief
   name: Daily brief
   runs_on: vps-cron
@@ -84,25 +93,30 @@ bots:
   - dispatch_trend
   - market_close
   - compliance_due
-  - hotel_daily
   - projects_update
   - bank_balances
-  serves: []
+  serves:
+  - vwlr-dispatch
   enabled: true
   charter:
-    purpose: 'The morning picture: yesterday''s dispatch and rakes, equipment, project progress, compliance due,
-      decisions needed today.'
-    thinks: Yesterday vs trailing week vs month. Trend, not incident. Staleness is flagged, never silently trusted.
-    works: Daily 06:57 IST on the VPS. Model claude-sonnet-5-5. Reads ~300 group messages, hotel 7-day, filings,
-      open tasks, pools, entities.
-    limits: bank_balances has no feed and is reported as a gap every day until one exists. Seeded compliance dates
-      are from April 2026 and may be stale.
-    minimum_output: Always files a report, even 'nothing changed'. Summary 2–4 lines, findings with level, owner,
-      ETA.
+    purpose: 'The morning picture, led by yesterday''s dispatch in MT against the 15,000 MT/day minimum and equipment
+      availability (Aman, chat 2026-10-09); then rakes, project progress, compliance due, decisions needed today.'
+    thinks: 'First line: yesterday''s MT vs 15,000 — met or short, by how much, cited to the dispatch messages.
+      Second: equipment availability — what ran, what was down and for how long, anything idle while work waited
+      (EV loader-4 is in the fleet). Then yesterday vs trailing week vs month. Trend, not incident. Staleness is
+      flagged, never silently trusted.'
+    works: Daily 06:57 IST on the VPS. Model claude-sonnet-5-5. Reads ~300 group messages, filings, open tasks,
+      pools, entities.
+    limits: 'bank_balances has no feed and is reported as a gap every day until one exists. Seeded compliance dates
+      are from April 2026 and may be stale. Hotel occupancy/sales are no longer reported (Aman, chat 2026-10-09):
+      the hotel_daily check was dropped from this bot.'
+    minimum_output: Always files a report, even 'nothing changed'. Summary 2–4 lines, MT vs 15,000 first, findings
+      with level, owner, ETA.
     rules:
     - Never invent
     - Flag stale seeds
     - Lakh/crore
+    - Lead with yesterday's MT vs 15,000 and equipment availability (Aman, chat 2026-10-09)
 - id: tender-go-no-go
   runs_on: vps-cron
   command: docker compose exec -T backend python mdo_agent.py tender-go-no-go
@@ -111,20 +125,27 @@ bots:
   checks:
   - tender_watch
   skill: skills/tender-go-no-go.md
-  serves: []
+  serves:
+  - tenders-washing-rcr
   enabled: true
   charter:
-    purpose: 'For every tender in the pipeline or feed: eligible or not, closing date, decision deadline, go/no-go
-      with reason.'
-    thinks: Eligibility comes from Aman's criteria in the agenda, not from memory. A tender closing inside 72h with
-      no decision is 🔴.
-    works: Daily 08:00 IST. Model claude-opus-5-5. Reads /api/vwlr/pipeline, feeds, agenda.
+    purpose: 'Win ONE coal washing contract and ONE RCR contract with an upfront profit margin good enough that no
+      cuts are needed elsewhere. Everything else is secondary (Aman, chat 2026-10-09). For every coal-washing or
+      RCR tender: margin first, then eligible or not, closing date, decision deadline, go/no-go with reason.'
+    thinks: 'Only coal washing and RCR contracts matter. Evaluate the margin FIRST — bid-calculator inputs sourced,
+      never invented — then eligibility from Aman''s criteria in the agenda, not from memory. Every other tender
+      is listed in one line and not analysed. A qualifying coal-washing or RCR tender is 🔴 the hour it appears;
+      one closing inside 72h with no decision is 🔴.'
+    works: Daily 08:00 IST. Model claude-opus-5-5. Reads /api/vwlr/pipeline, feeds, agenda. The hourly bots (x-watch,
+      ops-hourly tender_watch) carry the same 🔴 rule between its runs.
     limits: 'No Tender247 API: only public portals and whatever lands in the pipeline table or Gmail. Never submits
       a bid.'
-    minimum_output: 'Daily heartbeat or a report with one line per live tender: id, closes, eligible?, recommendation.'
+    minimum_output: 'Daily heartbeat or a report with one line per live coal-washing/RCR tender: id, closes, margin,
+      eligible?, recommendation — and one line listing everything else.'
     rules:
     - Bid decisions are Aman's click
     - 'No pricing invented: bid calculator inputs must be sourced'
+    - Margin first; only coal washing and RCR are analysed; everything else is one line (Aman, chat 2026-10-09)
 - id: compliance-sentinel
   runs_on: vps-cron
   command: docker compose exec -T backend python mdo_agent.py compliance-sentinel
@@ -154,40 +175,62 @@ bots:
   - acct_positions
   - fo_update
   - mkt_pulse
-  serves: []
+  serves:
+  - capital-rules
   enabled: true
   charter:
-    purpose: Watch the four broker accounts and the F&O book for threshold breaches during market hours.
-    thinks: 🔴 book >3% day move, position down >5%, expiry ≤2 days unhedged; 🟡 >2% day, unrealised <−5%, sector
-      >25%. Reports; never trades.
-    works: Hourly 09:05–15:35 IST Mon–Fri. Model claude-opus-5-5. Reads /api/capital/summary via sharecfo, watchlist.
+    purpose: Watch the four broker accounts and the F&O book for threshold breaches during market hours, and watch
+      crude and the major global factors that drive the market (Aman, chat 2026-10-09).
+    thinks: '🔴 book >3% day move, position down >5%, expiry ≤2 days unhedged; 🟡 >2% day, unrealised <−5%, sector
+      >25%. Patient: never books a loss; a position may be averaged only if there is scope to exit later. Reports;
+      never trades.'
+    works: 'Hourly 09:05–15:35 IST Mon–Fri. Model claude-opus-5-5. Reads /api/capital/summary via sharecfo, watchlist,
+      portfolio news. Watches crude continuously: Brent/WTI, OPEC, inventories, geopolitics, INR.'
     limits: Depends on the sharecfo sessions being logged in (daily OTP is Aman's). Stale sessions are reported
-      as stale, never as a number.
-    minimum_output: Hourly heartbeat in window. A 🔴 is one line with account, instrument, move, suggested action,
-      ETA.
+      as stale, never as a number. No fixed P&L targets exist, so none are reported against.
+    minimum_output: 'Hourly heartbeat in window. A 🔴 is one line with account, instrument, move, suggested action,
+      ETA. Crude-moving news during market hours is reported within the hour, tagged positive/negative for Indian
+      equities, with the source piece.'
     rules:
     - Never place or modify an order
     - Stale data is reported as stale
+    - Never suggest booking a loss (Aman, chat 2026-10-09)
+    - Suggest a trade only at >80% conviction, with the reasoning and the invalidation level (Aman, chat 2026-10-09)
+    - Averaging a position is suggested only when a later exit scope is stated (Aman, chat 2026-10-09)
+    - 'Crude watch (Brent/WTI, OPEC, inventories, geopolitics, INR) is continuous: crude-moving news in market hours
+      is reported within the hour, tagged positive/negative for Indian equities, with the source piece (Aman, chat
+      2026-10-09)'
+    - No fixed P&L targets (Aman, chat 2026-10-09)
 - id: hotel-daily
+  name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron
   command: docker compose exec -T backend python mdo_agent.py hotel-daily
-  cadence: daily 22:30 IST
+  cadence: daily 20:00 IST
   model: claude-sonnet-5-5
   checks:
-  - hotel_daily
-  serves: []
+  - projects_update
+  serves:
+  - hotel-renovation-contract
   enabled: true
   charter:
-    purpose: Occupancy, sales and OTA parity for Hotel ANS International, every night.
-    thinks: No night report received = 🔴. Occupancy <20% = 🔴; below the 7-day average = 🟡. Parity and OTA issues
-      are 🟡.
-    works: Daily 22:30 IST. Model claude-sonnet-5-5. Reads the Daily Sales / Night Report group parse and hotel_daily.
-    limits: No Staah feed until the token is set. ANS Inn Pvt Ltd is a holding company and is never conflated with
-      hotel ops.
-    minimum_output: Nightly heartbeat or report with occupancy, revenue, and the one thing to fix.
+    purpose: 'Track the only two hotel agenda points (Aman, chat 2026-10-09): renovation progress, and closing the
+      management contract with Guptasons (Sameer) — plus the open deliverable, the floor layout of the entire hotel
+      in PDF and CAD (owner Shashank Nashine, son of lead architect Sukumar Nashine).'
+    thinks: 'No update >48h on the renovation or the Guptasons contract, or a blocker/stoppage, is a finding. Contract
+      milestones are reported as what was said, by whom, with the message cited. The floor-layout PDF/CAD is an
+      open item until both files exist. Operations, occupancy, sales and OTA are no longer the fleet''s concern and
+      are not reported.'
+    works: 'Daily 20:00 IST. Model claude-sonnet-5-5. Reads the hotel civil/renovation WhatsApp groups, open tasks,
+      sites. The night-report parser (hotel_daily table) keeps running in the backend untouched; it is just no
+      longer a reported KPI.'
+    limits: 'No Staah feed and none needed now. ANS Inn Pvt Ltd is a holding company and is never conflated with hotel
+      ops. Cannot sign or close the contract: that is Aman''s click.'
+    minimum_output: 'Nightly heartbeat or report: renovation progress, Guptasons contract milestone status, floor-layout
+      PDF/CAD status, and the one thing to fix.'
     rules:
-    - Never invent occupancy
-    - Refund/comp above the GM limit is Aman's click
+    - Never invent progress or a milestone
+    - Management contract signature is Aman's click
+    - No occupancy/sales/OTA reporting (Aman, chat 2026-10-09)
 - id: wa-classifier
   name: WhatsApp chat classifier (business / personal gate)
   runs_on: vps-cron
@@ -232,14 +275,17 @@ bots:
       → no signal. Same entity + kind + counterparty + due date (or week) = the same signal, stored once.
     works: Every 6h on the VPS. Model claude-sonnet-5-5. Watermark (last whatsapp_messages.id) in bot_memory. Business
       chats only, ≤80 messages per call, ≤2000 per run. Inserts via /api/wa/signals; the backend pushes a 🔴 line
-      for decision_needed, complaint, and a payable due within 3 days.
+      for decision_needed, complaint, and a payable due within 3 days. Every run also sweeps open receivables and
+      files a 🔴 for each one more than RECEIVABLE_OVERDUE_DAYS (default 30) past due, once per receivable.
     limits: Text only; photos arrive as their vision summary. Reads nothing from unclear or personal chats. Cannot
       act on a signal — it records and reports.
-    minimum_output: 'Heartbeat every run: "wa-intel: scanned N msgs in C chats → S new signals (open total T)".'
+    minimum_output: 'Heartbeat every run: "wa-intel: scanned N msgs in C chats → S new signals (open total T)", plus
+      "· K receivable(s) overdue >30d → 🔴" when the sweep finds any.'
     rules:
     - Every signal cites evidence message ids and a verbatim snippet
     - Never invent a number, a counterparty or an entity
-    - 🔴 only for decision_needed, complaint, payable due ≤3 days
+    - '🔴 only for decision_needed, complaint, payable due ≤3 days, and a receivable still open more than
+      RECEIVABLE_OVERDUE_DAYS (env, default 30) past its due date (Aman, chat 2026-10-09)'
 - id: business-pulse
   name: Weekly business pulse (sales gap · efficiency · bottlenecks · register)
   runs_on: vps-cron
@@ -385,20 +431,36 @@ bots:
     - Report even when nothing changed
     - A failed deploy leaves the running services untouched
 - id: singhvi
-  runs_on: vps
-  cadence: 08:00-09:15 IST Mon-Fri
+  name: Anil Singhvi morning calls → Morning Setup proposals (Grok)
+  runs_on: vps-cron
+  provider: grok
+  command: docker compose exec -T backend python mdo_agent.py singhvi
+  cadence: weekdays 08:05 IST
   model: grok-4
   checks: []
-  serves: []
-  enabled: false
+  x_handles: []
+  serves:
+  - capital-rules
+  enabled: true
   charter:
-    purpose: Extract Anil Singhvi's morning calls into the Morning Setup queue.
-    thinks: Transcribe → extract → queue for Aman's approval. Nothing executes without his click.
-    works: 08:00–09:15 IST Mon–Fri when enabled. Grok 4 for X/live context; whisper for audio.
-    limits: Hindi transcription may mis-hear tickers; YouTube may block. Untested on this VPS.
-    minimum_output: n/a until enabled
+    purpose: Pull Anil Singhvi's (Zee Business) morning market calls for today and queue them in the Morning Setup
+      as PROPOSALS for Aman's click. Nothing executes.
+    thinks: 'Only what x_search/web_search returned today, each call with its post/article URL. Extract {stock, action,
+      entry, stop, target, rationale}; a level not in the source is null and the call is not queued. Queue only
+      calls at >80% conviction (Aman''s rule, chat 2026-10-09); the rest are counted in the heartbeat, not queued.'
+    works: 'Weekdays 08:05 IST on the VPS (cron 35 2 * * 1-5). xAI Responses API on grok-4 with x_search + web_search
+      (run_singhvi in mdo_agent.py, via ask_grok). Writes POST /api/singhvi/calls with status pending, source
+      "singhvi-bot"; skips a stock+direction already in today''s queue. Billed to GROK_API_KEY, recorded in the
+      spend ledger.'
+    limits: Never calls approve/reject, never writes trading_signals, never places an order. Reads no audio or
+      video; if the calls are not written up on X or zeebiz.com by 08:05 IST it finds nothing and says so.
+    minimum_output: 'Heartbeat every weekday, even when nothing found: "singhvi: N call(s) found · Q queued as PROPOSALS
+      (>80% conviction, status pending — nothing executed) · not queued: …".'
     rules:
     - Never auto-execute
+    - Proposals only, Aman's click approves
+    - Queue only >80% conviction, with reasoning and the invalidation level (Aman, chat 2026-10-09)
+    - URL on every call; never invent a level
 - id: x-watch
   name: X / web real-time scout (Grok)
   runs_on: vps-cron
@@ -410,24 +472,34 @@ bots:
   - x_pulse
   - tender_watch
   x_handles: []
-  serves: []
+  serves:
+  - tenders-washing-rcr
+  - capital-rules
   enabled: true
   charter:
-    purpose: 'See it on X or the web before it reaches a WhatsApp group: NITs, client-site news, competitor moves,
-      coal and rail policy, Singhvi''s calls.'
-    thinks: Only what the search tools returned counts, and every finding carries its post or article URL. Nothing
-      relevant is a valid, reported result.
-    works: Hourly 07:00–22:00 IST on the VPS. xAI Responses API with x_search + web_search on grok-4. Billed per
-      call to the Grok API key (separate from the Grok app subscription); recorded in the spend ledger at the approximate
-      list price in .env.
+    purpose: 'See it on X or the web before it reaches a WhatsApp group: NITs (coal washing and RCR first), client-site
+      news, competitor moves, coal and rail policy, Singhvi''s calls — and genuine accounts (exchanges, companies,
+      regulators, verified journalists, named analysts) posting about listed entities in Indian and global markets
+      (Aman, chat 2026-10-09).'
+    thinks: 'Only what the search tools returned counts, and every finding carries its post or article URL. Each
+      market post is classified market-positive / market-negative / neutral with one-line reasoning; the piece is
+      forwarded only when it can move the market or Aman''s holdings. A qualifying coal-washing or RCR tender is 🔴
+      the hour it appears. Nothing relevant is a valid, reported result.'
+    works: 'Hourly 07:00–22:00 IST on the VPS. xAI Responses API with x_search + web_search on grok-4. Crude watch
+      keywords every run: Brent, WTI, OPEC, OPEC+, crude inventories (EIA/API), Strait of Hormuz, sanctions, INR/USD
+      — crude-moving news is tagged positive/negative for Indian equities with the source piece. Billed per call
+      to the Grok API key (separate from the Grok app subscription); recorded in the spend ledger at the approximate
+      list price in .env.'
     limits: Cannot log in to Tender247 or any paywalled site. Cannot read DMs. X search is as good as X's own index;
-      a quiet hour is reported as quiet.
+      a quiet hour is reported as quiet. Cannot verify an account beyond what X shows.
     minimum_output: 'Hourly heartbeat or a report with one line per finding: what, where (URL), why it matters,
-      action, owner, ETA.'
+      market-positive/negative/neutral where it is a market post, action, owner, ETA.'
     rules:
     - Never invent a post or a tender
     - URL on every finding
-    - 🔴 only for a NIT closing <72h or a stoppage at a client site
+    - 🔴 for a qualifying coal-washing/RCR tender the hour it appears, a NIT closing <72h, or a stoppage at a client
+      site
+    - Forward a market piece only when it can move the market or Aman's holdings (Aman, chat 2026-10-09)
 - id: share-master-refresh
   name: Daily Share Master refresh (Claude Routine)
   runs_on: claude-routine
@@ -514,3 +586,14 @@ fleet_gaps:
   Sunday Routines have nothing to read.'
 - 'backup-offsite Routine not yet created in claude.ai: needs the Google Drive connector + VAULT_TOKEN + MDO_SELF_URL
   in its environment, and VAULT_BACKUP_PASSPHRASE set on the VPS so housekeeping produces a bundle to fetch.'
+- 'agenda.yaml objectives vwlr-dispatch, tenders-washing-rcr, hotel-renovation-contract, capital-rules, battery-plant
+  were stated by Aman in chat on 2026-10-09 and are not yet on the Objectives sheet; a sheet refresh must not drop
+  them until Aman adds them there (the CoS comments on the sheet, never edits it).'
+- 'singhvi needs GROK_API_KEY in the VPS .env (same key as x-watch) and the cron line from DEPLOY_HOSTINGER §8 installed
+  by re-running deploy_vps.sh; cadence "weekdays 08:05 IST" is not parsed by mdo_cos.next_due, so the CoS heartbeat
+  audit treats it as never-late until next_due learns "weekdays" (mdo_cos.py, outside this change).'
+- 'VWLR dispatch MT/day (15,000 minimum) has no weighbridge/ERP feed: ops-hourly and daily-brief read it from the
+  dispatch WhatsApp messages and cite them; a day with no dispatch message is reported as a gap, not a zero.'
+- 'hotel_daily check (occupancy/sales) is no longer run by any bot (Aman, chat 2026-10-09); the night-report parser
+  still fills the table. The floor-layout PDF/CAD deliverable has no feed — hotel-daily reads the hotel groups only.'
+- 'Receivable overdue threshold RECEIVABLE_OVERDUE_DAYS is not yet in .env.example (default 30 applies until set).'
