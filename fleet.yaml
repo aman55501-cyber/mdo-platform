@@ -449,9 +449,11 @@ bots:
       entry, stop, target, rationale}; a level not in the source is null and the call is not queued. Queue only
       calls at >80% conviction (Aman''s rule, chat 2026-10-09); the rest are counted in the heartbeat, not queued.'
     works: 'Weekdays 08:05 IST on the VPS (cron 35 2 * * 1-5). xAI Responses API on grok-4 with x_search + web_search
-      (run_singhvi in mdo_agent.py, via ask_grok). Writes POST /api/singhvi/calls with status pending, source
-      "singhvi-bot"; skips a stock+direction already in today''s queue. Billed to GROK_API_KEY, recorded in the
-      spend ledger.'
+      (run_singhvi in mdo_agent.py, via ask_grok, which prepends the fleet context pack from /api/grok/context-internal:
+      objectives, market lens, calls already queued today). Writes POST /api/singhvi/calls with status pending, source
+      "singhvi-bot"; skips a stock+direction already in today''s queue. Every call found is upserted into grok_memory
+      (POST /api/grok/memory, kind call, key stock:direction:date) and the heartbeat ends "memory +N". Billed to
+      GROK_API_KEY, recorded in the spend ledger.'
     limits: Never calls approve/reject, never writes trading_signals, never places an order. Reads no audio or
       video; if the calls are not written up on X or zeebiz.com by 08:05 IST it finds nothing and says so.
     minimum_output: 'Heartbeat every weekday, even when nothing found: "singhvi: N call(s) found · Q queued as PROPOSALS
@@ -472,7 +474,10 @@ bots:
   charter:
     purpose: 'Two things only the subscription can do: log in to Tender247 with Aman''s credentials, and read X/YouTube for Anil Singhvi''s calls.'
     thinks: Extract, never judge. Tables only, with URLs. NONE FOUND is a valid answer.
-    works: Grok scheduled tasks set up by Aman from the Gmail draft "Grok tasks to set up". Results arrive by email; grok-relay files them into the fleet the same morning.
+    works: 'Grok scheduled tasks set up by Aman from the Gmail draft "Grok tasks to set up". Each task opens
+      $MDO_SELF_URL/api/grok/context?k=$GROK_CONTEXT_TOKEN first (read-only, ≤6 KB: objectives, entities, tender
+      and market lenses, what is already known — do not re-report, the table formats), then searches. Results
+      arrive by email; grok-relay files them into the fleet the same morning.'
     limits: No token or password is ever shared with Grok. It cannot post to the fleet directly. Tender247 session expires when Aman changes his password.
     minimum_output: 'One [GROK-TENDER] and, on weekdays, one [GROK-SINGHVI] email per day. A missing email is reported by grok-relay as "Grok sent nothing today".'
     rules:
@@ -489,7 +494,10 @@ bots:
   charter:
     purpose: Turn Grok's result emails into tender pipeline rows and pending Singhvi proposals.
     thinks: Parse, validate, file. Rows without entry/stop/target are not queued and are counted.
-    works: Routine trig_01H2u2CccEZ2X6EX1UxSySd4, 09:25 IST Mon-Sat; Gmail connector; POST /api/cos/tender-inbound (X-Tender-Token) and /api/singhvi/calls (status pending).
+    works: 'Routine trig_01H2u2CccEZ2X6EX1UxSySd4, 09:25 IST Mon-Sat; Gmail connector; POST /api/cos/tender-inbound
+      (X-Tender-Token) and /api/singhvi/calls (status pending). Also POSTs every parsed row to /api/grok/memory
+      (source grok-subscription; kind tender or call; the key is computed from tender id or buyer+title, or
+      stock+direction+date) so the pack lists it as already known and a repeat bumps times_seen instead of a row.'
     limits: Needs Gmail + repo attached to the Routine and MDO_SELF_URL, MDO_AUTH_TOKEN, TENDER_INBOUND_TOKEN in the cloud environment secrets. Never approves or executes.
     minimum_output: One heartbeat line per run.
     rules:
@@ -523,7 +531,9 @@ bots:
       keywords every run: Brent, WTI, OPEC, OPEC+, crude inventories (EIA/API), Strait of Hormuz, sanctions, INR/USD
       — crude-moving news is tagged positive/negative for Indian equities with the source piece. Billed per call
       to the Grok API key (separate from the Grok app subscription); recorded in the spend ledger at the approximate
-      list price in .env.'
+      list price in .env. ask_grok prepends the fleet context pack (/api/grok/context-internal) so the scout sees
+      what is already known and reports only new items; every finding is then upserted into grok_memory (POST
+      /api/grok/memory, kind tender or news, with URL and sentiment) and the heartbeat ends "memory +N".'
     limits: Cannot log in to Tender247 or any paywalled site. Cannot read DMs. X search is as good as X's own index;
       a quiet hour is reported as quiet. Cannot verify an account beyond what X shows.
     minimum_output: 'Hourly heartbeat or a report with one line per finding: what, where (URL), why it matters,

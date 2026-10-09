@@ -28,6 +28,7 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
 
+import mdo_grok_memory as gm
 import mdo_wa_intel as wai
 from mdo_cos import ECONOMY_MODEL, IST
 
@@ -43,7 +44,7 @@ def log(msg: str) -> None:
     print(f"[{datetime.now(IST):%Y-%m-%d %H:%M:%S} IST] {msg}", flush=True)
 
 
-def api(path: str, method: str = "GET", body: dict | None = None, timeout: int = 30):
+def api(path: str, method: str = "GET", body: dict | list | None = None, timeout: int = 30):
     req = urllib.request.Request(
         BASE + path,
         data=json.dumps(body).encode() if body is not None else None,
@@ -135,21 +136,53 @@ def ask_claude(prompt: str, model: str, bot_id: str, max_tokens: int = 16000) ->
 
 
 GROK_KEY = os.environ.get("GROK_API_KEY", "").strip()
+GROK_INSTRUCTIONS = ("You are a real-time intelligence scout. Use x_search and web_search. "
+                     "Report only what the tools returned, with the post/article link as source. "
+                     "Never invent. Return ONLY the JSON object requested.")
+
+
+def grok_context() -> str:
+    """The fleet's context pack for Grok (mdo_grok_memory, served by the backend
+    behind the app key). Empty when the backend cannot build it — the run goes
+    on without it and says so in the log."""
+    try:
+        return str(api("/api/grok/context-internal", timeout=20).get("context") or "")
+    except Exception as e:
+        log(f"grok context pack unavailable: {type(e).__name__}: {str(e)[:120]}")
+        return ""
+
+
+def remember(items: list[dict]) -> int | None:
+    """Upsert what a Grok bot found into grok_memory so neither the API bots nor the
+    subscription tasks re-report it. Never raises: None means the write failed."""
+    items = [i for i in items if i]
+    if not items:
+        return 0
+    try:
+        return int(api("/api/grok/memory", "POST", items, timeout=30).get("stored") or 0)
+    except Exception as e:
+        log(f"grok memory write failed: {type(e).__name__}: {str(e)[:120]}")
+        return None
+
+
+def memory_note(n: int | None) -> str:
+    return f" · memory +{n}" if n is not None else " · memory write failed"
 
 
 def ask_grok(prompt: str, model: str, bot_id: str, handles: list[str] | None = None) -> str:
     """Call xAI's Responses API with live X search + web search, record the
-    spend, return the text. Used by bots with provider: grok (x-watch)."""
+    spend, return the text. Used by bots with provider: grok (x-watch, singhvi).
+    The fleet context pack (objectives, lenses, already-known items) is prepended
+    to the instructions so Grok reports only what is new."""
     from datetime import date
     today = date.today().isoformat()
     x_tool: dict = {"type": "x_search", "from_date": today, "to_date": today}
     if handles:
         x_tool["allowed_x_handles"] = handles[:50]
+    pack = grok_context()
     payload = json.dumps({
         "model": model,
-        "instructions": "You are a real-time intelligence scout. Use x_search and web_search. "
-                        "Report only what the tools returned, with the post/article link as source. "
-                        "Never invent. Return ONLY the JSON object requested.",
+        "instructions": (pack + "\n\n" if pack else "") + GROK_INSTRUCTIONS,
         "input": [{"role": "user", "content": prompt}],
         "tools": [x_tool, {"type": "web_search"}],
         "temperature": 0.2,
@@ -240,6 +273,11 @@ def gather(bot: dict) -> dict:
     if wants & {"market_close", "projects_update", "dispatch_trend"}:
         grab("tasks", "/api/ops/tasks?status=open")
         grab("pools", "/api/aditi/pools")
+    if bot.get("id") in ("daily-brief", "capital-watcher"):
+        # What Grok (x-watch / the subscription tasks) reported in the last 24h that
+        # can move the market: news rows tagged positive or negative, each with its URL.
+        grab("grok_memory", "/api/grok/memory?kind=news&sentiment=positive,negative&since=24h&limit=40",
+             lambda x: x.get("memory") or [])
     return d
 
 
@@ -304,7 +342,10 @@ the piece only when it can move the market or Aman's holdings. Crude watch keywo
 OPEC+, crude inventories (EIA/API), Strait of Hormuz, sanctions, INR/USD — crude-moving news is tagged
 positive/negative for Indian equities with the source piece.
 Every finding carries the post or article URL as its source. If the tools return nothing relevant,
-say so — an empty result is a valid result.""",
+say so — an empty result is a valid result.
+Your instructions begin with the fleet CONTEXT PACK. Its "Already known — do not re-report" section
+lists what the fleet has already filed (tender keys, today's queued Singhvi calls, news URLs): report
+only NEW items; a repeat of a known item is not a finding.""",
     "hotel-daily": """You are the Hotel ANS International renovation + management-contract tracker.
 Aman's two agenda points (chat 2026-10-09): (1) the renovation, (2) closing the management
 contract with Guptasons (Sameer). Track renovation progress from the civil/renovation groups,
@@ -484,9 +525,16 @@ def run(bot_id: str) -> int:
     actionable = [f for f in findings if str(f.get("level", "")).lower() in ("critical", "important")]
     codes = [c["code"] for c in active]
 
+    # x-watch: everything Grok found goes into grok_memory (tender / news, with URL and
+    # sentiment) so the next run and the subscription tasks see it as already known.
+    mem_note = ""
+    if bot_id == "x-watch":
+        mem_note = memory_note(remember([gm.finding_to_memory(f, "x-watch", now_ist) for f in findings]))
+
     # Hourly bots stay quiet on the phone when clean, but ALWAYS file a heartbeat.
     if cadence_key == "hourly" and not actionable:
-        heartbeat(bot_id, cadence_key, "clean", f"clean — {len(active)} checks ran, nothing crossed a threshold", codes)
+        heartbeat(bot_id, cadence_key, "clean",
+                  f"clean — {len(active)} checks ran, nothing crossed a threshold" + mem_note, codes)
         if wanted & {"acct_positions", "fo_update"}:
             check_broker_sessions()
         return 0
@@ -499,7 +547,7 @@ def run(bot_id: str) -> int:
             "agent": f"{bot_id} (vps)",
             "model": model,
             "title": out.get("title") or f"{bot_id} report",
-            "summary": out.get("summary", ""),
+            "summary": (out.get("summary", "") or "") + mem_note,
             "body": out.get("body", ""),
             "findings": findings,
             "checks_run": codes,
@@ -729,6 +777,18 @@ def run_business_pulse(bot: dict, model: str, cadence_key: str) -> int:
     computed = wai.pulse_compute(signals, metrics, now=now)
     known_ids = {s.get("id") for s in signals}
     prompt = wai.pulse_prompt(computed, signals, register, now)
+    # Context only: what Grok reported in the last 7 days (tenders, calls, news). Its
+    # figures are NOT in the citable input, so the never-invent gate below still holds.
+    try:
+        grok_rows = api("/api/grok/memory?since=7d&limit=60", timeout=30).get("memory") or []
+    except Exception as e:
+        grok_rows = []
+        log(f"grok memory unavailable for the pulse: {str(e)[:100]}")
+    if grok_rows:
+        prompt += ("\n\nGROK MEMORY (last 7 days — context only; every number here is UNCITABLE: do not write it,\n"
+                   "name the item and its URL instead):\n"
+                   + json.dumps([{k: r.get(k) for k in ("kind", "entity", "text", "url", "sentiment", "last_seen")}
+                                 for r in grok_rows], default=str)[:8000])
     allowed = {"computed": computed, "signals": signals, "register": register, "now": now.strftime("%Y-%m-%d")}
     narrative: dict | None = None
     rejected: list[str] = []
@@ -914,6 +974,11 @@ def run_singhvi(bot: dict, model: str, cadence_key: str, now: datetime | None = 
             queued.append(f"{c['action']} {c['stock']} @{c['entry']:g} SL {c['stop']:g} TG {c['target']:g} (#{res.get('id')})")
         except Exception as e:
             errors.append(f"{c['stock']}: {str(e)[:60]}")
+    # Every call found (queued or not) is remembered, so neither x-watch nor the Grok
+    # subscription task reports the same stock+direction again today.
+    remembered = remember([gm.call_to_memory(c, now) for c in calls])
+    if remembered is None:
+        errors.append("grok memory write failed")
     line = (f"singhvi: {len(calls)} call(s) found · {len(queued)} queued as PROPOSALS "
             f"(>{SINGHVI_MIN_CONVICTION}% conviction, status pending — nothing executed)")
     if queued:
@@ -924,6 +989,7 @@ def run_singhvi(bot: dict, model: str, cadence_key: str, now: datetime | None = 
         line += " · not queued: " + ", ".join(f"{n} {why}" for why, n in skipped.items())
     if note:
         line += f" · {note[:160]}"
+    line += memory_note(remembered)
     if errors:
         line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
     heartbeat(bot_id, cadence_key, "warning" if errors else "clean", line)

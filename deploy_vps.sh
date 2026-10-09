@@ -146,6 +146,10 @@ step_env() {
     fi
     # Append any var from the "Chief of Staff" block of .env.example that .env
     # lacks, with its example default. Existing values are never touched.
+    # Nothing is generated here: a token that only Aman can paste elsewhere
+    # (GROK_CONTEXT_TOKEN into the Grok task, VAULT_TOKEN into a Routine) is
+    # appended EMPTY — empty means the door answers 403 — and listed by
+    # placeholder_keys in the summary until he fills it.
     local in_block=0 added=() line key
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$line" =~ ^#\ ──\ Chief\ of\ Staff ]]; then in_block=1; continue; fi
@@ -305,7 +309,7 @@ step_alert() {
 # ── h. summary ───────────────────────────────────────────────────────────────
 placeholder_keys() {         # keys in .env still at example / empty values that only Aman can fill
     local key val out=()
-    for key in ANTHROPIC_API_KEY MDO_AUTH_TOKEN MDO_MCP_SECRET CFO_API_TOKEN NEXT_PUBLIC_API_URL GROK_API_KEY HDFC_API_KEY HDFC_API_SECRET; do
+    for key in ANTHROPIC_API_KEY MDO_AUTH_TOKEN MDO_MCP_SECRET CFO_API_TOKEN NEXT_PUBLIC_API_URL GROK_API_KEY GROK_CONTEXT_TOKEN HDFC_API_KEY HDFC_API_SECRET; do
         val="$(read_env_value "$key")"
         if [[ -z "$val" || "$val" == your_* || "$val" == *YOUR_VPS_IP* ]]; then out+=("$key"); fi
     done

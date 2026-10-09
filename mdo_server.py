@@ -77,6 +77,7 @@ async def vdb() -> aiosqlite.Connection:
         await _ensure_schema()
         await _cos["ensure_schema"](_vdb)
         await _wa["ensure_schema"](_vdb)
+        await _grok["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -670,6 +671,9 @@ async def _require_key(request, call_next):
             or request.url.path == "/api/hdfc/callback"
             or request.url.path == "/api/cos/meta-webhook"
             or request.url.path == "/api/cos/tender-inbound"
+            # the Grok context pack carries its own read-only token (GROK_CONTEXT_TOKEN,
+            # ?k= or X-Grok-Context-Token) so a Grok task never holds the app key
+            or request.url.path == "/api/grok/context"
             # the vault carries its own, separate token (X-Vault-Token); the app
             # key alone must never open it, and vault callers need not hold the app key
             or request.url.path.startswith("/api/vault/")):
@@ -3295,6 +3299,11 @@ _wa = mdo_wa_intel.register(app, vdb, _wa_publish_feed,
                             _cos["job_add"])
 mdo_brain.configure({k: _cos[k] for k in ("agenda", "jobs", "job_add", "job_resolve", "fleet", "spend",
                                           "spend_record", "memory", "chat_load", "chat_save")})
+
+# Grok memory: grok_memory table, /api/grok/memory, and the read-only context pack
+# (/api/grok/context for Grok tasks, /api/grok/context-internal for the VPS bots).
+import mdo_grok_memory
+_grok = mdo_grok_memory.register(app, vdb)
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

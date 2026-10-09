@@ -100,7 +100,7 @@ class _Fake:
             return {"stored": True}
         if path in self.canned:
             return self.canned[path]
-        if path.startswith("/api/singhvi/"):
+        if path.startswith(("/api/singhvi/", "/api/grok/")):
             r = self.client.post(path, json=body) if method == "POST" else self.client.get(path)
             assert r.status_code == 200, r.text
             return r.json()
