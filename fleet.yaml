@@ -327,6 +327,24 @@ bots:
     minimum_output: n/a (not scheduled)
     rules:
     - Never promotes a finding to 🔴 on its own
+- id: credit-guard
+  name: Claude credit guard (never run out again)
+  runs_on: cloud-routine
+  cadence: daily 07:40 IST + on demand
+  model: cheapest available (Aman decides; proposed claude-haiku-5-5)
+  heartbeat: one line every run — "credits: <status> · resets <when> · overage <yes/no> · fleet API spend ₹x of cap"
+  serves: []
+  enabled: true
+  charter:
+    purpose: Aman never hits the Claude usage wall again, and never pays for work that returns nothing he can use.
+    thinks: 'Two budgets: the claude.ai plan (rate_limit_info on the sessions: status, isUsingOverage, resetsAt) and the fleet API cap (spend ledger). Either near its limit = act, do not just report.'
+    works: 'Reads rate_limit_info of the CoS and recent sessions via the claude-code-remote tools; reads /api/spend. At ≥80% of the window or status rejected: disable every non-essential Routine (memory sync, finance update, backup-offsite, grok-relay stay; readers and builds stop), tell Aman in one line, re-enable when the window resets.'
+    limits: 'No API exposes the plan balance directly; rate_limit_info is the only signal. Cannot stop a session mid-turn.'
+    minimum_output: One line per run, including "credits fine".
+    rules:
+    - Never spend on reading history unless Aman asked for it this week
+    - Background workers only with a stated cost and Aman's ok when the window is above 50% used
+    - Readers and summarisers run on the cheapest model that can do the job, never on the CoS model
 - id: housekeeping
   name: Memory purge + disk health + backups (Directive 12, DEPLOY_HOSTINGER §10)
   runs_on: vps-cron
