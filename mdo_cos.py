@@ -124,9 +124,11 @@ def next_due(cadence: str, last_run: datetime | None, now: datetime) -> datetime
         hours = max(int(m_every.group(1)), 1)
         base = last_run or now - timedelta(hours=hours)
         return base + timedelta(hours=hours)
-    if c.startswith("hourly"):
-        base = last_run or now - timedelta(hours=1)
-        due = base + timedelta(hours=1)
+    m_min = re.match(r"every\s+(\d+)\s*min", c)          # "every 15 min 09:15-15:30 IST Mon-Fri"
+    if c.startswith("hourly") or m_min:
+        step = timedelta(minutes=max(int(m_min.group(1)), 1)) if m_min else timedelta(hours=1)
+        base = last_run or now - step
+        due = base + step
         if "mon-fri" in c:
             span = re.search(r"(\d{1,2}:\d{2})-(\d{1,2}:\d{2})", c)
             if span:

@@ -5,8 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send
+  ChevronRight, RefreshCw, Send, Crosshair
 } from "lucide-react"
+import { api } from "@/lib/api"
+import type { ShareLevel } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -459,6 +461,9 @@ export default function MorningSetupPage() {
         </div>
       )}
 
+      {/* ── Share buy/sell levels (levels-alert bot) ── */}
+      <LevelsCard />
+
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
         {/* ── Left: Pending calls ── */}
@@ -592,6 +597,89 @@ export default function MorningSetupPage() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Levels card — Aman's whole buy/sell list, every share, live distance ───────
+// Aman, chat 2026-10-09: always the entire list, both sides, including shares not yet at their level.
+
+function fmtN(x: number | null | undefined) {
+  if (x === null || x === undefined) return "—"
+  return Number.isInteger(x) ? x.toLocaleString("en-IN") : x.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+}
+
+function Distance({ pct, at, side }: { pct: number | null; at: boolean; side: "buy" | "sell" }) {
+  if (at) return <span style={{ color: side === "buy" ? "var(--green)" : "var(--red)", fontWeight: 700 }}>{side === "buy" ? "AT BUY" : "AT SELL"}</span>
+  if (pct === null) return <span style={{ color: "var(--text2)" }}>—</span>
+  return <span style={{ color: "var(--text2)" }}>{pct < 0 ? "−" : "+"}{Math.abs(pct).toFixed(1)}% away</span>
+}
+
+function LevelsCard() {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["levels"],
+    queryFn: api.levels.list,
+    refetchInterval: 60_000,
+  })
+  const levels: ShareLevel[] = data?.levels ?? []
+  const hits = data?.hits_today ?? []
+  const asOf = data?.ltp_as_of ? data.ltp_as_of.slice(11, 16) + " IST" : "no price yet"
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, whiteSpace: "nowrap" }
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Crosshair size={15} style={{ color: "var(--amber)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            LEVELS ({data?.active ?? 0} shares{hits.length ? ` · ${hits.length} hit today` : ""})
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          <span>ltp as of {asOf} · {data?.market_open ? "market open" : "market closed"}</span>
+          <button onClick={() => refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--red)" }}>Levels unavailable: {String((error as Error).message)}</div>}
+      {!isLoading && !error && levels.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--text2)" }}>
+          Empty. Tell the Chief of Staff on WhatsApp: <span style={{ color: "var(--text)" }}>"add TCS buy 3500 sell 4200"</span>.
+        </div>
+      )}
+      {levels.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>
+              <th style={th}>Share</th><th style={th}>LTP</th>
+              <th style={th}>Buy ≤</th><th style={th}>Distance</th>
+              <th style={th}>Sell ≥</th><th style={th}>Distance</th>
+              <th style={{ ...th, whiteSpace: "normal" }}>Note</th>
+            </tr></thead>
+            <tbody>
+              {levels.map(l => {
+                const hot = l.active && (l.at_buy || l.at_sell)
+                return (
+                  <tr key={l.ticker} style={{ opacity: l.active ? 1 : 0.45, background: hot ? (l.at_buy ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)") : undefined }}>
+                    <td style={{ ...td, fontWeight: 700 }}>{l.ticker}{!l.active && <span style={{ color: "var(--text2)", fontWeight: 400 }}> (paused)</span>}</td>
+                    <td style={{ ...td, fontFamily: "monospace" }}>{l.ltp === null ? <span style={{ color: "var(--text2)" }}>n/a</span> : `₹${fmtN(l.ltp)}`}</td>
+                    <td style={{ ...td, fontFamily: "monospace", color: "var(--green)" }}>{l.buy_level === null ? "—" : fmtN(l.buy_level)}</td>
+                    <td style={td}>{l.buy_level === null ? "" : <Distance pct={l.buy_distance_pct} at={l.at_buy} side="buy" />}</td>
+                    <td style={{ ...td, fontFamily: "monospace", color: "var(--red)" }}>{l.sell_level === null ? "—" : fmtN(l.sell_level)}</td>
+                    <td style={td}>{l.sell_level === null ? "" : <Distance pct={l.sell_distance_pct} at={l.at_sell} side="sell" />}</td>
+                    <td style={{ ...td, whiteSpace: "normal", color: "var(--text2)", fontSize: 12 }}>{l.note}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hits.length > 0 && (
+        <div className="mt-3" style={{ fontSize: 12, color: "var(--text2)" }}>
+          hits today: {hits.map(h => `${h.ticker} ${h.side} ₹${fmtN(h.ltp)} vs ₹${fmtN(h.level)} (${String(h.hit_at).slice(11, 16)})`).join("; ")}
+        </div>
+      )}
     </div>
   )
 }

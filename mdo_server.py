@@ -78,6 +78,7 @@ async def vdb() -> aiosqlite.Connection:
         await _cos["ensure_schema"](_vdb)
         await _wa["ensure_schema"](_vdb)
         await _grok["ensure_schema"](_vdb)
+        await _levels["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3304,6 +3305,12 @@ mdo_brain.configure({k: _cos[k] for k in ("agenda", "jobs", "job_add", "job_reso
 # (/api/grok/context for Grok tasks, /api/grok/context-internal for the VPS bots).
 import mdo_grok_memory
 _grok = mdo_grok_memory.register(app, vdb)
+
+# Share buy/sell levels: share_levels + level_hits tables, /api/levels*, and the two chat
+# tools (set_level, list_levels) so Aman can say "add TCS buy 3500 sell 4200" on WhatsApp.
+import mdo_levels
+_levels = mdo_levels.register(app, vdb)
+mdo_brain.configure({"levels_list": _levels["levels_list"], "levels_set": _levels["levels_set"]})
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

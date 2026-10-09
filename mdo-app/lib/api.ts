@@ -5,6 +5,7 @@ import type {
   FeedItem, FeedsResponse,
   WaStats, WaChat, WaSignal, WaRegisterItem, WaRegisterInput, WaPulse,
   WaClassification, WaSignalStatus,
+  LevelsResponse,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -152,5 +153,18 @@ export const api = {
       get<{ items: WaRegisterItem[] }>(`/api/wa/register${category ? "?category=" + encodeURIComponent(category) : ""}`).then(r => r.items ?? []),
     addRegister: (item: WaRegisterInput) => post<{ ok: boolean; id: number }>("/api/wa/register", item),
     pulseLatest: () => get<{ pulse: WaPulse | null }>("/api/wa/pulse/latest").then(r => r.pulse ?? null),
+  },
+
+  // ── Share buy/sell levels (levels-alert bot) ──────────────────────
+  levels: {
+    list:     () => get<LevelsResponse>("/api/levels"),
+    snapshot: () => get<{ text: string; ltp_as_of: string | null; count: number; hits_today: number }>("/api/levels/snapshot"),
+    set:      (item: { ticker: string; buy_level?: number | null; sell_level?: number | null; note?: string; active?: boolean }) =>
+      post<LevelsResponse & { upserted: string[] }>("/api/levels", item),
+    remove:   (ticker: string) =>
+      fetch(`${BASE}/api/levels/${encodeURIComponent(ticker)}`, { method: "DELETE" }).then(r => {
+        if (!r.ok) throw new Error(`API /api/levels/${ticker} → ${r.status}`)
+        return r.json() as Promise<LevelsResponse & { deleted: string }>
+      }),
   },
 }

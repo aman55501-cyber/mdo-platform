@@ -406,11 +406,11 @@ def run(bot_id: str) -> int:
     if not bot.get("enabled", True):
         heartbeat(bot_id, cadence_key, "disabled", "bot disabled in fleet.yaml — nothing run")
         return 0
-    provider = str(bot.get("provider") or "anthropic").lower()
+    provider = str(bot.get("provider") or "anthropic").lower()   # anthropic | grok | none (no LLM, e.g. levels-alert)
     if provider == "grok" and not GROK_KEY:
         heartbeat(bot_id, cadence_key, "error", "GROK_API_KEY not set — add it to .env on the VPS")
         return 2
-    if provider != "grok" and not ANTHROPIC_KEY:
+    if provider not in ("grok", "none") and not ANTHROPIC_KEY:
         heartbeat(bot_id, cadence_key, "error", "ANTHROPIC_API_KEY not set — add it to .env on the VPS")
         return 2
 
@@ -421,7 +421,7 @@ def run(bot_id: str) -> int:
         mode = spend.get("mode", "normal")
     except Exception as e:
         mode, spend = "normal", {"error": str(e)[:100]}
-    if mode == "paused":
+    if mode == "paused" and provider != "none":   # a bot that spends nothing keeps running (levels-alert)
         heartbeat(bot_id, cadence_key, "paused",
                   f"paused: budget — ₹{spend.get('month_to_date_inr', 0):,.0f} of ₹{spend.get('cap_inr', 0):,.0f} spent this month")
         return 0
@@ -996,8 +996,61 @@ def run_singhvi(bot: dict, model: str, cadence_key: str, now: datetime | None = 
     return 0
 
 
+# ── levels-alert: Aman's share buy/sell list, every share every run, 🔴 the moment a level is hit ──
+# No LLM. Pure helpers live in mdo_levels.py; this only orchestrates: read the list via the
+# API, fetch prices, detect hits, record them (once per level per trading day), file.
+def run_levels_alert(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    import mdo_levels as lv
+    bot_id = "levels-alert"
+    now = now or datetime.now(IST)
+    if not lv.market_open(now):
+        heartbeat(bot_id, cadence_key, "clean", "levels-alert: market closed — no prices fetched")
+        return 0
+    rows = [r for r in (api("/api/levels").get("levels") or []) if r.get("active", True)]
+    if not rows:
+        heartbeat(bot_id, cadence_key, "clean",
+                  "levels-alert: 0 shares on the list — say 'add TCS buy 3500 sell 4200' to start")
+        return 0
+    tickers = [r["ticker"] for r in rows]
+    ltps = lv.fetch_ltp(tickers)
+    hits = lv.detect_hits(rows, ltps)
+    res = api("/api/levels/hits", "POST", {"hits": hits, "trading_day": now.date().isoformat(),
+                                           "ltps": ltps, "as_of": now.isoformat()})
+    new_hits, hits_today = res.get("new") or [], res.get("hits_today") or []
+    text = lv.format_levels(rows, ltps, now, hits_today)
+    missing = [t for t in tickers if ltps.get(t) is None]
+    line = f"levels-alert: {len(rows)} shares, {len(hits)} at level, {len(hits_today)} hits today"
+    if missing:
+        line += f" · ltp n/a: {', '.join(missing[:8])}" + (f" +{len(missing) - 8}" if len(missing) > 8 else "")
+    findings = [{
+        "level": "critical", "domain": "trading", "owner": "Aman",
+        "title": f"LEVEL HIT: {h['ticker']} {h['side']} ₹{lv.fmt_n(h['ltp'])} vs ₹{lv.fmt_n(h['level'])}",
+        "detail": text,
+    } for h in new_hits]
+    snap = lv.snapshot_due(now)
+    if snap:
+        findings.append({"level": "info", "domain": "trading", "title": "Levels snapshot", "detail": text})
+    if not findings:
+        heartbeat(bot_id, cadence_key, "warning" if len(missing) == len(tickers) else "clean", line)
+        return 0
+    res = api("/api/agent/report", "POST", {
+        "bot": bot_id, "cadence": cadence_key, "status": "reported", "agent": f"{bot_id} (vps)", "model": "none",
+        "title": (findings[0]["title"] if new_hits else f"Levels snapshot {snap} IST"),
+        "summary": line, "body": text, "findings": findings, "checks_run": [],
+    }, timeout=60)
+    log(f"levels-alert: filed report {res.get('report_id')} — {len(new_hits)} new hit(s)"
+        + (f", snapshot {snap}" if snap else "") + f" — {line}")
+    # Aman's rule (chat 2026-10-09): the ENTIRE list reaches him every time — on each
+    # hit and at the three snapshot slots — not just the headline.
+    try:
+        api("/api/cos/send", "POST", {"text": text}, timeout=30)
+    except Exception as e:  # the report above already carries the list; never fail the run
+        log(f"levels-alert: full-list push not delivered: {e}")
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
-CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi}
+CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert}
 
 
 def check_broker_sessions() -> None:

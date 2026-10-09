@@ -201,6 +201,42 @@ bots:
       is reported within the hour, tagged positive/negative for Indian equities, with the source piece (Aman, chat
       2026-10-09)'
     - No fixed P&L targets (Aman, chat 2026-10-09)
+- id: levels-alert
+  name: Share buy/sell levels — the whole list, live distance, 🔴 on hit
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py levels-alert
+  cadence: every 15 min 09:15-15:30 IST Mon-Fri
+  model: none
+  heartbeat: 'every run: "levels-alert: N shares, M at level, K hits today"; outside 09:15–15:30 IST or on a weekend
+    "market closed"'
+  checks: []
+  serves:
+  - capital-rules
+  enabled: true
+  charter:
+    purpose: Aman sees the whole buy/sell list with live distance to each level and is alerted the moment a level
+      is hit (Aman, chat 2026-10-09).
+    thinks: 'A buy level is hit when ltp ≤ buy_level, a sell level when ltp ≥ sell_level. Every share is listed every
+      time, nearest-to-level first, including the ones nowhere near. A hit is recorded in level_hits (UNIQUE ticker +
+      side + trading day) so it alerts once per side per day; a share with no price shows "ltp n/a", never a guess.'
+    works: 'Every 15 min 09:15–15:30 IST Mon–Fri (cron */15 3-10 UTC; the bot self-checks market hours). No LLM.
+      Reads GET /api/levels, fetches prices from Yahoo Finance (mdo_levels.fetch_ltp: batch .NS, .BO fallback,
+      LEVELS_PRICE_SOURCE override), POSTs hits + ltps to /api/levels/hits. A NEW hit → 🔴 finding "LEVEL HIT:
+      TICKER buy/sell ₹ltp vs ₹level" with the full list as detail (pushed to WhatsApp by /api/agent/report). At
+      09:20, 12:30 and 15:05 IST (±8 min) → info finding "Levels snapshot" with the full list. Aman edits the list
+      on WhatsApp via the CoS tools set_level / list_levels, or POST/DELETE /api/levels.'
+    limits: Does not know NSE holidays (a holiday run sees stale prices and the heartbeat still files). Yahoo
+      Finance is free and unauthenticated; when it is blocked every ltp is n/a and the heartbeat says so. Holds no
+      broker credential and never touches an order.
+    minimum_output: 'Every run in market hours: the heartbeat line with counts. Every new hit: one 🔴 with the entire
+      list. Three full-list snapshots a day. Outside market hours: "market closed".'
+    rules:
+    - Never suggests execution
+    - Never books
+    - Shows every share every time, including those not yet at their level, both sides (Aman, chat 2026-10-09)
+    - Alert once per level per trading day
+    - Never invents a price; no price = "ltp n/a"
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron
@@ -691,3 +727,5 @@ fleet_gaps:
 - 'hotel_daily check (occupancy/sales) is no longer run by any bot (Aman, chat 2026-10-09); the night-report parser
   still fills the table. The floor-layout PDF/CAD deliverable has no feed — hotel-daily reads the hotel groups only.'
 - 'Receivable overdue threshold RECEIVABLE_OVERDUE_DAYS is not yet in .env.example (default 30 applies until set).'
+- 'levels-alert does not know NSE trading holidays: on a holiday it runs on stale Yahoo prices and files its heartbeat;
+  nothing new can cross a level, so no false 🔴, but "market closed" is not said. Candidate: a holiday list in .env.'

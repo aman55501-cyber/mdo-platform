@@ -283,3 +283,43 @@ export interface WaPulse {
   summary: string
   report: Partial<WaPulseReport> | null
 }
+
+// ── Share buy/sell levels (levels-alert bot) ─────────────────────────────
+export interface ShareLevel {
+  id: number
+  ticker: string
+  exchange: string
+  buy_level: number | null
+  sell_level: number | null
+  note: string
+  active: boolean
+  source: string
+  created_at: string
+  updated_at: string
+  ltp: number | null
+  buy_distance_pct: number | null
+  sell_distance_pct: number | null
+  at_buy: boolean
+  at_sell: boolean
+  nearest_pct: number | null
+  line: string
+}
+
+export interface LevelHit {
+  ticker: string
+  side: "buy" | "sell"
+  level: number
+  ltp: number
+  hit_at: string
+  trading_day: string
+}
+
+export interface LevelsResponse {
+  levels: ShareLevel[]
+  count: number
+  active: number
+  ltp_as_of: string | null
+  hits_today: LevelHit[]
+  market_open: boolean
+  as_of: string
+}

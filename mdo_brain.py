@@ -399,6 +399,27 @@ TOOLS: list[dict] = [
         "description": "What the system remembers and where: agenda mirror, chat summaries, per-bot memory, database size, disk free, archives, purge policy.",
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
+    # ── Share levels (levels-alert bot) ────────────────────────────────────
+    {
+        "name": "set_level",
+        "description": ("WRITE: add or change a share on Aman's buy/sell level list (e.g. 'add TCS buy 3500 sell 4200'). "
+                        "Upserts by NSE symbol; a side you omit keeps its stored value, a side you pass as null is cleared. "
+                        "The levels-alert bot then watches it every 15 min in market hours and sends 🔴 the moment ltp ≤ buy "
+                        "or ≥ sell (once per side per day). Use active=false to pause a share without deleting it."),
+        "input_schema": {"type": "object", "properties": {
+            "ticker": {"type": "string", "description": "NSE symbol, e.g. TCS, RELIANCE, COALINDIA"},
+            "buy_level": {"type": ["number", "null"], "description": "alert when ltp <= this"},
+            "sell_level": {"type": ["number", "null"], "description": "alert when ltp >= this"},
+            "note": {"type": "string"},
+            "active": {"type": "boolean"}},
+            "required": ["ticker"], "additionalProperties": False},
+    },
+    {
+        "name": "list_levels",
+        "description": ("Aman's whole share buy/sell level list with the last known ltp, % distance to each level, which are "
+                        "AT a level now, and today's hits. Always show him every share, including those not yet at their level."),
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
 ]
 
 
@@ -514,6 +535,14 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["spend"]()
     if name == "get_memory":
         return await tb["memory"]()
+    if name == "set_level":
+        item = {"ticker": a["ticker"]}
+        for k in ("buy_level", "sell_level", "note", "active"):
+            if k in a:
+                item[k] = a[k]
+        return await tb["levels_set"]([item], "cos-chat")
+    if name == "list_levels":
+        return await tb["levels_list"]()
     if name == "add_intel_item":
         return await tb["intel_add"]({
             "title": a["title"], "body": a.get("body", ""), "urgency": a.get("urgency", "MEDIUM"),
