@@ -296,6 +296,14 @@ def test_x_watch_run_remembers_every_finding_and_reports_memory_count(monkeypatc
     monkeypatch.setattr(ag, "GROK_KEY", "g")
     monkeypatch.setattr(ag, "wait_for_backend", lambda *a, **k: True)
     monkeypatch.setattr(ag, "ask_grok", lambda prompt, model, bot_id, handles=None: prompts.append(prompt) or XWATCH_REPLY)
+    # the bot may be paused in fleet.yaml (Aman pauses bots at will); the test exercises the code path
+    _lf = ag.load_fleet
+    def _enabled_fleet():
+        f = _lf()
+        for b in f.get("bots") or []:
+            if b.get("id") == "x-watch": b["enabled"] = True
+        return f
+    monkeypatch.setattr(ag, "load_fleet", _enabled_fleet)
     keys = {"id:secl-2026-cw-14", "reuters.com/markets/brent-opec", "x.com/jspl/status/1234567890123456789"}
     # other tests share this scratch database, so count from where each key stands now
     seen0 = {r["key"]: r["times_seen"] for r in client.get("/api/grok/memory?limit=500").json()["memory"]}

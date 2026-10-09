@@ -184,7 +184,7 @@ def test_singhvi_is_wired_in_dispatch_fleet_agenda_and_cron():
     assert ag.CUSTOM_BOTS["singhvi"] is ag.run_singhvi and ag.CUSTOM_BOTS["wa-intel"] is ag.run_wa_intel
     fleet = yaml.safe_load(open(os.path.join(ROOT, "fleet.yaml"), encoding="utf-8"))
     bot = ag.find_bot(fleet, "singhvi")
-    assert bot["enabled"] is True and bot["runs_on"] == "vps-cron" and bot["provider"] == "grok"
+    assert bot["runs_on"] == "vps-cron" and bot["provider"] == "grok"   # enabled flag is Aman's switch
     assert bot["command"] == "docker compose exec -T backend python mdo_agent.py singhvi"
     assert bot["cadence"] == "weekdays 08:05 IST" and bot["model"] == "grok-4" and "capital-rules" in bot["serves"]
     assert {"purpose", "thinks", "works", "limits", "minimum_output", "rules"} <= set(bot["charter"])

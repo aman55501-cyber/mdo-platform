@@ -60,7 +60,7 @@ bots:
   serves:
   - vwlr-dispatch
   - tenders-washing-rcr
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'Catch a site problem inside the hour: rakes idle, a loader/excavator/tipper idle while work waits,
       a machine down, safety, payment failure, a tender closing inside 72h, a day''s dispatch under the 15,000
@@ -97,7 +97,7 @@ bots:
   - bank_balances
   serves:
   - vwlr-dispatch
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'The morning picture, led by yesterday''s dispatch in MT against the 15,000 MT/day minimum and equipment
       availability (Aman, chat 2026-10-09); then rakes, project progress, compliance due, decisions needed today.'
@@ -127,7 +127,7 @@ bots:
   skill: skills/tender-go-no-go.md
   serves:
   - tenders-washing-rcr
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'Win ONE coal washing contract and ONE RCR contract with an upfront profit margin good enough that no
       cuts are needed elsewhere. Everything else is secondary (Aman, chat 2026-10-09). For every coal-washing or
@@ -154,7 +154,7 @@ bots:
   checks:
   - compliance_due
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: No filing, notice or court date surprises Aman.
     thinks: Overdue or ≤3 days = 🔴; 4–14 days = 🟡. Owner is CA Vimal unless a signature is needed, which is Aman's
@@ -247,7 +247,7 @@ bots:
   - projects_update
   serves:
   - hotel-renovation-contract
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'Track the only two hotel agenda points (Aman, chat 2026-10-09): renovation progress, and closing the
       management contract with Guptasons (Sameer) — plus the open deliverable, the floor layout of the entire hotel
@@ -276,7 +276,7 @@ bots:
   heartbeat: 'every run: "wa-classifier: N classified auto, M asked, K pending", even when all zero'
   checks: []
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Decide, for every chat on Aman's two phones, whether it is business or personal — so personal chats are
       never stored and business chats reach the intel bot. Apply the answers Aman gives by reply.
@@ -302,7 +302,7 @@ bots:
   heartbeat: 'every run: "wa-intel: scanned N msgs in C chats → S new signals (open total T)", even when N is 0'
   checks: []
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Turn business chats into a signal ledger — lead, quote, order, receivable, payable, payment_done, delay,
       bottleneck, decision_needed, commitment, complaint, asset, liability, capital, debt, resource, risk, idea —
@@ -332,7 +332,7 @@ bots:
     next steps → pulse #id"'
   checks: []
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'One weekly picture from the signal ledger: leads and quotes going cold, who answers slowly and what
       is left unanswered, bottlenecks that recur, money owed both ways, register changes to post, decisions waiting
@@ -370,7 +370,7 @@ bots:
   model: cheapest available (Aman decides; proposed claude-haiku-5-5)
   heartbeat: 'one line every run: "credits: <status> · resets <when> · overage <yes/no> · fleet API spend ₹x of cap"'
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Aman never hits the Claude usage wall again, and never pays for work that returns nothing he can use.
     thinks: 'Two budgets: the claude.ai plan (rate_limit_info on the sessions: status, isUsingOverage, resetsAt) and the fleet API cap (spend ledger). Either near its limit = act, do not just report.'
@@ -388,7 +388,7 @@ bots:
   model: cheapest available (Aman decides; proposed claude-haiku-5-5)
   heartbeat: one line per run with every hotel rate, the lowest flight fare seen, and ALERT or none
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Re-price the seven shortlisted Strip hotels and DEL⇄LAS flights for 10–12 Nov 2026 until Aman books.
     thinks: Compare to the 2026-10-09 baseline; a hotel down 15% or a flight at or under ₹1.5 lakh per person is an alert.
@@ -404,7 +404,7 @@ bots:
   model: cheapest available (Aman decides; proposed claude-haiku-5-5)
   heartbeat: one block per week, first line is the count summary, then ≤8 numbered proposals
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: The mess never piles up again — every duplicate Routine, failing bot, high-frequency burner and stale Notion click is proposed for pause, merge, fix or delete once a week.
     thinks: Proposals only. It disables nothing, deletes nothing, edits nothing. Aman approves with "janitor ok 1,3"; the CoS executes.
@@ -467,7 +467,7 @@ bots:
   model: claude-fable-5-1
   serves:
   - all
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   notes: Fleet entry added 2026-10-09; the claude.ai Routine itself still has to be created with the Google Drive
     connector attached and VAULT_TOKEN + MDO_SELF_URL in its environment (fleet_gaps). Runs after housekeeping's
     Sunday 03:00 IST bundle, before the memory/finance Routines.
@@ -527,7 +527,7 @@ bots:
   x_handles: []
   serves:
   - capital-rules
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Pull Anil Singhvi's (Zee Business) morning market calls for today and queue them in the Morning Setup
       as PROPOSALS for Aman's click. Nothing executes.
@@ -556,7 +556,7 @@ bots:
   model: grok (subscription)
   heartbeat: one email per task per day to aman.55501@gmail.com, subject [GROK-SINGHVI] / [GROK-TENDER]
   serves: [tenders-washing-rcr, capital-rules]
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'Two things only the subscription can do: log in to Tender247 with Aman''s credentials, and read X/YouTube for Anil Singhvi''s calls.'
     thinks: Extract, never judge. Tables only, with URLs. NONE FOUND is a valid answer.
@@ -576,7 +576,7 @@ bots:
   model: claude-fable-5-1
   heartbeat: every run posts one line via /api/agent/report, including "Grok sent nothing today"
   serves: [tenders-washing-rcr, capital-rules]
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: Turn Grok's result emails into tender pipeline rows and pending Singhvi proposals.
     thinks: Parse, validate, file. Rows without entry/stop/target are not queued and are counted.
@@ -603,7 +603,7 @@ bots:
   serves:
   - tenders-washing-rcr
   - capital-rules
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   charter:
     purpose: 'See it on X or the web before it reaches a WhatsApp group: NITs (coal washing and RCR first), client-site
       news, competitor moves, coal and rail policy, Singhvi''s calls — and genuine accounts (exchanges, companies,
@@ -637,7 +637,7 @@ bots:
   cadence: daily 09:25 IST
   model: claude-sonnet-5-5
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   notes: Reads Supabase share_master + desk_ideas, republishes the Share Master artifact, one push notification
     per run. Read-only on money.
   charter:
@@ -655,7 +655,7 @@ bots:
   cadence: weekly Sun 08:30 IST
   model: ''
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   notes: Cloud Routine 'Weekly finance update (cloud, vault)' created 2026-10-08. The original laptop-bound Routine
     is disabled, not deleted (history kept). Needs Gmail connector + VAULT_TOKEN + MDO_SELF_URL in the cloud environment.
   charter:
@@ -676,7 +676,7 @@ bots:
   cadence: weekly Sun 07:30 IST
   model: ''
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   notes: Reads/writes memory/*.md in the VPS vault via /api/vault (VAULT_TOKEN); appends memory/_log.md. Laptop
     no longer needed once vault_import.sh has run.
   charter:
@@ -696,7 +696,7 @@ bots:
   cadence: weekly Sun 08:00 IST
   model: ''
   serves: []
-  enabled: true
+  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
   notes: Notion read-only digest for Aman & Jahnavi. Cloud-only; no laptop dependency.
   charter:
     purpose: A warm weekly digest of events, family dates, goals and open tasks from the Life OS Notion databases.
