@@ -198,3 +198,12 @@ a partially filled tab.
 Every share list (buy/sell, levels alert, Share Master tabs, chat tables) shows which account
 holds the share and how many, or "nobody". Accounts: Aman, Ashok, Sudha, Aditi on HDFC;
 Angel One once exported (A23). No list without the holder column.
+
+## Directive 19 — The CoS delegates, never builds (Aman, chat 2026-10-09)
+Every build, fix, parse or analysis goes to a worker bot. The CoS writes the brief, tracks the
+result, verifies the report, and talks to Aman. It does not edit code or crunch files itself.
+Its job is the link between Aman's mind and the fleet: what he wants, who is on it, how far along.
+
+## Directive 20 — Progress bar on every task (Aman, chat 2026-10-09)
+Every task shown to Aman, his or the fleet's, carries a ten-block bar and a percent
+(`████░░░░░░ 40%`). Pending lists are shown as baby steps: one click or one reply per line.
