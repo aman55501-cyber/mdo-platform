@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements_server.txt
 
 # Every top-level module ships; a new mdo_*.py must never be left out of the image again.
 COPY *.py ./
-COPY fleet.yaml agenda.yaml CHIEF_OF_STAFF.md ./
+COPY fleet.yaml agenda.yaml CHIEF_OF_STAFF.md DEPLOY_HOSTINGER.md .env.example deploy_vps.sh ./
 COPY tests ./tests
 
 # /data is mounted as a Railway persistent volume — SQLite lives here
