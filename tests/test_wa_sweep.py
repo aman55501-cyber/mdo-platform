@@ -534,7 +534,10 @@ def test_wa_sweep_is_wired_in_dispatch_fleet_cron_env_and_docs():
         assert key in env, key
     walk = open(os.path.join(ROOT, "briefs", "PLATFORM_WALKTHROUGH.md"), encoding="utf-8").read()
     assert "| classifier | library |" not in walk and "`classifier`" not in walk and "wa-classifier" in walk
-    page = open(os.path.join(ROOT, "mdo-app", "app", "morning", "page.tsx"), encoding="utf-8").read()
+    page_path = os.path.join(ROOT, "mdo-app", "app", "morning", "page.tsx")
+    if not os.path.exists(page_path):            # the backend image ships no frontend source; checked in the repo run
+        return
+    page = open(page_path, encoding="utf-8").read()
     assert "<WaSweepCard />" in page and "api.waSweep.ack" in page and "Loading…" in page
 
 
