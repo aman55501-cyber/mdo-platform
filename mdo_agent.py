@@ -12,6 +12,8 @@ Usage (inside the backend container):
     python mdo_agent.py compliance-reminder # statutory dates due in 7 days → one WhatsApp message (weekly: Mon line)
     python mdo_agent.py mail-reader         # IMAP intake: statements, contract notes, tender results → vault; one line when actionable
     python mdo_agent.py corp-actions        # NSE announcements + corporate actions for every held/watched ticker; one push, NEW rows only
+    python mdo_agent.py tenders-direct      # public tender pages (SECL, CIL, NTPC, CPP, MSTC) → pipeline; one message only when new matches
+    python mdo_agent.py voice               # WhatsApp voice notes → faster-whisper on the VPS → message store; heartbeat even at zero
     python mdo_agent.py hourly              # legacy alias → ops-hourly
     python mdo_agent.py daily               # legacy alias → daily-brief
 
@@ -1239,11 +1241,49 @@ def run_corp_actions(bot: dict, model: str, cadence_key: str, now: datetime | No
     return 0
 
 
+# ── tenders-direct: public tender listings read from the buyers' own pages — rule-based, zero LLM spend ──
+# All the work is the backend's (mdo_tenders_direct.run: fetch each site, parse the tables, match the keywords,
+# post new matches through the tender door, one WhatsApp message only when there is something new); this triggers
+# the run and files the heartbeat — "tenders-direct: S sites ok/F failed, P pages, M matched (N new)" plus the
+# per-site failures (a 403 is "blocked", never a crash). A run where every site failed is an error heartbeat.
+def run_tenders_direct(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    bot_id = "tenders-direct"
+    now = now or datetime.now(IST)
+    res = api("/api/tenders/direct/run", "POST", {"now": now.isoformat()}, timeout=600)
+    line = str(res.get("line") or f"{bot_id}: {res.get('sites_ok', 0)} sites ok/{res.get('sites_failed', 0)} failed, "
+                                  f"{res.get('pages', 0)} pages, {res.get('matched', 0)} matched ({res.get('new', 0)} new)")
+    status = str(res.get("status") or "clean")
+    if status not in ("clean", "warning", "error"):
+        status = "clean"
+    heartbeat(bot_id, cadence_key, status, line)
+    if res.get("text") and res.get("pushed"):
+        log(f"tenders-direct pushed: {str(res['text'])[:200]}")
+    return 0
+
+
+# ── voice: WhatsApp voice notes transcribed on the VPS (faster-whisper, CPU) — no API, zero LLM spend ──
+# All the work is the backend's (mdo_voice.run: the pending clips oldest first, ≤20, time-boxed 8 min, transcripts
+# into whatsapp_messages tagged "[voice transcript]"); this triggers the run and files the heartbeat —
+# "voice: N transcribed, P pending, F failed, model small, avg Xs/clip" even when every count is zero, and
+# "voice: faster-whisper not installed — nothing transcribed" (warning, exit 0) when the library is missing.
+def run_voice(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    bot_id = "voice"
+    now = now or datetime.now(IST)
+    res = api("/api/wa/media/transcribe", "POST", {"now": now.isoformat()}, timeout=660)
+    line = str(res.get("line") or f"{bot_id}: {res.get('transcribed', 0)} transcribed, {res.get('pending', 0)} pending, "
+                                  f"{res.get('failed', 0)} failed, model {res.get('model', '?')}, avg {res.get('avg_s', 0)}s/clip")
+    status = str(res.get("status") or "clean")
+    if status not in ("clean", "warning", "error"):
+        status = "clean"
+    heartbeat(bot_id, cadence_key, status, line)
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
 CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
                "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader,
-               "corp-actions": run_corp_actions}
+               "corp-actions": run_corp_actions, "tenders-direct": run_tenders_direct, "voice": run_voice}
 
 
 def check_broker_sessions() -> None:

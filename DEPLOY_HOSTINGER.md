@@ -203,6 +203,10 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 */30 2-16 * * * $MDO python mdo_agent.py mail-reader         >> /var/log/mdo-agent.log 2>&1   # every 30 min 07:30–22:00 IST: same intake; heartbeat even when 0 new
 0  17   * * *   $MDO python mdo_agent.py mail-reader         >> /var/log/mdo-agent.log 2>&1   # 22:30 IST: the day's last intake
 0  13   * * *   $MDO python mdo_agent.py corp-actions        >> /var/log/mdo-agent.log 2>&1   # 18:30 IST daily: NSE announcements + corporate actions for every held/watched ticker → one push, NEW rows only; heartbeat even when 0 new
+0  1,13 * * *   $MDO python mdo_agent.py tenders-direct      >> /var/log/mdo-agent.log 2>&1   # 06:30 + 18:30 IST: SECL / SECL e-tenders / Coal India / NTPC / CPP / MSTC listings → pipeline; one message only when NEW matches; heartbeat names every site
+30-59/10 1 * * * $MDO python mdo_agent.py voice              >> /var/log/mdo-agent.log 2>&1   # 07:00–07:20 IST: WhatsApp voice notes → faster-whisper (CPU) → message store; heartbeat even at zero
+*/10 2-15 * * *  $MDO python mdo_agent.py voice              >> /var/log/mdo-agent.log 2>&1   # every 10 min 07:30–21:20 IST: same
+0-30/10 16 * * * $MDO python mdo_agent.py voice              >> /var/log/mdo-agent.log 2>&1   # 21:30–22:00 IST: the day's last transcription runs
 30 1-16 * * *   $MDO python mdo_agent.py x-watch             >> /var/log/mdo-agent.log 2>&1   # hourly 07:00-22:00 IST: X/web watch via Grok
 30 14   * * *   $MDO python mdo_agent.py hotel-daily         >> /var/log/mdo-agent.log 2>&1   # 20:00 IST: renovation + Guptasons contract tracker
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
@@ -283,6 +287,33 @@ Google refreshes a URL feed every 12–24 h. iPhone Calendar: Settings → Calen
 → Accounts → Add Account → Other → **Add Subscribed Calendar** → same URL.
 To rotate the token: blank `CALENDAR_TOKEN=` in `.env`, re-run
 `bash deploy_vps.sh`, re-subscribe with the new URL.
+
+## 8c. Voice notes and the direct tender feed — what the deploy must do once
+
+Both bots are rule-based and cost nothing per run; both need `bash deploy_vps.sh`
+once (it renders the four new cron lines above, rebuilds the backend image and
+restarts the bridge containers):
+
+- **voice** (`mdo_voice.py`, bot `voice`, every 10 min 07:00–22:00 IST). The
+  bridges (`whatsapp_bridge` v2.2) forward audio / voice messages as multipart
+  `POST /api/wa/media` with the same `X-MDO-Key`; the backend keeps the clip in
+  the data volume at `/data/voice/<date>/<message_id>.ogg` and the bot
+  transcribes it with faster-whisper (CPU, int8) — `faster-whisper` is already
+  in `requirements_server.txt` and `ffmpeg` already in the Dockerfile apt line
+  (both were there for the Singhvi capture), so the image does not grow. The
+  model (`VOICE_MODEL=small`, ~460 MB) is downloaded ONCE on the first run into
+  `/data/whisper-models` (the `mdo-data` volume) — the first heartbeat of the
+  day it happens may take a few minutes. A slow VPS: set `VOICE_MODEL=base`.
+  Check: `docker compose exec backend python mdo_agent.py voice` → `heartbeat
+  filed: clean — voice: 0 transcribed, 0 pending, …`; the bridge log shows
+  `voice note 12s (… KB) → /api/wa/media` when one arrives.
+- **tenders-direct** (`mdo_tenders_direct.py`, bot `tenders-direct`, 06:30 and
+  18:30 IST). Public pages only, no login: the heartbeat names every site, so a
+  portal that blocks the VPS shows as `eprocure: blocked (HTTP 403 …)` and one
+  whose layout changed as `0 rows (layout?): secl`. Keywords and the value
+  floor live in `.env` (`TENDERS_KEYWORDS`, `TENDERS_MIN_VALUE_CR`); a site can
+  be switched off with `TENDERS_SITES_OFF=mstc`. Check: `docker compose exec
+  backend python mdo_agent.py tenders-direct`.
 
 ## 9. The vault — Aman's private files, off the laptop
 

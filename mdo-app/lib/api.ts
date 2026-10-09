@@ -11,6 +11,8 @@ import type {
   ComplianceUpcomingResponse, ComplianceEntitiesResponse, ComplianceEntity,
   MailRecentResponse, MailStatsResponse,
   CorpAction, CorpActionsUpcomingResponse,
+  TendersDirectUpcomingResponse, TendersDirectStatsResponse, TenderDirect,
+  VoiceStatsResponse, VoiceRecentResponse,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -203,6 +205,20 @@ export const api = {
   corpActions: {
     upcoming: (days = 14) => get<CorpActionsUpcomingResponse>(`/api/corp-actions/upcoming?days=${days}`),
     recent:   (days = 7) => get<{ days: number; items: CorpAction[] }>(`/api/corp-actions/recent?days=${days}`),
+  },
+
+  // ── Tenders direct (tenders-direct bot): public listings, next 30 days by due date, matched rows only ──
+  tendersDirect: {
+    upcoming: (days = 30) => get<TendersDirectUpcomingResponse>(`/api/tenders/direct/upcoming?days=${days}`),
+    recent:   (days = 7, matched = 1, source = "") =>
+      get<{ items: TenderDirect[]; count: number; days: number }>(`/api/tenders/direct/recent?days=${days}&matched=${matched}${source ? `&source=${encodeURIComponent(source)}` : ""}`),
+    stats:    () => get<TendersDirectStatsResponse>("/api/tenders/direct/stats"),
+  },
+
+  // ── Voice notes (voice bot): the last transcripts with chat and sender, the run state ──
+  voice: {
+    stats:  () => get<VoiceStatsResponse>("/api/wa/media/stats"),
+    recent: (limit = 20, status = "") => get<VoiceRecentResponse>(`/api/wa/media/recent?limit=${limit}${status ? `&status=${status}` : ""}`),
   },
 
   // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──

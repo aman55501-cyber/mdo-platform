@@ -85,6 +85,8 @@ async def vdb() -> aiosqlite.Connection:
         await _compliance["ensure_schema"](_vdb)
         await _mail["ensure_schema"](_vdb)
         await _corp["ensure_schema"](_vdb)
+        await _tenders_direct["ensure_schema"](_vdb)
+        await _voice["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3369,6 +3371,19 @@ _health = mdo_health.register(app, vdb)
 # position expiries, the option alert note, the Las Vegas trip dates. Computed on request; no bot, no table.
 import mdo_calendar
 _calendar = mdo_calendar.register(app, vdb, _compliance, mdo_share_master)
+
+# tenders-direct: public tender listings (SECL, SECL e-tenders/NIC, Coal India, NTPC, CPP/eprocure, MSTC) read
+# straight from the buyers' pages — no login, no API, no LLM. New keyword matches → the tender door's body
+# (source direct:<site>) + ONE WhatsApp message; heartbeat per run with every site's state.
+import mdo_tenders_direct
+_tenders_direct = mdo_tenders_direct.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp),
+                                              _cos["tender_ingest"])
+
+# voice: WhatsApp voice notes from the bridges (POST /api/wa/media, multipart, same X-MDO-Key) transcribed on the
+# VPS with faster-whisper (CPU, int8, no API); transcripts re-enter whatsapp_messages through mdo_wa_intel's
+# ingest as "[voice transcript] …" rows (voice=1) so wa-sweep / wa-intel read them like text.
+import mdo_voice
+_voice = mdo_voice.register(app, vdb, _wa["ingest"])
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

@@ -508,6 +508,118 @@ bots:
     - Never invents a date, an amount or a row; what NSE did not give is left blank
     - No LLM call, ever (Directive 15)
     - Every run reports, especially an empty one (Directive 5)
+- id: tenders-direct
+  name: Tenders direct — public tender listings read from the buyers' own pages (no Tender247, no Grok)
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py tenders-direct
+  cadence: daily 06:30 IST + daily 18:30 IST
+  model: none
+  heartbeat: 'every run, also when nothing is new: "tenders-direct: S sites ok/F failed, P pages, M matched (N new)";
+    a site that did not answer is named after it ("· eprocure: blocked (HTTP 403 — anti-bot/maintenance)",
+    "· mstc: timeout after 25s"); a page that answered with no rows is "· 0 rows (layout?): <site>";
+    "1 message pushed" / "push NOT delivered" and "N → pipeline" appended when there were new matches'
+  checks: []
+  serves:
+  - tenders-washing-rcr
+  enabled: true
+  objective: every public coal-washing, RCR, transport, loading, siding, crushing and overburden tender on SECL, Coal
+    India, NTPC, the CPP portal and MSTC is in the pipeline the morning or evening it appears; Aman hears one message
+    only when something new matched
+  notes: 'Built 2026-10-09 on the CoS brief: replaces the Tender247 / Grok dependency for the first look (fleet_gaps:
+    tender_watch has no Tender247 access). Public pages, no login, no API key, no scraping library (urllib + the
+    stdlib html.parser): SECL https://www.secl-cil.in/tenders, SECL e-tenders (NIC)
+    https://coalindiatenders.nic.in/nicgep/app?page=FrontEndLatestActiveTenders&service=page, Coal India
+    https://www.coalindia.in/tenders/, NTPC https://www.ntpctender.com/, CPP
+    https://eprocure.gov.in/eprocure/app?page=FrontEndLatestActiveTenders&service=page, MSTC coal e-auction
+    notices https://www.mstcecommerce.com/auctionhome/coal/index.jsp (JavaScript-rendered; reported as "0 rows
+    (layout?)" until a public HTML listing exists). Keywords: TENDERS_KEYWORDS (.env; default washery, washing,
+    beneficiation, RCR, road cum rail, coal transportation, coal loading, rake loading, siding, surface transport,
+    crushing, overburden — Aman''s vault config.py is not in this repo, so the list came from the tender-go-no-go
+    charter and the x-watch brief). Floor: TENDERS_MIN_VALUE_CR (default 0). Table tenders_direct UNIQUE(source,
+    tender_id). Dashboard: Morning page card "Tenders", next 30 days by due date (GET /api/tenders/direct/upcoming).'
+  charter:
+    purpose: The first look at every public tender that could be a coal-washing or RCR contract (Aman, chat
+      2026-10-09, "win ONE coal washing contract and ONE RCR contract") happens on the VPS twice a day, for free,
+      without Tender247 or Grok; tender-go-no-go then evaluates what landed in the pipeline.
+    thinks: 'Rules only, no model. Every table on each page is read; the header row names the columns (title,
+      tender no, published, closing, organisation, value) and each data row is one tender keyed (site, reference).
+      A row matches when its title or organisation carries a TENDERS_KEYWORDS word (short words like RCR on word
+      boundaries) and, when TENDERS_MIN_VALUE_CR is set, its stated value is not below it — an unstated value
+      never disqualifies, it is shown as "value n/a". Category from the keywords (Coal washing, RCR, Coal
+      transport, Loading, Mining services). NEW = (site, reference) not seen before.'
+    works: 'cron 0 1,13 UTC (06:30 and 18:30 IST): POST /api/tenders/direct/run → GET each site (25 s timeout,
+      browser-like User-Agent) → parse → INSERT OR IGNORE tenders_direct → new matches posted through the tender
+      door''s body (mdo_cos_api tender_ingest, source direct:<site>, status evaluating, category from the
+      keywords) → ONE WhatsApp message only when there are new matches: "Tenders · N new:" then one line per
+      tender, due date first, at most 10 lines then "+N more — see Morning › Tenders": title — org — due <date> —
+      url. Endpoints: GET /api/tenders/direct/upcoming?days=30, /recent?days=7&matched=1&source=…, /stats.'
+    limits: Reads the first listing page of each site only, as HTML — a portal that renders its list with
+      JavaScript (MSTC today) yields 0 rows and says so; a site behind anti-bot (403/429/503) is "blocked" in the
+      line, never retried in a loop; a changed layout shows as "0 rows (layout?)" the same run. Keyword rules
+      match words, not meaning ("siding" in a civil-works title matches). Does not open the tender documents, does
+      not read eligibility or EMD, never bids — tender-go-no-go and Aman do that.
+    minimum_output: 'Every run: the heartbeat line with the site counts, including "6 sites ok/0 failed, 6 pages,
+      0 matched (0 new)". Any new match: the one message. A run with no heartbeat is a dead run.'
+    rules:
+    - Never invents a tender, a date, a value or an organisation; what the page did not say is blank or "n/a"
+    - One message per run at most, only when there are NEW matching tenders, at most 10 lines
+    - A failing site is reported per site and never ends the run (Directive 5)
+    - Bid decisions are Aman's click; this bot only lists
+    - No LLM call, ever (Directive 15)
+    - Every run reports, especially an empty one (Directive 5)
+- id: voice
+  name: Voice notes — WhatsApp audio transcribed on the VPS (faster-whisper, no API)
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py voice
+  cadence: every 10 min 07:00-22:00 IST
+  model: none
+  heartbeat: 'every run, also when nothing is pending: "voice: N transcribed, P pending, F failed, model small, avg
+    Xs/clip"; "voice: faster-whisper not installed — nothing transcribed" (a warning, exit 0) when the library is
+    missing from the image; "model small failed to load: <reason>" as an error line, never a crash'
+  checks: []
+  serves:
+  - vwlr-dispatch
+  - capital-rules
+  enabled: true
+  objective: every voice note in a watched chat (the Mausaji calls, the site groups) is text within ten minutes, so
+    wa-sweep and wa-intel read it like a typed message and nothing said by voice is missed
+  notes: 'Built 2026-10-09 on the CoS brief. Bridges v2.2 (whatsapp_bridge/index.js): audioMessage / ptt of every
+    chat they forward as text (groups and DMs — the backend''s personal-chat gate decides what is kept) is
+    downloaded with Baileys downloadMediaMessage and POSTed as multipart to /api/wa/media (same X-MDO-Key):
+    account, chat_jid, chat_name, sender, message_id, mimetype, duration_seconds, file; live messages only, never
+    the history backfill; clips over WA_AUDIO_MAX_BYTES (16 MB) are skipped; WA_AUDIO_FORWARD=0 switches it off.
+    Backend: voice/<date>/<message_id>.ogg under the data volume, row wa_media (message_id UNIQUE, status pending
+    → done | failed). Transcription: faster-whisper (CTranslate2, CPU, int8), VOICE_MODEL=small (base if the VPS
+    is slow), language auto (Hindi/English mix), model files cached in /data/whisper-models so a rebuild does not
+    re-download (~460 MB once). Dashboard: Morning page card "Voice notes", the last 20 transcripts with chat and
+    sender (GET /api/wa/media/stats).'
+  charter:
+    purpose: What is said in a voice note in the Mausaji chat or a site group reaches the sweep and the intel bots
+      as text, on the VPS, with no API and no per-minute cost.
+    thinks: 'No model of its own, no judgement: the clip becomes text, the text becomes a message. Pending rows are
+      taken oldest first, at most VOICE_MAX_PER_RUN (20) per run, inside VOICE_BUDGET_S (480 s); a clip that fails
+      to decode is marked failed with the reason and not retried blindly; an empty transcript is "no speech
+      detected", nothing is written to the chat for it.'
+    works: 'cron 30-59/10 1, */10 2-15, 0-30/10 16 UTC (every 10 min, 07:00–22:00 IST): POST /api/wa/media/transcribe
+      → load WhisperModel(VOICE_MODEL, cpu, int8) once per run → for each pending row transcribe(language=None,
+      beam_size=1, vad_filter=True) → the transcript into whatsapp_messages through mdo_wa_intel ingest as
+      "[voice transcript] <text>", same chat / sender / timestamp, wa_msg_id "<message_id>:voice", voice=1 — the
+      text row the bridge already sent for the clip says "[voice note Ns]". Endpoints: POST /api/wa/media (the
+      bridge), GET /api/wa/media/stats, GET /api/wa/media/recent?limit=20&status=…'
+    limits: Transcribes only what the bridges forward and the gate keeps (a personal chat stores nothing, not even
+      the file). Whisper small on a CPU VPS runs at roughly real time to 3× real time per clip; a long clip can
+      overrun the budget once and the rest wait ten minutes. Hinglish is transcribed as heard — names, tickers and
+      numbers can come out wrong, and the sweep''s word rules read the transcript literally. No speaker diarisation.
+    minimum_output: 'Every run: the heartbeat line with counts, including "0 transcribed, 0 pending, 0 failed".
+      The not-installed line when faster-whisper is missing. A run with no heartbeat is a dead run.'
+    rules:
+    - No API, no LLM call, ever — faster-whisper on the VPS CPU only (Directive 15)
+    - Never invents or edits a transcript; what Whisper did not hear is not written
+    - A personal chat stores nothing — the gate runs before the file is written
+    - One transcript row per clip (dedupe key <message_id>:voice), oldest first, time-boxed
+    - Every run reports, especially an empty one (Directive 5)
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron
@@ -967,7 +1079,8 @@ bots:
 fleet_gaps:
 - 'bank_balances check is blocked: no feed (candidate: e-statements to Gmail, then Account Aggregator)'
 - 'tender_watch has no Tender247 access (manual login); public portals only (candidate: Tender247 email alerts into
-  Gmail)'
+  Gmail). Narrowed 2026-10-09: tenders-direct now reads the public SECL / SECL e-tender (NIC) / Coal India / NTPC /
+  CPP listings twice a day without a login; Tender247 and the MSTC JavaScript listing remain uncovered.'
 - CoS Routine cannot reach the VPS until MDO_AUTH_TOKEN + MDO_SELF_URL are set in the cloud environment and the
   domain is allowed
 - 'Vault import pending: run the two scp lines + vault_import.sh once (DEPLOY_HOSTINGER §9); until then the two

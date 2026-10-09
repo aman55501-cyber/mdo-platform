@@ -641,3 +641,133 @@ export interface CorpActionsUpcomingResponse {
   last_run: CorpActionsRun | null
   tickers_watched: number
 }
+
+// ── Tenders direct (tenders-direct bot): public tender listings read from the buyers' own pages ──
+export type TenderDirectSource = "secl" | "secl-etender" | "coalindia" | "ntpc" | "eprocure" | "mstc"
+
+export interface TenderDirect {
+  id: number
+  source: TenderDirectSource
+  tender_id: string                 // the site's reference, else "h:<hash>"
+  title: string
+  org: string
+  published: string                 // ISO date or ""
+  due: string                       // ISO date or ""
+  value_text: string                // as the page wrote it, "" when unstated
+  url: string
+  matched: boolean
+  keywords: string[]                // the TENDERS_KEYWORDS words that matched
+  category: string                  // Coal washing | RCR | Coal transport | Loading | Mining services | Other | ""
+  first_seen: string
+  last_seen: string
+  pushed_at: string | null
+  pipeline_posted: boolean
+}
+
+export interface TenderDirectSiteState {
+  label: string
+  url: string
+  ok: boolean
+  status: number
+  rows: number
+  matched: number
+  new: number
+  reason: string                    // "blocked (HTTP 403 — …)", "timeout after 25s", "" when fine
+}
+
+export interface TenderDirectRun {
+  id: number
+  ran_at: string
+  sites_ok: number
+  sites_failed: number
+  pages: number
+  rows: number
+  matched: number
+  new: number
+  pushed: number
+  line: string
+  sites: Record<string, TenderDirectSiteState>
+}
+
+export interface TendersDirectUpcomingResponse {
+  items: TenderDirect[]             // matched, due inside the window, by due date
+  undated: TenderDirect[]           // matched rows the page gave no closing date for
+  count: number
+  days: number
+  as_of: string
+  from: string
+  until: string
+  state: TenderDirectRun | null
+  keywords: string[]
+  min_value_cr: number
+  sites: { key: TenderDirectSource; label: string; url: string }[]
+}
+
+export interface TendersDirectStatsResponse {
+  as_of: string
+  total: number
+  matched: number
+  by_source: Record<string, { label: string; url: string; rows: number; matched: number }>
+  keywords: string[]
+  min_value_cr: number
+  runs: number
+  state: TenderDirectRun | null
+}
+
+// ── Voice notes (voice bot): WhatsApp audio transcribed on the VPS with faster-whisper ──
+export type VoiceStatus = "pending" | "done" | "failed"
+
+export interface VoiceMedia {
+  id: number
+  message_id: string
+  account: string
+  chat_jid: string
+  chat_name: string
+  chat_kind: "group" | "dm"
+  sender: string
+  from_me: boolean
+  received_at: string | null        // ISO UTC
+  mimetype: string
+  path: string                      // relative to the voice dir: <date>/<message_id>.ogg
+  bytes: number
+  duration: number                  // seconds, as the bridge reported
+  transcript: string
+  language: string                  // Whisper's detected language, "" until done
+  status: VoiceStatus
+  error: string                     // "no speech detected", a decode error, ""
+  seconds: number                   // processing time
+  attempts: number
+  store_msg_id: number | null       // whatsapp_messages.id of the transcript row
+  created_at: string
+  done_at: string | null
+}
+
+export interface VoiceRun {
+  id: number
+  ran_at: string
+  transcribed: number
+  pending: number
+  failed: number
+  model: string
+  avg_s: number
+  line: string
+}
+
+export interface VoiceStatsResponse {
+  as_of: string
+  installed: boolean                // faster-whisper importable in the backend image
+  model: string
+  counts: Record<VoiceStatus, number>
+  last_24h: number
+  transcripts: VoiceMedia[]         // the last 20 done rows, newest first
+  state: VoiceRun | null
+  voice_dir: string
+  model_dir: string
+}
+
+export interface VoiceRecentResponse {
+  items: VoiceMedia[]
+  count: number
+  status: string
+  as_of: string
+}

@@ -118,6 +118,8 @@ services:
       # Chief of Staff two-way chat: forward Aman's DMs / self-chat to the backend
       COS_INBOUND: ${COS_INBOUND:-1}
       COS_ALLOWED_NUMBERS: ${COS_ALLOWED_NUMBERS:-}
+      # Voice notes → POST /api/wa/media for the voice bot (faster-whisper on the backend). 0 = text only.
+      WA_AUDIO_FORWARD: ${WA_AUDIO_FORWARD:-1}
     volumes:
       - wa-auth:/data
     depends_on:
@@ -148,6 +150,7 @@ services:
       TZ: Asia/Kolkata
       MDO_AUTH_TOKEN: ${MDO_AUTH_TOKEN:-}
       WA_ACCOUNT: "2"
+      WA_AUDIO_FORWARD: ${WA_AUDIO_FORWARD:-1}
     volumes:
       - wa-auth2:/data
     depends_on:

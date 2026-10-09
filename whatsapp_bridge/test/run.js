@@ -9,7 +9,8 @@
  *
  * Covers: disconnect classification + reconnect backoff (incl. loggedOut auth
  * wipe and once-a-minute QR logging), queue retry / drop / overflow, the
- * watchdog, the status shape and the 503 "not paired" send response.
+ * watchdog, the status shape, the 503 "not paired" send response, and the
+ * voice-note path (download → multipart POST /api/wa/media, live only).
  */
 "use strict"
 
@@ -61,7 +62,9 @@ const baileysStub = {
   DisconnectReason,
   useMultiFileAuthState: async (dir) => ({ state: { creds: authCreds }, saveCreds() {} }),
   fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0], isLatest: true }),
-  downloadMediaMessage: async () => Buffer.from("img"),
+  // index.js destructures this at load time, so the test swaps _dl, not the property
+  _dl: async (msg) => (msg && msg.message && msg.message.audioMessage) ? Buffer.from("OggS\x00fake-opus-bytes") : Buffer.from("img"),
+  downloadMediaMessage: (...a) => baileysStub._dl(...a),
 }
 
 function makeExpressStub() {
@@ -438,6 +441,62 @@ async function test(name, fn) {
     assert.strictEqual(b.wa_msg_id, "M1"); assert.strictEqual(b.timestamp, "2025-10-09T08:53:20.000Z")
     assert.strictEqual(B.contactNameCache.get("918888888888@s.whatsapp.net"), "Ravi")
     assert.strictEqual(B.groupMetaCache.has("120363@g.us"), false, "metadata failure not cached")
+  })
+
+  await test("ingest: a voice note is downloaded and posted as multipart to /api/wa/media; history backfill never downloads", async () => {
+    const posted = []
+    B.setTransport(async (p, data, contentType) => { posted.push({ p, data, contentType }); return { status: 200 } })
+    const s = currentSock()
+    const audioMsg = {
+      key: { remoteJid: "919800000001@s.whatsapp.net", fromMe: false, id: "VN1" }, pushName: "Bantu Mausaji", messageTimestamp: 1760000100,
+      message: { audioMessage: { mimetype: "audio/ogg; codecs=opus", seconds: 12, ptt: true, fileLength: 54321 } },
+    }
+    await s.ev.emit("messages.upsert", { type: "notify", messages: [audioMsg] })
+    await B.queueIdle()
+    const text = posted.filter(x => x.p === "/api/whatsapp/message").map(x => JSON.parse(x.data))
+    assert.strictEqual(text.length, 1, "the text row still goes")
+    assert.strictEqual(text[0].text, "[voice note 12s]"); assert.strictEqual(text[0].wa_msg_id, "VN1"); assert.strictEqual(text[0].chat_kind, "dm")
+    const media = posted.filter(x => x.p === "/api/wa/media")
+    assert.strictEqual(media.length, 1, "one multipart upload")
+    assert.ok(/^multipart\/form-data; boundary=----MDOBridge/.test(media[0].contentType), media[0].contentType)
+    assert.ok(Buffer.isBuffer(media[0].data))
+    const body = media[0].data.toString("latin1")
+    const boundary = media[0].contentType.split("boundary=")[1]
+    const field = (name) => { const m = body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m && m[1] }
+    assert.strictEqual(field("account"), "9"); assert.strictEqual(field("chat_jid"), "919800000001@s.whatsapp.net")
+    assert.strictEqual(field("chat_name"), "Bantu Mausaji"); assert.strictEqual(field("sender"), "Bantu Mausaji")
+    assert.strictEqual(field("message_id"), "VN1"); assert.strictEqual(field("mimetype"), "audio/ogg; codecs=opus")
+    assert.strictEqual(field("duration_seconds"), "12"); assert.strictEqual(field("ptt"), "1"); assert.strictEqual(field("chat_kind"), "dm")
+    assert.strictEqual(field("timestamp"), "2025-10-09T08:55:00.000Z"); assert.strictEqual(field("from_me"), "0")
+    assert.ok(body.includes(`name="file"; filename="VN1.ogg"\r\nContent-Type: audio/ogg; codecs=opus\r\n\r\nOggS\x00fake-opus-bytes\r\n`), "file part carries the clip bytes")
+    assert.ok(body.endsWith(`--${boundary}--\r\n`))
+    assert.strictEqual(GET("/api/whatsapp/status").body.audio_forwarded, 1)
+    // the same message through the history path: text only, no download, no upload
+    posted.length = 0
+    await s.ev.emit("messaging-history.set", { messages: [{ ...audioMsg, key: { ...audioMsg.key, id: "VN2" } }], contacts: [], isLatest: true, progress: 100 })
+    await B.queueIdle()
+    assert.strictEqual(posted.filter(x => x.p === "/api/wa/media").length, 0, "history backfill never downloads audio")
+    assert.strictEqual(posted.filter(x => x.p === "/api/whatsapp/message").length, 1)
+    // a clip over the size cap: text row only, one throttled log line
+    posted.length = 0
+    await s.ev.emit("messages.upsert", { type: "notify", messages: [{ ...audioMsg, key: { ...audioMsg.key, id: "VN3" }, message: { audioMessage: { ...audioMsg.message.audioMessage, fileLength: 99 * 1024 * 1024 } } }] })
+    await B.queueIdle()
+    assert.strictEqual(posted.filter(x => x.p === "/api/wa/media").length, 0)
+    assert.ok(logsMatching(/voice note skipped: 99 MB/).length >= 1)
+    // a download failure is logged once, never thrown; the text row still goes
+    const origDl = baileysStub._dl
+    baileysStub._dl = async () => { throw new Error("media key expired") }
+    posted.length = 0
+    await s.ev.emit("messages.upsert", { type: "notify", messages: [{ ...audioMsg, key: { ...audioMsg.key, id: "VN4" } }] })
+    await B.queueIdle()
+    baileysStub._dl = origDl
+    assert.strictEqual(posted.filter(x => x.p === "/api/wa/media").length, 0)
+    assert.strictEqual(posted.filter(x => x.p === "/api/whatsapp/message").length, 1)
+    assert.ok(logsMatching(/voice note download failed: media key expired/).length >= 1)
+    // multipartBody is self-contained: the queue can resend the same bytes
+    const mp = B.multipartBody({ a: "1" }, { name: "file", filename: "x.ogg", mimetype: "audio/ogg", buffer: Buffer.from("zz") })
+    assert.ok(mp.__multipart && Buffer.isBuffer(mp.data) && /boundary=/.test(mp.contentType))
+    B.setTransport(async () => ({ status: 200 }))
   })
 
   await test("watchdog: quiet socket is pinged, dead socket is restarted, idle unpaired socket left alone while a reconnect is pending", async () => {

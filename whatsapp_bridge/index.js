@@ -20,6 +20,14 @@
  *   • unhandledRejection / uncaughtException are logged, not fatal (a storm of
  *     them exits so Docker restarts the container cleanly).
  *
+ * v2.2: voice notes / audio messages (audioMessage, ptt) of the chats that are
+ * forwarded as text are downloaded (downloadMediaMessage) and handed to the
+ * backend as multipart POST /api/wa/media (same X-MDO-Key) for the voice bot,
+ * which transcribes them on the VPS with faster-whisper. The text row for the
+ * same message is still forwarded as "[voice note Ns]" so chat activity counts.
+ * Audio is forwarded for LIVE messages only — a history backfill would try to
+ * download thousands of expired clips. WA_AUDIO_FORWARD=0 switches it off.
+ *
  * Exports its internals when required as a module (test/run.js); only starts
  * listening when run directly.
  */
@@ -84,6 +92,13 @@ function isWatchedName(name) {
 
 // The backend's own CoS replies start with this; never echo them back.
 const COS_PREFIX = "CoS ·"
+
+// Voice notes → POST /api/wa/media (multipart). Off with WA_AUDIO_FORWARD=0.
+// Clips over WA_AUDIO_MAX_BYTES (16 MB) are not downloaded; the text row still
+// says "[voice note Ns]" so the chat is not silent.
+const AUDIO_FORWARD = (process.env.WA_AUDIO_FORWARD || "1") !== "0"
+const AUDIO_MAX_BYTES = envInt("WA_AUDIO_MAX_BYTES", 16 * 1024 * 1024)
+let audioForwarded = 0
 
 // Message kinds that carry no content (reactions, edits/deletes/ephemeral
 // settings). Forwarding them would show up as fake "[media]" replies and skew
@@ -457,7 +472,7 @@ async function startWA() {
       const counts = { group: 0, dm: 0, cos: 0, skipped: 0 }
       for (const msg of recent) {
         try {
-          const kind = await ingestMessage(mySock, msg, { skipFromMe: false })
+          const kind = await ingestMessage(mySock, msg, { skipFromMe: false, audio: false })
           if (kind) counts[kind] = (counts[kind] || 0) + 1
           else counts.skipped++
         } catch (e) {
@@ -627,7 +642,7 @@ async function routeDirectMessage(s, msg) {
 // Returns the chat kind ("group" | "dm" | "cos") if the message was forwarded
 // to the backend, else null. `skipFromMe` is kept for callers but defaults to
 // false: Aman's own replies are needed for response-time metrics.
-async function ingestMessage(s, msg, { skipFromMe = false } = {}) {
+async function ingestMessage(s, msg, { skipFromMe = false, audio = true } = {}) {
   if (!msg || !msg.message) return null
   if (await routeDirectMessage(s, msg)) return "cos"
   const fromMe = !!(msg.key && msg.key.fromMe)
@@ -651,6 +666,7 @@ async function ingestMessage(s, msg, { skipFromMe = false } = {}) {
     (m.imageMessage && m.imageMessage.caption) ||
     (m.videoMessage && m.videoMessage.caption) ||
     (m.documentMessage && m.documentMessage.caption) ||
+    (m.audioMessage && `[voice note ${Number(m.audioMessage.seconds) || 0}s]`) ||
     "[media]"
   )
   // Never echo the backend's own CoS replies back to it (they arrive fromMe
@@ -701,6 +717,31 @@ async function ingestMessage(s, msg, { skipFromMe = false } = {}) {
     }
   }
 
+  // Voice notes / audio (groups AND DMs — the Mausaji chat is a DM; the backend's
+  // personal-chat gate decides what is kept). Live messages only (see header).
+  let audioClip = null
+  const audioNode = m.audioMessage
+  if (audioNode && audio && AUDIO_FORWARD) {
+    const len = Number(audioNode.fileLength) || 0
+    if (len > AUDIO_MAX_BYTES) {
+      logOnce("audiobig", `voice note skipped: ${Math.round(len / 1048576)} MB over WA_AUDIO_MAX_BYTES`)
+    } else {
+      try {
+        const buf = await downloadMediaMessage(msg, "buffer", {}, { logger: pino({ level: "silent" }) })
+        if (buf && buf.length) {
+          audioClip = {
+            buf,
+            mimetype: audioNode.mimetype || "audio/ogg; codecs=opus",
+            seconds: Number(audioNode.seconds) || 0,
+            ptt: !!audioNode.ptt,
+          }
+        }
+      } catch (e) {
+        logOnce("audiodl", `voice note download failed: ${e.message}`)
+      }
+    }
+  }
+
   const tsNum = Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000)
   const timestamp = new Date(tsNum * 1000).toISOString()
 
@@ -725,7 +766,46 @@ async function ingestMessage(s, msg, { skipFromMe = false } = {}) {
   })
   forwardedTotal++
   if (forwardedTotal % 500 === 0) log(`forwarded ${forwardedTotal} messages so far (account ${WA_ACCOUNT})`)
+
+  if (audioClip) {
+    const msgId = (msg.key && msg.key.id) || ""
+    const ext = /mpeg|mp3/i.test(audioClip.mimetype) ? "mp3" : (/mp4|m4a|aac/i.test(audioClip.mimetype) ? "m4a" : "ogg")
+    await queuePost("/api/wa/media", multipartBody({
+      account: WA_ACCOUNT,
+      chat_jid: jid,
+      chat_name: chatName,
+      sender,
+      message_id: msgId,
+      mimetype: audioClip.mimetype,
+      duration_seconds: String(audioClip.seconds),
+      ptt: audioClip.ptt ? "1" : "0",
+      timestamp,
+      from_me: fromMe ? "1" : "0",
+      chat_kind: kind,
+    }, { name: "file", filename: `${msgId || "voice"}.${ext}`, mimetype: audioClip.mimetype, buffer: audioClip.buf }))
+    audioForwarded++
+    log(`${tag} ${sender}: voice note ${audioClip.seconds}s (${Math.round(audioClip.buf.length / 1024)} KB) → /api/wa/media`)
+  }
   return kind
+}
+
+// multipart/form-data body for queuePost(): plain string fields + one file.
+// Built up front so the retrying queue can resend the same bytes.
+function multipartBody(fields, file) {
+  const boundary = "----MDOBridge" + Date.now().toString(16) + Math.random().toString(16).slice(2)
+  const parts = []
+  for (const [k, v] of Object.entries(fields || {})) {
+    if (v === undefined || v === null) continue
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${String(v)}\r\n`))
+  }
+  if (file && file.buffer) {
+    const fname = String(file.filename || "file").replace(/["\r\n]/g, "_")
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.name || "file"}"; filename="${fname}"\r\nContent-Type: ${file.mimetype || "application/octet-stream"}\r\n\r\n`))
+    parts.push(file.buffer)
+    parts.push(Buffer.from("\r\n"))
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`))
+  return { __multipart: true, data: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
 }
 
 // ── Backpressure: bounded POST queue with retry ──────────────────────────────
@@ -768,8 +848,10 @@ function noteDrop(why) {
 
 function queuePost(path, body) {
   return new Promise((accepted) => {
-    const data = typeof body === "string" ? body : JSON.stringify(body)
-    const job = { path, data, bytes: Buffer.byteLength(data), accepted, attempts: 0 }
+    const multipart = !!(body && body.__multipart)
+    const data = multipart ? body.data : (typeof body === "string" ? body : JSON.stringify(body))
+    const contentType = multipart ? body.contentType : "application/json"
+    const job = { path, data, contentType, bytes: Buffer.byteLength(data), accepted, attempts: 0 }
     Q.pending.push(job)
     Q.bytes += job.bytes
     while (Q.pending.length > QCFG.maxQueue || (Q.bytes > QCFG.maxBytes && Q.pending.length > 1)) {
@@ -810,7 +892,7 @@ async function deliver(job) {
   for (;;) {
     job.attempts++
     let r
-    try { r = await transport(job.path, job.data) } catch (e) { r = { status: 0, error: e.message } }
+    try { r = await transport(job.path, job.data, job.contentType) } catch (e) { r = { status: 0, error: e.message } }
     if (r && r.status >= 200 && r.status < 300) { Q.delivered++; return true }
     const what = r && r.status ? `HTTP ${r.status}` : `${(r && r.error) || "no response"}`
     if (!isRetriable(r)) {
@@ -834,10 +916,11 @@ async function deliver(job) {
 }
 
 // ── POST to MDO backend ───────────────────────────────────────────────────────
-// transport(path, jsonString) → { status, error? }. Never rejects. Replaced by
-// the test harness.
+// transport(path, body, contentType) → { status, error? }. body is a JSON string
+// (default content type application/json) or a multipart Buffer with its
+// boundary content type. Never rejects. Replaced by the test harness.
 
-function httpTransport(path, data) {
+function httpTransport(path, data, contentType) {
   return new Promise((resolve) => {
     let done = false
     const finish = (r) => { if (!done) { done = true; resolve(r) } }
@@ -850,7 +933,7 @@ function httpTransport(path, data) {
         method: "POST",
         timeout: QCFG.postTimeoutMs,
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": contentType || "application/json",
           "Content-Length": Buffer.byteLength(data),
           // backend access key (when MDO_AUTH_TOKEN protection is enabled)
           "X-MDO-Key": process.env.MDO_AUTH_TOKEN || "",
@@ -926,6 +1009,8 @@ function buildStatus() {
     rejected: Q.rejected,
     retries: Q.retries,
     forwarded: forwardedTotal,
+    audio_forwarded: audioForwarded,
+    audio_forward: AUDIO_FORWARD,
     caches: { groups: groupMetaCache.size, contacts: contactNameCache.size },
     uptime_s: Math.floor((now - S.startedAt) / 1000),
     version: VERSION,
@@ -1030,7 +1115,7 @@ if (IS_MAIN) {
 module.exports = {
   app, startWA, watchdogTick, buildStatus, isWedged,
   classifyDisconnect, backoffMs, onClose, scheduleReconnect,
-  queuePost, queueIdle, postToMDO, setTransport,
+  queuePost, queueIdle, postToMDO, setTransport, multipartBody, ingestMessage,
   LRU, logOnce, asciiReason,
   S, Q, QCFG, T, DR, WA_ACCOUNT, AUTH_DIR,
   groupMetaCache, contactNameCache,

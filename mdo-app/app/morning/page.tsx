@@ -5,10 +5,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock, Landmark
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock, Landmark,
+  FileText, Mic
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage, CorpAction } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage, CorpAction, TenderDirect, VoiceMedia } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -478,6 +479,12 @@ export default function MorningSetupPage() {
 
       {/* ── Corporate actions (corp-actions bot): NSE results, dividends, record dates on held/watched shares — next 14 days ── */}
       <CorpActionsCard />
+
+      {/* ── Tenders (tenders-direct bot): public SECL / Coal India / NTPC / CPP / MSTC listings that matched the keywords — next 30 days by due date ── */}
+      <TendersCard />
+
+      {/* ── Voice notes (voice bot): the last 20 WhatsApp voice notes transcribed on the VPS, with chat and sender ── */}
+      <VoiceCard />
 
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
@@ -1290,6 +1297,189 @@ function MailCard() {
           )}
           <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>
             Locked PDFs are stored in the vault and never opened — the PAN and the bank/broker passwords stay with you. Vault: finance/mail/.
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Tenders card — public tender listings that matched the keywords (tenders-direct bot) ──
+// CoS brief 2026-10-09. Rows come from /api/tenders/direct/upcoming: matched tenders due inside the next 30 days,
+// by due date, plus the matched rows the page gave no closing date for. The last run's per-site state is shown so
+// a blocked portal or a changed layout is visible here, not only in the heartbeat. Loading state first, never a
+// half table (Directive 17). Nothing is judged here — tender-go-no-go and Aman decide; this is the list.
+
+function TendersCard() {
+  const q = useQuery({ queryKey: ["tenders-direct-upcoming"], queryFn: () => api.tendersDirect.upcoming(30), refetchInterval: 10 * 60_000 })
+  const items: TenderDirect[] = q.data?.items ?? []
+  const undated: TenderDirect[] = q.data?.undated ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  const fmt = (iso: string) => {
+    if (!iso) return "—"
+    const d = new Date(iso.slice(0, 10) + "T00:00:00")
+    return isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })
+  }
+  const daysIn = (iso: string) => {
+    if (!iso || !q.data) return null
+    const a = new Date(iso.slice(0, 10) + "T00:00:00").getTime(), b = new Date(q.data.from + "T00:00:00").getTime()
+    return isNaN(a) || isNaN(b) ? null : Math.round((a - b) / 86_400_000)
+  }
+  const last = q.data?.state ?? null
+  const siteLabel = (key: string) => q.data?.sites.find(s => s.key === key)?.label ?? key
+  const sitesDown = last ? Object.entries(last.sites).filter(([, v]) => !v.ok) : []
+  const sitesEmpty = last ? Object.entries(last.sites).filter(([, v]) => v.ok && v.rows === 0) : []
+  const row = (t: TenderDirect) => {
+    const n = daysIn(t.due)
+    return (
+      <tr key={t.id}>
+        <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace" }}>{fmt(t.due)}</td>
+        <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 700, fontSize: 11, color: n !== null && n <= 3 ? "var(--red)" : n !== null && n <= 7 ? "var(--amber)" : "var(--text2)" }}>
+          {n === null ? "—" : n === 0 ? "today" : n === 1 ? "tomorrow" : `${n}d`}
+        </td>
+        <td style={{ ...td, whiteSpace: "normal", minWidth: 240 }}>
+          {t.url ? <a href={t.url} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>{t.title}</a> : t.title}
+          <span style={{ color: "var(--text2)", fontSize: 11 }}> · {t.tender_id.startsWith("h:") ? "no ref" : t.tender_id}</span>
+        </td>
+        <td style={{ ...td, whiteSpace: "normal", minWidth: 140 }}>{t.org || "—"}</td>
+        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11 }} title={t.keywords.join(", ")}>{t.category || "—"}</td>
+        <td style={{ ...td, whiteSpace: "nowrap", color: t.value_text ? "var(--text)" : "var(--text2)" }}>{t.value_text || "n/a"}</td>
+        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11, color: "var(--text2)" }}>{siteLabel(t.source)}{t.pipeline_posted ? "" : " · not in pipeline"}</td>
+      </tr>
+    )
+  }
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <FileText size={15} style={{ color: "var(--amber)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            TENDERS{!q.isLoading && !q.error && q.data ? ` (next 30 days · ${items.length} due${undated.length ? ` · ${undated.length} undated` : ""} · ${q.data.sites.length} sites)` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!q.isLoading && !q.error && q.data && (
+            <span title={last?.line || ""} style={{ color: last && last.sites_failed > 0 ? "var(--amber)" : "var(--text2)" }}>
+              {last ? `last run ${istClock(last.ran_at)} · ${last.sites_ok} sites ok/${last.sites_failed} failed · ${last.matched} matched (${last.new} new)` : "no run yet — 06:30 and 18:30 IST"}
+            </span>
+          )}
+          <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Tenders unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && q.data && (
+        <>
+          {(sitesDown.length > 0 || sitesEmpty.length > 0) && (
+            <div style={{ fontSize: 11, color: "var(--amber)", marginBottom: 8 }}>
+              {sitesDown.map(([k, v]) => `${siteLabel(k)}: ${v.reason || "failed"}`).join(" · ")}
+              {sitesDown.length > 0 && sitesEmpty.length > 0 ? " · " : ""}
+              {sitesEmpty.length > 0 ? `0 rows (layout?): ${sitesEmpty.map(([k]) => siteLabel(k)).join(", ")}` : ""}
+            </div>
+          )}
+          {items.length === 0 && undated.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              No matching tender closes in the next 30 days on {q.data.sites.map(s => s.label).join(", ")}. The bot reports every run even when nothing matched.
+            </div>
+          )}
+          {(items.length > 0 || undated.length > 0) && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Due</th><th style={th}>In</th><th style={{ ...th, whiteSpace: "normal" }}>Tender</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Organisation</th><th style={th}>Category</th><th style={th}>Value</th><th style={th}>Source</th>
+                </tr></thead>
+                <tbody>
+                  {items.map(row)}
+                  {undated.map(row)}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>
+            Keywords: {q.data.keywords.join(", ")}{q.data.min_value_cr > 0 ? ` · floor ₹${q.data.min_value_cr} Cr (unstated values kept)` : ""}. Matches are posted to the tender pipeline; tender-go-no-go evaluates them. Nothing here is a bid.
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Voice notes card — WhatsApp audio transcribed on the VPS (voice bot) ──
+// CoS brief 2026-10-09. Rows come from /api/wa/media/stats: the last 20 transcripts with chat, sender, length and
+// the detected language; the counts (pending / done / failed) and the last run line. A missing faster-whisper is
+// said plainly. Loading state first, never a half table (Directive 17). Transcripts are Whisper's hearing, not a
+// record — names, tickers and numbers can be wrong; the clip itself stays in the data volume.
+
+function VoiceCard() {
+  const q = useQuery({ queryKey: ["voice-stats"], queryFn: () => api.voice.stats(), refetchInterval: 5 * 60_000 })
+  const rows: VoiceMedia[] = q.data?.transcripts ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  const when = (iso: string | null) => {
+    if (!iso) return "—"
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return String(iso).slice(0, 16)
+    return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+  }
+  const last = q.data?.state ?? null
+  const counts = q.data?.counts
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Mic size={15} style={{ color: "var(--green)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            VOICE NOTES{!q.isLoading && !q.error && q.data && counts ? ` (${counts.done} transcribed · ${counts.pending} pending · ${counts.failed} failed · model ${q.data.model})` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!q.isLoading && !q.error && q.data && (
+            <span title={last?.line || ""} style={{ color: !q.data.installed ? "var(--amber)" : "var(--text2)" }}>
+              {!q.data.installed
+                ? "faster-whisper not installed in the backend image — clips wait, nothing transcribed"
+                : last ? `last run ${istClock(last.ran_at)} · ${last.transcribed} transcribed · avg ${Math.round(last.avg_s)}s/clip` : "no run yet — every 10 min 07:00–22:00 IST"}
+            </span>
+          )}
+          <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Voice notes unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && q.data && (
+        <>
+          {rows.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              No voice note transcribed yet. The bridges forward audio from the chats they already forward as text; the bot reports every run even when nothing is pending.
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Received</th><th style={th}>Chat</th><th style={th}>Sender</th><th style={th}>Length</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Transcript</th><th style={th}>Lang</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map(m => (
+                    <tr key={m.id}>
+                      <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 12 }}>{when(m.received_at)}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }} title={m.chat_jid}>{m.chat_name || m.chat_jid}{m.chat_kind === "dm" ? "" : " (group)"}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>{m.from_me ? "me" : m.sender || "—"}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 12 }}>{m.duration ? `${Math.round(m.duration)}s` : "—"}</td>
+                      <td style={{ ...td, whiteSpace: "normal", minWidth: 260, color: m.transcript ? "var(--text)" : "var(--text2)" }}>
+                        {m.transcript || m.error || "—"}
+                      </td>
+                      <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11, color: "var(--text2)" }}>{m.language || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>
+            Transcribed on the VPS with faster-whisper ({q.data.model}, CPU) — no API. Each transcript also lands in the chat as “[voice transcript] …”, so the sweep reads it like text. Names, tickers and numbers can be misheard.
           </div>
         </>
       )}

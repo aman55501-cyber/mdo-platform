@@ -1,6 +1,6 @@
 {
   "name": "mdo-whatsapp-bridge",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Baileys-based WhatsApp bridge — no Chromium needed",
   "main": "index.js",
   "scripts": { "start": "node index.js", "test": "node test/run.js" },
