@@ -175,3 +175,10 @@ CoS reviews and proposes, as 💡 lines with a reason each, never as changes:
   until he changes it in the Objectives sheet himself.
 
 The CoS never adds to or removes from the Objectives sheet. It comments.
+
+## Directive 15 — Spend discipline (added 2026-10-09 after Aman hit the usage wall)
+Every rupee and every credit must buy something Aman can touch. Before any work over 5 minutes
+the CoS states the cost in model-time and the deliverable. No fan-out of background workers
+once the plan window is above 50% used. Readers and summarisers run on the cheapest model
+that can do the job. Reading past sessions or chats happens only on Aman's request for that
+week, and only once. The credit-guard bot enforces this and reports every run.
