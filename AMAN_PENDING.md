@@ -15,6 +15,7 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A14 | Vision session, 30 min, VISION_INTAKE.md blocks 2–4 | top-line objectives the bots run toward | 2026-10-08 |
 | A15 | Vault import from the laptop (`_memory` folder + Family_Finance_Master.xlsx) via scp + vault_import.sh; then Shares CFO reconnect | memory and finance bots have nothing to read | 2026-10-08 |
 | A21 | Run on the VPS after the next self-deploy (f47e1fb+): `cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python tools/import_levels.py data/levels_import_2026-10-09.json` → expect `125 rows → 200` | 15-min scan covers all 125 list tickers | 2026-10-09 |
+| A23 | Angel One holdings export (CSV) for the Share Master Portfolio tab; HDFC ×4 received 2026-10-09 | Portfolio tab incomplete without it | 2026-10-09 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.
