@@ -170,6 +170,20 @@ step_env() {
     fi
     TOKEN="$(read_env_value MDO_AUTH_TOKEN)"
     [[ -n "$TOKEN" ]] || say "WARNING: MDO_AUTH_TOKEN is empty — API is unprotected and heartbeats cannot authenticate"
+    # CALENDAR_TOKEN is the one token the script DOES generate: nobody pastes it
+    # anywhere but a calendar subscription URL, and the summary prints that URL.
+    # An existing value is never touched (blank it in .env to rotate).
+    if [[ -z "$(read_env_value CALENDAR_TOKEN)" ]]; then
+        local cal
+        cal="$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+        if grep -qE '^CALENDAR_TOKEN=' .env; then
+            sed -i "s|^CALENDAR_TOKEN=.*|CALENDAR_TOKEN=${cal}|" .env
+        else
+            if [[ -s .env && -n "$(tail -c1 .env)" ]]; then echo >> .env; fi
+            printf 'CALENDAR_TOKEN=%s\n' "$cal" >> .env
+        fi
+        say "generated CALENDAR_TOKEN (calendar feed door) — the feed URL is on the summary"
+    fi
 }
 
 # ── c. tests in a throwaway container ────────────────────────────────────────
@@ -316,6 +330,15 @@ placeholder_keys() {         # keys in .env still at example / empty values that
     printf '%s' "${out[*]:-none}"
 }
 
+calendar_feed_url() {        # the subscription URL for Google Calendar → Other calendars → From URL (DEPLOY_HOSTINGER.md §8b)
+    local tok dom
+    tok="$(read_env_value CALENDAR_TOKEN)"
+    dom="$(read_env_value ALT_DOMAINS)"; dom="${dom%% *}"
+    [[ -n "$dom" ]] || dom="$(read_env_value DOMAIN)"
+    [[ -n "$dom" ]] || dom="<DOMAIN in .env>"
+    if [[ -n "$tok" ]]; then echo "https://${dom}/api/calendar.ics?token=${tok}"; else echo "not generated (CALENDAR_TOKEN empty)"; fi
+}
+
 bridge_state() {
     local resp
     resp="$(curl -s -m 8 -H "X-MDO-Key: ${TOKEN}" "${API_URL}/api/whatsapp/qr" 2>/dev/null || true)"
@@ -330,8 +353,9 @@ bridge_state() {
 
 step_summary() {
     step "h. summary"
-    local cap
+    local cap ALT_DOMAIN_FIRST
     cap="$(read_env_value SPEND_CAP_INR_MONTH)"
+    ALT_DOMAIN_FIRST="$(read_env_value ALT_DOMAINS)"; ALT_DOMAIN_FIRST="${ALT_DOMAIN_FIRST%% *}"
     cat <<EOF
 
 ══════════════════════════ MDO deploy summary ══════════════════════════
@@ -341,6 +365,8 @@ step_summary() {
  cron          : ${CRON_RESULT}  (${CRON_FILE})
  self-update   : every 10 min via deploy_vps.sh --auto → ${LOG_FILE}
  test alert    : ${ALERT_RESULT}
+ calendar feed : $(calendar_feed_url)
+ watchdog      : UptimeRobot keyword monitor on https://${ALT_DOMAIN_FIRST:-$(read_env_value DOMAIN)}/api/health/public, keyword "ok":true (§8a)
 
  Only Aman can do these three:
   1. Fill the keys in ${MDO_DIR}/.env still at example/empty values:

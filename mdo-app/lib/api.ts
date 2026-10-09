@@ -10,6 +10,7 @@ import type {
   WaSweepFlagsResponse, WaSweepChatsResponse, WaSweepChat,
   ComplianceUpcomingResponse, ComplianceEntitiesResponse, ComplianceEntity,
   MailRecentResponse, MailStatsResponse,
+  CorpAction, CorpActionsUpcomingResponse,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -196,6 +197,12 @@ export const api = {
     recent: (days = 7, category = "") =>
       get<MailRecentResponse>(`/api/mail/recent?days=${days}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
     ack:    (id: number) => post<{ ok: boolean; id: number; status: string }>(`/api/mail/${id}/ack`, {}),
+  },
+
+  // ── Corporate actions (corp-actions bot): next 14 days by ex/record date, holder column on every row ──
+  corpActions: {
+    upcoming: (days = 14) => get<CorpActionsUpcomingResponse>(`/api/corp-actions/upcoming?days=${days}`),
+    recent:   (days = 7) => get<{ days: number; items: CorpAction[] }>(`/api/corp-actions/recent?days=${days}`),
   },
 
   // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──

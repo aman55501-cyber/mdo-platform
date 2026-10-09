@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS share_master_holdings (
     ticker_verified INTEGER NOT NULL DEFAULT 1,  -- 0 = code not in HDFC_CODE_MAP / NSE list ("unverified ticker")
     source TEXT DEFAULT 'hdfc-csv', uploaded_at TEXT DEFAULT (datetime('now')),  -- hdfc-csv | hdfc-json | angel-dp | angel-json
     isin TEXT DEFAULT '', broker TEXT DEFAULT '',                               -- Angel DP rows carry the ISIN
+    bse_code TEXT DEFAULT '',                    -- BSE scrip code for a BSE-only holding (priced as <code>.BO)
     UNIQUE(holder, ticker)
 );
 CREATE TABLE IF NOT EXISTS share_master_positions (
@@ -348,25 +349,75 @@ HDFC_CODE_MAP = {
     # 2026-10-09 refresh left eight codes unresolved by name. These three are in NSE EQUITY_L (matched on
     # the VPS list by ISIN and by NSE-spelled name); the HDFC export spells the name differently
     # ("A V T NATURAL PRODUCTS", "PCBL CHEMICALS", "SARDA ENERGY & MINERRALS"), so the normaliser missed.
-    # Not mapped, not in EQUITY_L: DIATEA (Diana Tea, BSE only), DUROFLX (Veritas (India), BSE only),
-    # HDFCMFGETF (HDFC Gold ETF — ETF list, not equity), JAIASS (Jaiprakash Associates, delisted Jun 2026),
-    # JSGLEASING (Colab Platforms, BSE only). They stay "unverified ticker" until Aman says otherwise.
+    # Not in EQUITY_L. Verified by the 2026-10-09 worker (BSE scrip codes / the ETF's NSE symbol) and seeded
+    # here as structured entries: {"bse": code} = BSE-only, priced from Yahoo as <code>.BO (the ticker stays the
+    # HDFC code); {"nse": symbol} = listed on NSE under another symbol. JAIASS (Jaiprakash Associates) is NOT
+    # mapped: see UNPRICED below — it stays unpriced with the reason until Aman says otherwise.
     "AVTNAT": "AVTNPL", "PHICAR": "PCBL", "RAIALL": "SARDAEN",
+    "DIATEA": {"bse": "530959", "name": "Diana Tea"},
+    "DUROFLX": {"bse": "512229", "name": "Veritas (India)"},
+    "JSGLEASING": {"bse": "542866", "name": "Colab Platforms"},
+    "HDFCMFGETF": {"nse": "HDFCGOLD", "name": "HDFC Gold ETF"},
+}
+# Tickers with no price by Aman's standing: the flag text is the reason, shown on every row (Directive 17),
+# never a blank. Keyed by the ticker the holding is stored under.
+UNPRICED = {
+    "JAIASS": "withdrawn from trading 18 Jun 2026 — awaiting Aman's instruction",
 }
 HDFC_CSV_COLUMNS = ("Stock Name", "Company Name", "CMP", "Invested Value", "Average Cost Value",
                     "Unrealized Profit/Loss", "Current Value", "Qty")
 _HDFC_SERIES = re.compile(r"(EQ|IQ|BE|BZ|SM|ST)$")
 
 
-def hdfc_code_to_ticker(code: Any) -> tuple[str, bool]:
-    """'ZOMATOEQ' → ('ETERNAL', True); 'DECGOLEQ' → ('DECGOL', False)."""
+def _strip_code(code: Any) -> str:
     raw = re.sub(r"[^A-Z0-9&-]", "", str(code or "").strip().upper())
-    if not raw:
+    return (_HDFC_SERIES.sub("", raw) or raw) if raw else ""
+
+
+def map_entry(code: Any) -> dict | None:
+    """The HDFC_CODE_MAP entry for a code, normalised: {"ticker", "bse", "nse", "name"} or None. A plain string
+    entry is an NSE symbol; a dict entry carries {"bse": scrip code} and/or {"nse": symbol}."""
+    stripped = _strip_code(code)
+    if not stripped or stripped not in HDFC_CODE_MAP:
+        return None
+    ent = HDFC_CODE_MAP[stripped]
+    if isinstance(ent, str):
+        return {"ticker": ent, "nse": ent, "bse": "", "name": ""}
+    nse = str(ent.get("nse") or "").strip().upper()
+    bse = str(ent.get("bse") or "").strip()
+    return {"ticker": nse or stripped, "nse": nse, "bse": bse, "name": str(ent.get("name") or "")}
+
+
+def hdfc_code_to_ticker(code: Any) -> tuple[str, bool]:
+    """'ZOMATOEQ' → ('ETERNAL', True); 'DIATEAEQ' → ('DIATEA', True) (BSE-only, see map_entry);
+    'DECGOLEQ' → ('DECGOL', False)."""
+    stripped = _strip_code(code)
+    if not stripped:
         return "", False
-    stripped = _HDFC_SERIES.sub("", raw) or raw
-    if stripped in HDFC_CODE_MAP:
-        return HDFC_CODE_MAP[stripped], True
+    ent = map_entry(stripped)
+    if ent:
+        return ent["ticker"], True
     return stripped, False
+
+
+def hdfc_code_bse(code: Any) -> str:
+    """The BSE scrip code the map carries for an HDFC code ('DIATEAEQ' → '530959'), else ''."""
+    ent = map_entry(code)
+    return ent["bse"] if ent else ""
+
+
+def bse_code_for(ticker: Any, hdfc_code: Any = "", stored: Any = "") -> str:
+    """The BSE scrip code to price a holding with: the stored column first, then the map by HDFC code, then
+    the map by the ticker itself (a BSE-only holding keeps the HDFC code as its ticker)."""
+    for cand in (stored, hdfc_code_bse(hdfc_code), hdfc_code_bse(ticker)):
+        c = str(cand or "").strip()
+        if c.isdigit():
+            return c
+    return ""
+
+
+def unpriced_note(ticker: Any) -> str:
+    return UNPRICED.get(clean_symbol(ticker), "")
 
 
 # ── NSE equity list: resolve an HDFC code by company name ───────────────────
@@ -551,7 +602,8 @@ def holdings_from_json(doc: dict, holder: str = "", nse: dict | None = None) -> 
         holdings.append({"holder": holder, "ticker": ticker, "hdfc_code": code[:20], "isin": isin[:12], "broker": broker or ("Angel One" if src == "angel-json" else "HDFC"),
                          "company": str(h.get("name") or "")[:120],
                          "qty": qty, "avg_price": avg, "cmp": cmp_, "invested": invested, "value": value, "pnl": pnl,
-                         "pnl_pct": pnl_pct, "ticker_verified": ok, "resolved_by": how, "source": src})
+                         "pnl_pct": pnl_pct, "ticker_verified": ok, "resolved_by": how, "source": src,
+                         "bse_code": bse_code_for(ticker, code, h.get("bse_code"))})
     return {"holdings": holdings, "skipped": skipped, "unverified": unverified, "holder": holder,
             "as_of": str(doc.get("as_of") or "")[:20],
             "resolved_by": {how: sum(1 for h in holdings if h["resolved_by"] == how)
@@ -706,7 +758,7 @@ def parse_hdfc_csv(text: str | bytes, holder: str = "", nse: dict | None = None)
         holdings.append({"holder": str(holder or "").strip()[:60], "ticker": ticker, "hdfc_code": code.upper()[:20],
                          "company": company[:120], "qty": qty, "avg_price": avg,
                          "cmp": cmp_, "invested": invested, "value": value, "pnl": pnl, "pnl_pct": _pct(pnl, invested),
-                         "ticker_verified": ok, "resolved_by": how, "source": "hdfc-csv"})
+                         "ticker_verified": ok, "resolved_by": how, "source": "hdfc-csv", "bse_code": hdfc_code_bse(code)})
     return {"holdings": holdings, "skipped": skipped, "unverified": unverified, "columns": idx,
             "resolved_by": {how: sum(1 for h in holdings if h["resolved_by"] == how) for how in ("map", "nse-exact", "nse-prefix", "unresolved")}}
 
@@ -820,8 +872,20 @@ def holdings_from_csv_rows(rows: list[dict]) -> list[dict]:
     for r in rows:
         out.append({"account": str(r.get("holder") or "?"), "ticker": r.get("ticker"), "qty": r.get("qty"),
                     "avg_price": r.get("avg_price"), "ltp": r.get("cmp"), "company": r.get("company") or "",
-                    "ticker_verified": bool(r.get("ticker_verified", 1)),
+                    "ticker_verified": bool(r.get("ticker_verified", 1)), "hdfc_code": r.get("hdfc_code") or "",
+                    "bse_code": bse_code_for(r.get("ticker"), r.get("hdfc_code"), r.get("bse_code")),
                     "source": f"{r.get('source') or 'hdfc-csv'} {str(r.get('uploaded_at') or '')[:10]}".strip()})
+    return out
+
+
+def bse_codes_for(holdings: list[dict]) -> dict[str, str]:
+    """{ticker: BSE scrip code} for the holdings that carry one — the .BO fallback mdo_levels.fetch_ltp takes."""
+    out: dict[str, str] = {}
+    for h in holdings:
+        t = clean_symbol(h.get("ticker"))
+        c = bse_code_for(t, h.get("hdfc_code"), h.get("bse_code"))
+        if t and c:
+            out[t] = c
     return out
 
 
@@ -850,7 +914,10 @@ def portfolio_rows(holdings: list[dict], ltps: dict[str, float | None] | None = 
             continue
         ltp = ltps.get(t)
         price_note = ""                                   # Directive 17: no price → the reason, never a blank
-        if ltp is None or ltp <= 0:
+        unpriced = unpriced_note(t)
+        if unpriced:                                      # Aman's standing (UNPRICED): no price, the reason on the row
+            ltp, price_note = None, unpriced
+        elif ltp is None or ltp <= 0:
             ltp = _num(h.get("ltp"))
             if ltp is not None and ltp <= 0:
                 ltp = None
@@ -869,6 +936,8 @@ def portfolio_rows(holdings: list[dict], ltps: dict[str, float | None] | None = 
         r["flag"] = flag_for(r["weight_pct"], r["pnl_pct"])
         if not r["ticker_verified"]:
             r["flag"] = "+".join(x for x in (r["flag"], "unverified ticker") if x)
+        if unpriced_note(r["ticker"]):
+            r["flag"] = "+".join(x for x in (r["flag"], unpriced_note(r["ticker"])) if x)
     rows.sort(key=lambda r: (r["account"], -(r["value"] or 0), r["ticker"]))
     return rows
 
@@ -1344,8 +1413,8 @@ def fetch_book(timeout: float = 25.0) -> dict:
         return {"error": str(e)[:200]}
 
 
-def fetch_ltps(tickers: list[str]) -> dict[str, float | None]:
-    return lv.fetch_ltp(tickers)
+def fetch_ltps(tickers: list[str], bse_codes: dict[str, str] | None = None) -> dict[str, float | None]:
+    return lv.fetch_ltp(tickers, bse_codes=bse_codes) if bse_codes else lv.fetch_ltp(tickers)
 
 
 def vault_dir() -> str:
@@ -1381,7 +1450,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
         db = db if db is not None else await vdb()
         await db.executescript(SCHEMA)
         cols = {r[1] for r in await db.execute_fetchall("PRAGMA table_info(share_master_holdings)")}
-        for col in ("isin", "broker"):                   # tables created before the Angel import
+        for col in ("isin", "broker", "bse_code"):       # tables created before the Angel import / the BSE fallback
             if col not in cols:
                 await db.execute(f"ALTER TABLE share_master_holdings ADD COLUMN {col} TEXT DEFAULT ''")
         await db.commit()
@@ -1569,14 +1638,15 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
         for h in items:
             await db.execute(
                 "INSERT INTO share_master_holdings (holder, ticker, hdfc_code, company, qty, avg_price, cmp, invested, value, pnl, "
-                "pnl_pct, ticker_verified, source, uploaded_at, isin, broker) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "pnl_pct, ticker_verified, source, uploaded_at, isin, broker, bse_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(holder, ticker) DO UPDATE SET qty=excluded.qty, avg_price=excluded.avg_price, cmp=excluded.cmp, "
                 "invested=excluded.invested, value=excluded.value, pnl=excluded.pnl, pnl_pct=excluded.pnl_pct, "
                 "ticker_verified=excluded.ticker_verified, uploaded_at=excluded.uploaded_at, company=excluded.company, hdfc_code=excluded.hdfc_code, "
-                "source=excluded.source, isin=excluded.isin, broker=excluded.broker",
+                "source=excluded.source, isin=excluded.isin, broker=excluded.broker, bse_code=excluded.bse_code",
                 (holder, h["ticker"], h.get("hdfc_code") or "", h.get("company") or "", h.get("qty"), h.get("avg_price"), h.get("cmp"),
                  h.get("invested"), h.get("value"), h.get("pnl"), h.get("pnl_pct"), 1 if h.get("ticker_verified", True) else 0,
-                 str(h.get("source") or "hdfc-csv")[:30], stamp, str(h.get("isin") or "")[:12], str(h.get("broker") or "")[:40]))
+                 str(h.get("source") or "hdfc-csv")[:30], stamp, str(h.get("isin") or "")[:12], str(h.get("broker") or "")[:40],
+                 bse_code_for(h["ticker"], h.get("hdfc_code"), h.get("bse_code"))[:12]))
         await db.commit()
         return {"holder": holder, "stored": len(items), "uploaded_at": stamp}
 
@@ -1674,7 +1744,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
         open_calls = await calls_all(status="open")
         tickers = sorted({h["ticker"] for h in holdings} | {clean_symbol(c["ticker"]) for c in open_calls}
                          | {norm_ticker(l.get("ticker")) for l in lvls})
-        ltps = await asyncio.to_thread(fetch_ltps, tickers) if tickers else {}
+        bse = bse_codes_for(holdings)                    # BSE-only holdings: Yahoo <scrip code>.BO after the NSE pass
+        ltps = (await asyncio.to_thread(fetch_ltps, tickers, bse) if bse else await asyncio.to_thread(fetch_ltps, tickers)) if tickers else {}
         for l in lvls:                                   # the Levels tab shows the freshest price we have
             t = norm_ticker(l.get("ticker"))
             if _num(ltps.get(t)) is not None:
@@ -1912,4 +1983,4 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
 
     return {"ensure_schema": ensure_schema, "state": state, "refresh": refresh, "calls_insert": calls_insert,
             "mausaji_messages": mausaji_messages, "outcomes_update": outcomes_update, "holdings_store": holdings_store,
-            "positions_store": positions_store}
+            "positions_store": positions_store, "holders_map": holders_map}

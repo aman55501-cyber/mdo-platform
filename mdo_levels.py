@@ -258,7 +258,31 @@ def _yahoo_chart(symbol: str, timeout: float) -> float | None:
     return round(px, 2) if px is not None and px > 0 else None
 
 
-def fetch_ltp(tickers: list[str], timeout: float = 10.0) -> dict[str, float | None]:
+def _yahoo_symbols(symbols: dict[str, str], timeout: float) -> dict[str, float]:
+    """{ticker: explicit Yahoo symbol} (e.g. {"DIATEA": "530959.BO"}) → {ticker: price}: one batch quote
+    call, then the per-symbol chart endpoint for whatever the batch left out. Never raises."""
+    out: dict[str, float] = {}
+    if not symbols:
+        return out
+    by_sym = {v.upper(): k for k, v in symbols.items()}
+    data = _http_json(YAHOO_QUOTE.format(symbols=urllib.parse.quote(",".join(by_sym))), timeout)
+    try:
+        for q in data["quoteResponse"]["result"] or []:
+            sym = str(q.get("symbol") or "").upper()
+            px = _num(q.get("regularMarketPrice"))
+            if sym in by_sym and px is not None and px > 0:
+                out[by_sym[sym]] = round(px, 2)
+    except (TypeError, KeyError):
+        pass
+    for sym, t in by_sym.items():
+        if t not in out:
+            px = _yahoo_chart(sym, min(timeout, 6.0))
+            if px is not None:
+                out[t] = px
+    return out
+
+
+def fetch_ltp(tickers: list[str], timeout: float = 10.0, bse_codes: dict[str, str] | None = None) -> dict[str, float | None]:
     """{ticker: last traded price} for every ticker asked, None where unknown. Never raises.
 
     LEVELS_PRICE_SOURCE (env, optional):
@@ -268,6 +292,10 @@ def fetch_ltp(tickers: list[str], timeout: float = 10.0) -> dict[str, float | No
       "none"           fetch nothing (every ltp n/a) — for a day Yahoo is blocked.
       http(s)://...    a custom JSON source; "&symbols=TCS,INFY" is appended and the reply must be
                        {"TCS": 3612.5, ...} or {"ltps": {...}}.
+    `bse_codes` ({ticker: BSE scrip code}, e.g. {"DIATEA": "530959"}) is the BSE fallback for a holding
+    with no NSE symbol: whatever is still unpriced after the .NS/.BO passes is asked for as
+    "<scrip code>.BO" (Yahoo's BSE spelling). Share Master fills it from share_master_holdings.bse_code
+    / HDFC_CODE_MAP {"bse": …} entries.
     """
     out: dict[str, float | None] = {}
     for t in tickers:
@@ -301,6 +329,10 @@ def fetch_ltp(tickers: list[str], timeout: float = 10.0) -> dict[str, float | No
                 px = _yahoo_chart(t + suffix, min(timeout, 6.0))
                 if px is not None:
                     out[t] = px
+        want = {norm_ticker(t): str(c).strip() for t, c in (bse_codes or {}).items()}
+        want = {t: c + ".BO" for t, c in want.items() if t in out and out[t] is None and c.isdigit()}
+        if want:
+            out.update(_yahoo_symbols(want, timeout))
     except Exception:
         pass
     return out

@@ -600,3 +600,44 @@ export interface MailStatsResponse {
   state: { last_uid: number; last_run_at: string | null; last_line: string; runs: number }
   note: string
 }
+
+// ── Corporate actions (corp-actions bot): NSE announcements + corporate actions for every held/watched ticker ──
+export type CorpActionKind = "results" | "dividend" | "buyback" | "bonus" | "split" | "rights" | "agm" | "board_meeting" | "record_date" | "other"
+
+export interface CorpAction {
+  id: number
+  ticker: string
+  kind: CorpActionKind
+  subject: string
+  ex_date: string                   // ISO date or ""
+  record_date: string               // ISO date or ""
+  announced_at: string              // ISO datetime (IST)
+  url: string
+  source: "announcement" | "action"
+  company: string
+  pushed_at: string | null
+  created_at: string
+  date: string                      // ex_date || record_date || announced day
+  held_by: { holder: string; qty: number | null }[]   // Directive 18
+  held_text: string                 // "Ashok 3000, Aman 500" or "nobody"
+}
+
+export interface CorpActionsRun {
+  id: number
+  ran_at: string
+  tickers: number
+  new: number
+  failed: number
+  nse_ok: number
+  line: string
+  pushed: number
+}
+
+export interface CorpActionsUpcomingResponse {
+  as_of: string
+  today: string
+  days: number
+  items: CorpAction[]
+  last_run: CorpActionsRun | null
+  tickers_watched: number
+}

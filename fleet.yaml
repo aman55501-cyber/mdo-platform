@@ -461,6 +461,53 @@ bots:
     - One line per run at most, only for the actionable categories
     - No LLM call, ever (Directive 15)
     - Every run reports, especially an empty one (Directive 5)
+- id: corp-actions
+  name: Corporate actions — NSE announcements, results, dividends, record dates for every held or watched share
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py corp-actions
+  cadence: daily 18:30 IST
+  model: none
+  heartbeat: 'every run, also when nothing is new: "corp-actions: T tickers checked, N new (R results, D dividends,
+    O other) — NSE ok"; when NSE did not answer: "corp-actions: T tickers checked, 0 new (0 results, 0 dividends,
+    0 other) — NSE unavailable (F of T tickers unanswered)" — a warning, nothing invented'
+  checks: []
+  serves:
+  - capital-rules
+  enabled: true
+  objective: Aman hears the same evening about every board meeting, result, dividend, buyback, bonus/split, record
+    date and AGM/e-voting on a share the family holds or watches — with who holds it and how many
+  notes: 'Built 2026-10-09 on the CoS brief. Tickers: share_master_holdings (all holders, verified tickers only) +
+    share_levels. Source: NSE public JSON (corporate-announcements and corporates-corporateActions, index=equities,
+    per symbol) behind the same cookie dance mdo_option_levels uses, one request per second, never more. Rows:
+    corp_actions UNIQUE(ticker, subject, announced_at); announcements older than 30 days are not stored, so the
+    first run does not push months of history. Dashboard: Morning page card "Corporate actions", next 14 days by
+    ex/record date (GET /api/corp-actions/upcoming?days=14).'
+  charter:
+    purpose: Nothing on a held share surprises Aman the next morning — results dates, dividends, record dates,
+      buybacks and meetings arrive the evening NSE publishes them, each with the holder column (Directive 18).
+    thinks: 'Rules only, no model. kind from the subject text: results, dividend, buyback, bonus, split, rights, agm
+      (AGM/EGM/postal ballot/e-voting), board_meeting, record_date, other. A row is NEW when (ticker, subject,
+      announced_at) was not in corp_actions before; everything else is silent. NSE down = "NSE unavailable",
+      reported, never guessed around.'
+    works: 'Daily 18:30 IST (cron 0 13 UTC): POST /api/corp-actions/run → for every ticker, two NSE calls at 1
+      req/s → INSERT OR IGNORE → one WhatsApp push with the NEW rows only, nearest date first, each line
+      "TICKER · kind · date · held: Ashok 3000, Aman 500", at most 25 lines then "+N more on the dashboard"; zero
+      new → nothing pushed. Three consecutive tickers with no answer at all → stop, heartbeat says NSE unavailable;
+      the next run catches up because nothing was stored.'
+    limits: Reads NSE only — a BSE-only scrip (DIATEA, DUROFLX, JSGLEASING) or an unverified HDFC code is not
+      checked and is said so by its absence from the count. Cannot see the dividend amount credited, cannot vote,
+      cannot tender in a buyback — Aman's click, through the broker. NSE's own classification text is what it
+      files; the kind is a reading of that text, not a legal category.
+    minimum_output: 'Every run: the heartbeat line with the counts and "NSE ok" / "NSE unavailable". Any NEW row:
+      the one push. A run with no heartbeat is a dead run.'
+    rules:
+    - Holder on every share line, or "nobody" (Directive 18)
+    - One push per run at most, NEW rows only, max 25 lines then "+N more on the dashboard"
+    - One NSE request per second, never more; three unanswered tickers in a row → stop and say "NSE unavailable"
+    - Never invents a date, an amount or a row; what NSE did not give is left blank
+    - No LLM call, ever (Directive 15)
+    - Every run reports, especially an empty one (Directive 5)
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron

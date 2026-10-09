@@ -84,6 +84,7 @@ async def vdb() -> aiosqlite.Connection:
         await _options["ensure_schema"](_vdb)
         await _compliance["ensure_schema"](_vdb)
         await _mail["ensure_schema"](_vdb)
+        await _corp["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -682,7 +683,11 @@ async def _require_key(request, call_next):
             or request.url.path == "/api/grok/context"
             # the vault carries its own, separate token (X-Vault-Token); the app
             # key alone must never open it, and vault callers need not hold the app key
-            or request.url.path.startswith("/api/vault/")):
+            or request.url.path.startswith("/api/vault/")
+            # the external watchdog (UptimeRobot) reads this without any key: ok/age/bridges only, no data (mdo_health)
+            or request.url.path == "/api/health/public"
+            # the phone's calendar subscription carries its own token (CALENDAR_TOKEN); the app key never travels in it
+            or request.url.path == "/api/calendar.ics"):
         return await call_next(request)
     supplied = (
         request.headers.get("x-mdo-key")
@@ -3348,6 +3353,22 @@ _compliance = mdo_compliance.register(app, vdb, lambda text: _cos["send_cos"](te
 # spend; run by mdo_agent.py mail-reader. bidsnrfp results also go through the tender door's in-process body.
 import mdo_mail
 _mail = mdo_mail.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos["tender_ingest"])
+
+# corp-actions: NSE corporate announcements + corporate actions for every held (all holders) or watched ticker,
+# corp_actions + corp_actions_runs, /api/corp-actions/*. One push per run, NEW rows only, holder column on every
+# line (Directive 18). Zero LLM spend; run by mdo_agent.py corp-actions daily 18:30 IST.
+import mdo_corp_actions
+_corp = mdo_corp_actions.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _share_master)
+
+# Public watchdog door: GET /api/health/public, no key, ok/heartbeat-age/bridges only — the one alarm that fires
+# when the fleet itself is dead (UptimeRobot, DEPLOY_HOSTINGER.md §"External watchdog").
+import mdo_health
+_health = mdo_health.register(app, vdb)
+
+# Calendar feed: GET /api/calendar.ics?token=<CALENDAR_TOKEN> — compliance due dates (365 days, 7d + 1d alarms),
+# position expiries, the option alert note, the Las Vegas trip dates. Computed on request; no bot, no table.
+import mdo_calendar
+_calendar = mdo_calendar.register(app, vdb, _compliance, mdo_share_master)
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

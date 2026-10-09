@@ -212,13 +212,28 @@ def test_hdfc_codes_mapped_after_2026_10_09_refresh():
         assert sm.resolve_ticker(code, company, NSE) == (ticker, True, "map")
         assert sm.resolve_ticker(code, company, None) == (ticker, True, "map")
         assert sm.resolve_by_name(company, NSE) is None               # the normaliser alone would not have caught it
-    # the five that are not NSE equities keep the stripped code, unverified, with or without the list
-    for code, company in (("DIATEAEQ", "DIANA TEA COMPANY LIMITED"), ("DUROFLXEQ", "VERITAS (INDIA) LIMITED"),
-                          ("HDFCMFGETFEQ", "HDFC GOLD ETF"), ("JAIASSEQ", "JAIPRAKASH ASSOCIATES LIMITED"),
-                          ("JSGLEASINGEQ", "COLAB PLATFORMS LIMITED")):
-        stripped = code[:-2]
-        assert stripped not in sm.HDFC_CODE_MAP
-        assert sm.resolve_ticker(code, company, NSE) == (stripped, False, "unresolved")
+    # the four verified on 2026-10-09 as BSE-only / ETF carry structured map entries (the BSE fallback build):
+    # the ticker stays the HDFC code for a BSE-only scrip and the scrip code rides along; the ETF maps to its NSE symbol
+    for code, company, ticker, bse in (("DIATEAEQ", "DIANA TEA COMPANY LIMITED", "DIATEA", "530959"),
+                                       ("DUROFLXEQ", "VERITAS (INDIA) LIMITED", "DUROFLX", "512229"),
+                                       ("JSGLEASINGEQ", "COLAB PLATFORMS LIMITED", "JSGLEASING", "542866"),
+                                       ("HDFCMFGETFEQ", "HDFC GOLD ETF", "HDFCGOLD", "")):
+        assert sm.hdfc_code_to_ticker(code) == (ticker, True)
+        assert sm.hdfc_code_bse(code) == bse
+        assert sm.resolve_ticker(code, company, NSE) == (ticker, True, "map")
+        assert sm.resolve_ticker(code, company, None) == (ticker, True, "map")
+    assert sm.map_entry("HDFCMFGETF") == {"ticker": "HDFCGOLD", "nse": "HDFCGOLD", "bse": "", "name": "HDFC Gold ETF"}
+    assert sm.map_entry("ZOMATOEQ") == {"ticker": "ETERNAL", "nse": "ETERNAL", "bse": "", "name": ""} and sm.map_entry("NOPE") is None
+    # JAIASS (Jaiprakash Associates) stays unmapped and unverified; portfolio_rows carries Aman's standing as the flag
+    assert "JAIASS" not in sm.HDFC_CODE_MAP
+    assert sm.resolve_ticker("JAIASSEQ", "JAIPRAKASH ASSOCIATES LIMITED", NSE) == ("JAIASS", False, "unresolved")
+    assert sm.unpriced_note("JAIASS") == "withdrawn from trading 18 Jun 2026 — awaiting Aman's instruction" and sm.unpriced_note("TCS") == ""
+    rows = sm.portfolio_rows([{"account": "Ashok", "ticker": "JAIASS", "qty": 1000, "avg_price": 10.0, "ltp": 4.0, "ticker_verified": False},
+                              {"account": "Ashok", "ticker": "TCS", "qty": 10, "avg_price": 3000.0}], {"JAIASS": 5.0, "TCS": 3500.0})
+    j = next(r for r in rows if r["ticker"] == "JAIASS")
+    assert j["ltp"] is None and j["value"] is None and j["price_note"] == sm.UNPRICED["JAIASS"]
+    assert j["flag"] == "unverified ticker+withdrawn from trading 18 Jun 2026 — awaiting Aman's instruction"
+    assert next(r for r in rows if r["ticker"] == "TCS")["ltp"] == 3500.0
     csv_text = "\n".join([
         ",".join(sm.HDFC_CSV_COLUMNS),
         "AVTNATEQ,A V T NATURAL PRODUCTS LIMITED,93.27,270479.99,90.16,9330.01,279810.00,3000.0",
@@ -228,8 +243,9 @@ def test_hdfc_codes_mapped_after_2026_10_09_refresh():
     ])
     p = sm.parse_hdfc_csv(csv_text, "Ashok", NSE)
     assert [(h["ticker"], h["ticker_verified"], h["resolved_by"]) for h in p["holdings"]] == [
-        ("AVTNPL", True, "map"), ("PCBL", True, "map"), ("SARDAEN", True, "map"), ("DIATEA", False, "unresolved")]
-    assert p["unverified"] == ["DIATEA"] and p["resolved_by"]["map"] == 3
+        ("AVTNPL", True, "map"), ("PCBL", True, "map"), ("SARDAEN", True, "map"), ("DIATEA", True, "map")]
+    assert p["unverified"] == [] and p["resolved_by"]["map"] == 4
+    assert [h["bse_code"] for h in p["holdings"]] == ["", "", "", "530959"]
     # the CoS's transcribed JSON (pf/<holder>_<date>.json): '?' marks unverified, re-resolved when the list knows the name
     doc = {"holder": "Aman", "as_of": "2026-10-09", "holdings": [
         {"code": "AFFLEEQ", "ticker": "AFFLE?", "name": "AFFLE 3I LIMITED", "qty": 500.0, "avg": 1438.75, "cmp": 1424.6, "cur": 712300.0, "pl_pct": -1.0},
@@ -846,3 +862,85 @@ def test_import_tool_routes_each_shape(monkeypatch, tmp_path, capsys):
     tool.main(["x", str(tmp_path), "--no-refresh"])
     assert "/api/share-master/refresh" not in [p for p, _ in calls]
     assert tool.main(["x", str(tmp_path / "none")]) == 1
+
+
+# ── BSE price fallback (2026-10-09): a holding with no NSE symbol is priced from Yahoo as <BSE scrip code>.BO ──
+def test_bse_fallback_resolver_and_stubbed_fetch(monkeypatch):
+    import mdo_levels as lv
+    # resolver: stored column first, then the map by HDFC code, then the map by ticker; never a non-numeric code
+    assert sm.bse_code_for("DIATEA", "DIATEAEQ", "") == "530959" and sm.bse_code_for("DIATEA", "", "") == "530959"
+    assert sm.bse_code_for("XYZ", "XYZEQ", "500123") == "500123" and sm.bse_code_for("XYZ", "XYZEQ", "abc") == ""
+    assert sm.bse_code_for("TCS", "TCSEQ", "") == "" and sm.bse_code_for("HDFCGOLD", "HDFCMFGETFEQ", "") == ""
+    holds = sm.holdings_from_csv_rows([
+        {"holder": "Ashok", "ticker": "DIATEA", "hdfc_code": "DIATEAEQ", "qty": 30000, "avg_price": 45.57, "cmp": 28.46, "bse_code": ""},
+        {"holder": "Ashok", "ticker": "DUROFLX", "hdfc_code": "DUROFLXEQ", "qty": 100, "avg_price": 10, "cmp": 11, "bse_code": "512229"},
+        {"holder": "Aman", "ticker": "TCS", "hdfc_code": "TCSEQ", "qty": 10, "avg_price": 3000, "cmp": 3400},
+        {"holder": "Aman", "ticker": "HDFCGOLD", "hdfc_code": "HDFCMFGETFEQ", "qty": 50, "avg_price": 60, "cmp": 70}])
+    assert sm.bse_codes_for(holds) == {"DIATEA": "530959", "DUROFLX": "512229"}
+    # the fetch: .NS then .BO on the ticker, then <code>.BO for what is still missing — only for the mapped ones
+    urls: list[str] = []
+
+    def fake_http(url, timeout):
+        urls.append(url)
+        if "/v7/finance/quote" in url and "TCS.NS" in url:
+            return {"quoteResponse": {"result": [{"symbol": "TCS.NS", "regularMarketPrice": 3410.0},
+                                                 {"symbol": "HDFCGOLD.NS", "regularMarketPrice": 71.25}], "error": None}}
+        if "/v7/finance/quote" in url and "530959.BO" in url:
+            return {"quoteResponse": {"result": [{"symbol": "530959.BO", "regularMarketPrice": 28.9}], "error": None}}
+        if "/v8/finance/chart/512229.BO" in url:
+            return {"chart": {"result": [{"meta": {"regularMarketPrice": 11.4}}]}}
+        return None
+    monkeypatch.delenv("LEVELS_PRICE_SOURCE", raising=False)
+    monkeypatch.setattr(lv, "_http_json", fake_http)
+    out = lv.fetch_ltp(["TCS", "DIATEA", "DUROFLX", "HDFCGOLD"], bse_codes={"DIATEA": "530959", "DUROFLX": "512229", "TCS": "532540"})
+    assert out == {"TCS": 3410.0, "DIATEA": 28.9, "DUROFLX": 11.4, "HDFCGOLD": 71.25}
+    assert any("DIATEA.NS" in u for u in urls) and any("DIATEA.BO" in u for u in urls)      # the ticker passes first
+    assert any("530959.BO" in u and "512229.BO" in u for u in urls)                         # then one batch of scrip codes
+    assert any("/v8/finance/chart/512229.BO" in u for u in urls)                            # chart retry for the batch miss
+    assert not any("532540" in u for u in urls)                                             # TCS was priced on NSE: no BSE call
+    # the Share Master seam passes the codes through, and the refresh prices the BSE-only rows
+    seen = {}
+    monkeypatch.setattr(sm.lv, "fetch_ltp", lambda tickers, timeout=10.0, bse_codes=None: seen.update({"bse": bse_codes}) or {t: {"DIATEA": 28.9}.get(t) for t in tickers})
+    assert sm.fetch_ltps(["DIATEA"], {"DIATEA": "530959"}) == {"DIATEA": 28.9} and seen["bse"] == {"DIATEA": "530959"}
+    rows = sm.portfolio_rows(holds, {"DIATEA": 28.9, "TCS": 3410.0, "HDFCGOLD": 71.25})
+    by = {r["ticker"]: r for r in rows}
+    assert by["DIATEA"]["ltp"] == 28.9 and by["DIATEA"]["price_note"] == "" and "unverified" not in by["DIATEA"]["flag"]
+    assert by["DUROFLX"]["ltp"] == 11.0 and by["DUROFLX"]["price_note"] == "broker/CSV price (Yahoo n/a)"
+
+
+def test_bse_code_column_migration_and_store(monkeypatch):
+    """share_master_holdings.bse_code: guarded ALTER TABLE on an old table; holdings_store writes it; the CSV holder's
+    rows feed bse_codes_for() on refresh."""
+    import asyncio
+    import aiosqlite
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "old.db")
+
+    async def go():
+        db = await aiosqlite.connect(path)
+        db.row_factory = aiosqlite.Row
+        await db.executescript(sm.SCHEMA.replace("    bse_code TEXT DEFAULT '',                    -- BSE scrip code for a BSE-only holding (priced as <code>.BO)\n", ""))
+        cols = {r[1] for r in await db.execute_fetchall("PRAGMA table_info(share_master_holdings)")}
+        assert "bse_code" not in cols
+        reg = sm.register(_FakeApp(), lambda: _ret(db))
+        await reg["ensure_schema"](db)
+        await reg["ensure_schema"](db)                                       # idempotent
+        cols = {r[1] for r in await db.execute_fetchall("PRAGMA table_info(share_master_holdings)")}
+        assert "bse_code" in cols
+        await reg["holdings_store"]([{"ticker": "DIATEA", "hdfc_code": "DIATEAEQ", "qty": 30000, "avg_price": 45.57, "cmp": 28.46, "ticker_verified": True},
+                                     {"ticker": "TCS", "hdfc_code": "TCSEQ", "qty": 10, "avg_price": 3000, "cmp": 3400}], "Ashok")
+        rows = [dict(r) for r in await db.execute_fetchall("SELECT ticker, bse_code FROM share_master_holdings ORDER BY ticker")]
+        assert rows == [{"ticker": "DIATEA", "bse_code": "530959"}, {"ticker": "TCS", "bse_code": ""}]
+        await db.close()
+
+    asyncio.run(go())
+
+
+class _FakeApp:
+    def get(self, *a, **k):
+        return lambda f: f
+    post = put = delete = get
+
+
+async def _ret(x):
+    return x

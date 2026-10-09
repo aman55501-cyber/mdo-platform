@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock, Landmark
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage, CorpAction } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -476,6 +476,9 @@ export default function MorningSetupPage() {
       {/* ── Mail (mail-reader bot): statements, contract notes and tender results — 7-day counts + the actionable rows ── */}
       <MailCard />
 
+      {/* ── Corporate actions (corp-actions bot): NSE results, dividends, record dates on held/watched shares — next 14 days ── */}
+      <CorpActionsCard />
+
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
         {/* ── Left: Pending calls ── */}
@@ -900,6 +903,99 @@ function ComplianceCard() {
             </div>
           )}
           <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>{q.data.footer}</div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Corporate actions card — NSE announcements + corporate actions on held/watched shares (corp-actions bot) ──
+// Rows come from /api/corp-actions/upcoming?days=14: everything with an ex/record date in the next 14 days, nearest
+// first, each with the holder column (Directive 18). The bot runs daily 18:30 IST and pushes NEW rows only; this
+// card is the "+N more on the dashboard". Loading state first, never a half table (Directive 17).
+
+const CORP_KIND_LABEL: Record<string, string> = {
+  results: "Results", dividend: "Dividend", buyback: "Buyback", bonus: "Bonus", split: "Split", rights: "Rights",
+  agm: "AGM / e-voting", board_meeting: "Board meeting", record_date: "Record date", other: "Other",
+}
+
+function CorpActionsCard() {
+  const q = useQuery({ queryKey: ["corp-actions-upcoming"], queryFn: () => api.corpActions.upcoming(14), refetchInterval: 10 * 60_000 })
+  const items: CorpAction[] = q.data?.items ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  const fmt = (iso: string) => {
+    if (!iso) return "—"
+    const d = new Date(iso.slice(0, 10) + "T00:00:00")
+    return isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })
+  }
+  const daysIn = (iso: string) => {
+    if (!iso || !q.data) return null
+    const a = new Date(iso.slice(0, 10) + "T00:00:00").getTime(), b = new Date(q.data.today + "T00:00:00").getTime()
+    return isNaN(a) || isNaN(b) ? null : Math.round((a - b) / 86_400_000)
+  }
+  const last = q.data?.last_run ?? null
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Landmark size={15} style={{ color: "var(--purple, var(--cyan))" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            CORPORATE ACTIONS{!q.isLoading && !q.error && q.data ? ` (next 14 days · ${items.length} dated · ${q.data.tickers_watched} tickers watched)` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!q.isLoading && !q.error && q.data && (
+            <span title={last?.line || ""} style={{ color: last && !last.nse_ok ? "var(--amber)" : "var(--text2)" }}>
+              {last ? `last run ${istClock(last.ran_at)} · ${last.nse_ok ? "NSE ok" : "NSE unavailable"} · ${last.new} new` : "no run yet — daily 18:30 IST"}
+            </span>
+          )}
+          <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Corporate actions unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && q.data && (
+        <>
+          {items.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              No ex/record date in the next 14 days on a held or watched share. The bot reports every run even when NSE has nothing new.
+            </div>
+          )}
+          {items.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Date</th><th style={th}>In</th><th style={th}>Ticker</th><th style={th}>Kind</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Subject</th><th style={{ ...th, whiteSpace: "normal" }}>Held</th>
+                </tr></thead>
+                <tbody>
+                  {items.map(r => {
+                    const n = daysIn(r.date)
+                    return (
+                      <tr key={r.id}>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace" }} title={r.ex_date ? `ex-date ${r.ex_date}` : r.record_date ? `record date ${r.record_date}` : ""}>
+                          {fmt(r.date)}{r.ex_date ? "" : r.record_date ? " (rec)" : ""}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 700, fontSize: 11, color: n !== null && n <= 1 ? "var(--red)" : n !== null && n <= 3 ? "var(--amber)" : "var(--text2)" }}>
+                          {n === null ? "—" : n === 0 ? "today" : n === 1 ? "tomorrow" : `${n}d`}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 600 }} title={r.company}>
+                          {r.url ? <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>{r.ticker}</a> : r.ticker}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11 }}>{CORP_KIND_LABEL[r.kind] ?? r.kind}</td>
+                        <td style={{ ...td, whiteSpace: "normal", minWidth: 220 }}>{r.subject}</td>
+                        <td style={{ ...td, whiteSpace: "normal", color: r.held_by.length ? "var(--text)" : "var(--text2)" }}>{r.held_text}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>
+            Source: NSE corporate announcements + corporate actions, one request per second, daily 18:30 IST. BSE-only scrips are not covered.
+          </div>
         </>
       )}
     </div>
