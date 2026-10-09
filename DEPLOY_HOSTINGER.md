@@ -173,6 +173,7 @@ To exercise a bot by hand:
 cd /docker/sharecfo/mdo-platform
 docker compose exec backend python mdo_agent.py daily-brief
 docker compose exec backend python mdo_housekeeping.py --dry-run
+docker compose exec backend python mdo_housekeeping.py --daily --dry-run
 ```
 Expect `heartbeat filed: …` or `filed report N — {...}`.
 
@@ -193,7 +194,8 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
 20 */6  * * *   $MDO python mdo_agent.py wa-intel            >> /var/log/mdo-agent.log 2>&1   # every 6h at :20
 30 1    * * 0   $MDO python mdo_agent.py business-pulse      >> /var/log/mdo-agent.log 2>&1   # Sun 07:00 IST
-30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST
+30 21   * * *   $MDO python mdo_housekeeping.py --daily      >> /var/log/mdo-agent.log 2>&1   # 03:00 IST daily: DB snapshots (§10)
+30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST: purge + weekly bundle
 0  22   * * 6   savelog -n -c 8 /var/log/mdo-agent.log                                        # keep 8 weeks of log
 ```
 (`$MDO` is shorthand for this document only; the script writes every line
@@ -223,9 +225,11 @@ Watch it: `tail -f /var/log/mdo-agent.log` · app: **Fleet & Memory** page.
 repo, never in a public path. Reached only through `/api/vault/list|get|put`
 with `X-Vault-Token` (`VAULT_TOKEN` in `.env`, separate from the app key), over
 the HTTPS domain. No delete over HTTP. Every access lands in `vault_audit`.
-Writes are atomic and keep a `.prev` copy. Housekeeping makes a weekly
-AES-256 backup (`archive/vault-YYYY-MM-DD.tar.gz.enc`, passphrase
-`VAULT_BACKUP_PASSPHRASE`) and keeps eight.
+Writes are atomic and keep a `.prev` copy. Every Sunday housekeeping folds the
+vault into the weekly AES-256 bundle (`/data/backups/weekly-YYYYMMDD.tar.enc`,
+passphrase `VAULT_BACKUP_PASSPHRASE`) together with the database snapshots —
+see §10. (Bundles made before 2026-10-09 are the older
+`archive/vault-YYYY-MM-DD.tar.gz.enc` files; they are left in place.)
 
 One-time import from the laptop (PowerShell, then SSH):
 ```
@@ -237,14 +241,90 @@ The two Sunday Routines (memory sync, finance update) read and write through
 the vault API from then on, laptop off. After their first clean run, rename the
 laptop folders `*.OLD`: memory points at one place, never two.
 
-## Data safety
+## 10. Records & backups — the VPS as system of record
 
-- SQLite lives in the Docker volume `mdo-data` — it survives rebuilds,
-  restarts, and `git pull` deployments.
-- Backup (run occasionally, or cron it):
+Everything the business remembers lives in one Docker volume, `mdo-data`,
+mounted at `/data` in the backend container. It survives rebuilds, restarts
+and every `git pull`. What it holds, and who keeps it tidy:
+
+| Path (in `mdo-data`) | What | Written by |
+|---|---|---|
+| `/data/vega_data.db` | the MDO database: ledger, tasks, intel, reports, chats, vault audit | backend |
+| `/data/vedanta_crm.db` | Vedanta CRM (when present) | backend |
+| `/data/vault/{memory,finance}` | Aman's private files (§9) | Routines via `/api/vault/*` |
+| `/data/archive/*.jsonl.gz` | rows housekeeping trimmed from the database, by month | housekeeping (weekly) |
+| `/data/backups/<name>-YYYYMMDD.db.gz` | daily SQLite snapshots, integrity-checked | housekeeping `--daily` |
+| `/data/backups/weekly-YYYYMMDD.tar.enc` | **the off-site file**: vault + latest snapshots, AES-256 | housekeeping (weekly) |
+
+The daily snapshot uses the SQLite online-backup API (consistent while the
+backend writes), runs `PRAGMA integrity_check` on the copy, and only then
+prunes older snapshots. The weekly bundle is `openssl enc -aes-256-cbc -pbkdf2`
+with `VAULT_BACKUP_PASSPHRASE` from `.env`; **without the passphrase there is
+no bundle** and housekeeping says so in its heartbeat every Sunday. Keep a copy
+of the passphrase off the VPS.
+
+### Retention
+
+| Record | Kept | Where |
+|---|---|---|
+| daily DB snapshots | 14 | `/data/backups/` |
+| weekly bundle (vault + DB) | 8 locally **+ every week in Google Drive › "MDO Backups"** | `/data/backups/` + Drive (bot `backup-offsite`) |
+| `agent_reports` | 60 days, then `archive/reports-YYYY-MM.jsonl.gz` | database → archive |
+| `whatsapp_messages` (unflagged) | 90 days, then `archive/whatsapp-YYYY-MM.jsonl.gz` | database → archive |
+| Docker logs | 30 MB per service (json-file, 10 MB × 3) | host, `docker compose logs` |
+| `/var/log/mdo-agent.log` | 8 weeks (`savelog`, §8) | host |
+| `vault_audit` rows | never trimmed | database |
+
+Never trimmed: the Objectives sheet, `agenda.yaml`, `COS_LOG.md`, open intel,
+open tasks, open jobs, the checks registry, `bot_memory`, the last 20 turns of
+any chat (Directive 12).
+
+### Off-site door
+
+`GET /api/vault/backup/list` → `[{name, bytes, created}]` and
+`GET /api/vault/backup/latest` → the newest `weekly-*.tar.enc` as a download
+(404 with a plain reason when there is none). Same `X-Vault-Token` as §9, every
+call lands in `vault_audit`. Only `.enc` files are ever served from here — never
+a raw `.db`, a snapshot or a vault file. The `backup-offsite` bot
+(`fleet.yaml`, a Claude Routine, Sun 08:00 IST) fetches it and drops it in the
+Drive folder **MDO Backups**; it never decrypts. Fetch it by hand:
+```bash
+curl -fsS -H "X-Vault-Token: $VAULT_TOKEN" -o latest.tar.enc https://api.<domain>/api/vault/backup/latest
+```
+
+### Restore in 5 commands
+
+On any machine with `openssl`, `tar` and `sqlite3` (`apt install sqlite3`),
+with the bundle in the current directory (from `/data/backups/` on the VPS, or
+the Drive copy):
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -pass env:VAULT_BACKUP_PASSPHRASE -in weekly-20261011.tar.enc -out weekly.tar   # 1. decrypt
+tar -xf weekly.tar                                                              # 2. unpack → db/*.db.gz + vault/{memory,finance}
+gunzip -c db/vega-20261011.db.gz > vega_data.db                                 # 3. the database (repeat for vedanta-*.db.gz)
+sqlite3 vega_data.db "PRAGMA integrity_check;"                                  # 4. must print: ok
+docker compose stop backend && docker compose cp vega_data.db backend:/data/vega_data.db && docker compose cp vault backend:/data/vault && docker compose start backend   # 5. put it back
+```
+Step 5 runs on the VPS in the repo directory; copy `vega_data.db` and `vault/`
+there first (`scp`). A fresh VPS needs §3–§5 first, then step 5.
+
+### Logs, ports and the host
+
+- **Docker logs** are capped in `docker-compose.yml` (`x-logging`, applied to
+  every service); nothing can fill the disk from a chatty container.
+- **Shares CFO on port 8000 is bound to `127.0.0.1` only.** Caddy proxies
+  `/hdfc/*` (the HDFC OAuth callback) to it over the compose network, so the
+  broker flow is unchanged. The terminal UI is reached through an SSH tunnel:
   ```bash
-  docker compose cp backend:/data/vega_data.db ./backup-$(date +%F).db
+  ssh -L 8000:127.0.0.1:8000 root@<VPS>     # then open http://localhost:8000
   ```
+- **`vps_harden.sh`** (run once as root, safe to re-run): ufw 22/80/443 (asks
+  before enabling), fail2ban sshd jail, security-only unattended-upgrades
+  with no auto-reboot, journald capped at 500 MB, prunes dangling Docker
+  images older than 7 days, prints a one-screen summary. It never edits
+  `sshd_config` or disables password auth. Note: Docker-published ports
+  bypass ufw, so the Hostinger panel firewall (§1) remains the place to
+  close 3000/8501 once the domain is live.
+- **Disk**: housekeeping files 🔴 at <15% free (daily) / <20% (weekly).
 
 ## What this unlocks next (from the roadmap)
 

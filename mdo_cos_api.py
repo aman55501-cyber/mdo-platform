@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException, Request
-from starlette.responses import PlainTextResponse
+from starlette.responses import FileResponse, PlainTextResponse
 
 import mdo_cos
 from mdo_cos import (IST, VAULT_MAX_BYTES, budget_mode, cost_inr, is_missed, job_line, next_due, parse_reply,
@@ -663,6 +663,54 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         db = await vdb()
         rows = await db.execute_fetchall("SELECT * FROM vault_audit ORDER BY id DESC LIMIT ?", (min(int(limit), 500),))
         return {"audit": [dict(r) for r in rows]}
+
+    # ── off-site door: the weekly encrypted bundle, nothing else ────────────
+    # Same token, same audit. Serves only *.enc files produced by
+    # mdo_housekeeping.py (vault + DB snapshots, AES-256). A raw .db, a
+    # snapshot .db.gz or a vault file is never served from here — the
+    # backup-offsite Routine copies the bundle to Drive and never decrypts it.
+    def _backup_dir() -> str:
+        return os.environ.get("BACKUP_DIR", os.path.join(
+            os.path.dirname(os.path.abspath(os.environ.get("VEGA_DB_PATH", "/data/vega_data.db"))), "backups"))
+
+    def _bundles() -> list[dict]:
+        """Every encrypted bundle in BACKUP_DIR, newest first. Plain files only, no dot-files, .enc only."""
+        base = _backup_dir()
+        if not os.path.isdir(base):
+            return []
+        out = []
+        for fn in os.listdir(base):
+            full = os.path.join(base, fn)
+            if fn.startswith(".") or not fn.endswith(".enc") or not os.path.isfile(full):
+                continue
+            st = os.stat(full)
+            out.append({"name": fn, "bytes": st.st_size,
+                        "created": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()})
+        return sorted(out, key=lambda b: (b["name"], b["created"]), reverse=True)
+
+    @app.get("/api/vault/backup/list")
+    async def vault_backup_list(request: Request):
+        if not _vault_ok(request):
+            await _audit("backup-list", "*", 0, _actor(request), False, "bad token")
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        bundles = _bundles()
+        await _audit("backup-list", "*", len(bundles), _actor(request), True)
+        return bundles
+
+    @app.get("/api/vault/backup/latest")
+    async def vault_backup_latest(request: Request):
+        if not _vault_ok(request):
+            await _audit("backup-latest", "?", 0, _actor(request), False, "bad token")
+            raise HTTPException(403, "bad or missing X-Vault-Token")
+        weekly = [b for b in _bundles() if b["name"].startswith("weekly-")]
+        if not weekly:
+            await _audit("backup-latest", "?", 0, _actor(request), False, "no bundle")
+            raise HTTPException(404, "no weekly bundle yet — housekeeping has not produced one "
+                                     "(is VAULT_BACKUP_PASSPHRASE set in .env?)")
+        b = weekly[0]
+        await _audit("backup-latest", b["name"], b["bytes"], _actor(request), True)
+        return FileResponse(os.path.join(_backup_dir(), b["name"]), media_type="application/octet-stream",
+                            filename=b["name"], headers={"X-Backup-Created": b["created"]})
 
     @app.post("/api/cos/send")
     async def cos_send(body: dict):

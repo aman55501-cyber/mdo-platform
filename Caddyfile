@@ -11,7 +11,7 @@
 #   /hdfc/*   → Shares CFO       ← the registered OAuth redirect lands here
 #   /*        → MDO app          (the Decision Feed and every other page)
 #
-# Shares CFO's own terminal UI is published directly on port 8000 rather than nested
+# Shares CFO's own terminal UI is bound to 127.0.0.1:8000 (SSH tunnel only) rather than nested
 # under a path prefix: its pages link to absolute paths (/portfolio, /accounts, …)
 # which would collide with the MDO app if mounted under one.
 #

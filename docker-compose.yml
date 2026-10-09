@@ -15,11 +15,20 @@
 # Shares CFO → https://$DOMAIN (via Caddy, automatic Let's Encrypt cert)
 # SQLite lives in the named volume `mdo-data` — survives rebuilds/redeploys.
 
+# Every service logs through json-file capped at 10 MB × 3 files (30 MB per
+# service), so a chatty container can never fill the disk. DEPLOY_HOSTINGER.md §10.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ── MDO backend ─────────────────────────────────────────────────────────
   backend:
     build: .
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "8501:8501"
     env_file: .env
@@ -48,6 +57,7 @@ services:
       context: .
       dockerfile: Dockerfile.sharescfo
     restart: unless-stopped
+    logging: *default-logging
     labels:
       - "autoheal=true"        # autoheal restarts this container if it turns unhealthy
     healthcheck:
@@ -63,10 +73,13 @@ services:
     env_file:
       - .env
     ports:
-      # Published so the Shares CFO terminal UI stays reachable directly. Its pages
+      # Loopback only — never on the public interface. Caddy proxies /hdfc/* (the
+      # HDFC OAuth callback) to this container over the compose network, and the
+      # Shares CFO terminal UI is reached through an SSH tunnel (DEPLOY_HOSTINGER.md
+      # §10): ssh -L 8000:127.0.0.1:8000 root@<VPS> → http://localhost:8000. Its pages
       # link to absolute paths (/portfolio, /accounts, …), which would collide with
       # the MDO app if it were nested under a path prefix on the shared hostname.
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # persist snapshots + audit log across rebuilds (sector map stays baked in image)
       - sharescfo_state:/app/shares_cfo/data/state
@@ -81,6 +94,7 @@ services:
   whatsapp:
     build: ./whatsapp_bridge
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MDO_BACKEND_URL: http://backend:8501
       AUTH_DIR: /data/wa_auth
@@ -101,6 +115,7 @@ services:
   whatsapp2:
     build: ./whatsapp_bridge
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MDO_BACKEND_URL: http://backend:8501
       AUTH_DIR: /data/wa_auth
@@ -120,6 +135,7 @@ services:
   vpn-hotel:
     build: ./vpn
     restart: unless-stopped
+    logging: *default-logging
     cap_add: [NET_ADMIN]
     devices:
       - /dev/net/tun
@@ -136,6 +152,7 @@ services:
   vpn-vedanta:
     build: ./vpn
     restart: unless-stopped
+    logging: *default-logging
     cap_add: [NET_ADMIN]
     devices:
       - /dev/net/tun
@@ -154,6 +171,7 @@ services:
         # (http://<VPS_IP>:8501 or https://api.yourdomain.com)
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8501}
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "3000:3000"
     depends_on:
@@ -165,6 +183,7 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -188,6 +207,7 @@ services:
   autoheal:
     image: willfarrell/autoheal
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - AUTOHEAL_CONTAINER_LABEL=autoheal
       - AUTOHEAL_INTERVAL=15

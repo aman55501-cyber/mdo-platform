@@ -282,17 +282,24 @@ bots:
     rules:
     - Never promotes a finding to 🔴 on its own
 - id: housekeeping
-  name: Memory purge + disk health (Directive 12)
+  name: Memory purge + disk health + backups (Directive 12, DEPLOY_HOSTINGER §10)
   runs_on: vps-cron
   command: docker compose exec -T backend python mdo_housekeeping.py
-  cadence: weekly Sun 03:00 IST
+  command_daily: docker compose exec -T backend python mdo_housekeeping.py --daily
+  cadence: daily 03:00 IST (snapshots) + weekly Sun 03:00 IST (purge + bundle)
   model: none
   does:
+  - 'daily 03:00 IST (--daily): snapshot vega_data.db (+ vedanta_crm.db when present) with the sqlite3 backup
+    API to /data/backups/<name>-YYYYMMDD.db.gz, PRAGMA integrity_check each one, keep 14; one line: ''daily: vega
+    12.3 MB snapshot ok · 14 kept · disk 71% free''; 🔴 if a snapshot fails or disk <15% free'
   - archive agent_reports older than 60 days to /data/archive/YYYY-MM.jsonl.gz
   - trim whatsapp_messages older than 90 days (group text; photos' extracted text kept 180 days)
   - rotate /var/log/mdo-agent.log, keep 8 weeks
   - VACUUM sqlite; measure free disk; alert at <20% free
   - compact per-chat brain memory older than 30 turns into a dated summary
+  - 'weekly: bundle the latest DB snapshots + the vault (memory/, finance/) into ONE encrypted file
+    /data/backups/weekly-YYYYMMDD.tar.enc (openssl aes-256-cbc pbkdf2, VAULT_BACKUP_PASSPHRASE), keep 8 locally;
+    skipped and said so when no passphrase is set. backup-offsite copies the newest one to Drive via /api/vault/backup/latest'
   never_touches:
   - agenda.yaml
   - COS_LOG.md
@@ -300,22 +307,56 @@ bots:
   - open intel_items
   - open ops_tasks
   - checks
-  report: 'housekeeping: freed X MB · disk Y% free · archived N reports — every run, even when nothing was freed'
+  report: 'weekly: ''archived N rows · db X→Y MB · disk Z% free · vega snapshot ok · bundle → weekly-YYYYMMDD.tar.enc''
+    · daily: ''daily: vega 12.3 MB snapshot ok · 14 kept · disk 71% free'' — every run, even when nothing was freed'
   serves:
   - all
   enabled: true
   charter:
-    purpose: Keep the memory lean so the system runs for months with the laptop off.
-    thinks: Deterministic. Archive, trim, vacuum, measure. Never judge content.
-    works: Weekly Sun 03:00 IST. No LLM. Archives reports >60d, group messages >90d, extractions >180d, compacts
-      chats to the last 20 turns, vacuums, checks disk.
+    purpose: Keep the memory lean and the records safe so the system runs for months with the laptop off.
+    thinks: Deterministic. Snapshot, verify, archive, trim, vacuum, bundle, measure. Never judge content.
+    works: Daily 03:00 IST (--daily) snapshots every database, verifies, keeps 14. Weekly Sun 03:00 IST archives
+      reports >60d, group messages >90d, extractions >180d, compacts chats to the last 20 turns, vacuums, snapshots
+      again, bundles snapshots + vault into one AES-256 file, keeps 8, checks disk. No LLM.
     limits: Never touches the Objectives sheet, agenda, COS_LOG.md, open items, bot_memory, the checks registry.
-      Cannot enlarge the disk.
-    minimum_output: 'Every run: ''freed X MB · disk Y% free · archived N rows'', even when zero. Disk <20% free
-      = 🔴.'
+      Never deletes an older snapshot before the new one passed integrity_check. Cannot enlarge the disk. Nothing
+      leaves the VPS from here — that is backup-offsite's job.
+    minimum_output: 'Every run one line: daily ''vega X MB snapshot ok · 14 kept · disk Y% free''; weekly ''freed X
+      MB · disk Y% free · archived N rows · bundle …'', even when zero. Snapshot failed or disk <15% free = 🔴.'
     rules:
     - Archive before delete
+    - Verify before prune
     - Report even when nothing was freed
+- id: backup-offsite
+  name: Off-site backup to Google Drive (Claude Routine)
+  runs_on: cloud-routine
+  reports_to: push
+  cadence: weekly Sun 08:00 IST
+  model: claude-fable-5-1
+  serves:
+  - all
+  enabled: true
+  notes: Fleet entry added 2026-10-09; the claude.ai Routine itself still has to be created with the Google Drive
+    connector attached and VAULT_TOKEN + MDO_SELF_URL in its environment (fleet_gaps). Runs after housekeeping's
+    Sunday 03:00 IST bundle, before the memory/finance Routines.
+  charter:
+    purpose: One copy of the weekly encrypted bundle outside the VPS, every week, so a dead disk is a restore and not
+      a loss.
+    thinks: Fetch, upload, report. The file is opaque — it is never opened, never decrypted, never inspected.
+    works: 'Routine Sun 08:00 IST. GET $MDO_SELF_URL/api/vault/backup/latest with header X-Vault-Token: $VAULT_TOKEN
+      (streams weekly-YYYYMMDD.tar.enc). Upload it unchanged to the Google Drive folder "MDO Backups" (create the
+      folder once if missing). Report the file name and size in bytes. On 404 ("no weekly bundle yet") report that
+      housekeeping has not produced a bundle — VAULT_BACKUP_PASSPHRASE is probably unset — and stop.'
+    limits: If the Google Drive connector is not attached, report that in one line and stop; never try another
+      destination. Never decrypts (holds no passphrase). Never deletes anything on the VPS or in Drive. Never reads
+      /api/vault/get. Uploads only to "MDO Backups".
+    minimum_output: One line per week — '✅ backup-offsite weekly-YYYYMMDD.tar.enc N bytes → Drive/MDO Backups' or
+      the reason it could not (connector missing, 404, upload failed). A silent Sunday is a 💀 for the CoS.
+    rules:
+    - Never decrypt
+    - Never delete
+    - Drive folder "MDO Backups" only
+    - Report even when it could not run
 - id: deploy
   name: Self-deploy from branch
   runs_on: vps-cron
@@ -471,3 +512,5 @@ fleet_gaps:
   domain is allowed
 - 'Vault import pending: run the two scp lines + vault_import.sh once (DEPLOY_HOSTINGER §9); until then the two
   Sunday Routines have nothing to read.'
+- 'backup-offsite Routine not yet created in claude.ai: needs the Google Drive connector + VAULT_TOKEN + MDO_SELF_URL
+  in its environment, and VAULT_BACKUP_PASSPHRASE set on the VPS so housekeeping produces a bundle to fetch.'
