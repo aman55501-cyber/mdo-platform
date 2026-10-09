@@ -16,7 +16,7 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A15 | Vault import from the laptop (`_memory` folder + Family_Finance_Master.xlsx) via scp + vault_import.sh; then Shares CFO reconnect | memory and finance bots have nothing to read | 2026-10-08 |
 | A23 | Angel One holdings export (CSV) for the Share Master Portfolio tab; HDFC ×4 received 2026-10-09 | Portfolio tab incomplete without it | 2026-10-09 |
 | A24 | NIFTY 29-Dec-26 25000 CE alert below 30 — ANSWERED 2026-10-09, built (commit 71e495d), live after the deploy step | the one F&O position with money left | 2026-10-09 |
-| A25 | Deploy day: Step 1 `bash deploy_vps.sh` (renders cron) · Step 2 positions paste · Step 3 five uploads on the Share Master card · Step 4 confirm the sweep bot's chat list | activates Share Master, sweep, NIFTY alert | 2026-10-09 |
+| A25 | Deploy day: Step 1 DONE 12:10 UTC (954617e, 23 cron jobs) · Step 2 DONE (20 positions) · Step 3 five uploads via Cowork (in progress) · Step 4 confirm the sweep bot's chat list (first line 18:00 IST) · Step 5 run `bash deploy_vps.sh` once more for the mail-reader cron (3f4e1a0) | activates Share Master, sweep, NIFTY alert, mail intake | 2026-10-09 |
 | A26 | Connectors: C1 Gmail app password → VPS .env · C2 Drive sync of BUSINESSES · C3 say "calendar on" · C4 Tally monthly export · C5 five skills on · C6 plugin packs off (baby steps in chat 2026-10-09) | bots read mail, files, books; fewer clicks | 2026-10-09 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
