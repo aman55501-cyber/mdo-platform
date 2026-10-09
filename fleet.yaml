@@ -461,6 +461,40 @@ bots:
     - Proposals only, Aman's click approves
     - Queue only >80% conviction, with reasoning and the invalidation level (Aman, chat 2026-10-09)
     - URL on every call; never invent a level
+- id: grok-tasks
+  name: Grok subscription tasks (Singhvi calls + Tender247 watch)
+  runs_on: grok-subscription (Aman's Grok account, scheduled tasks with its own browser)
+  cadence: weekdays 09:10 IST (Singhvi) + daily 08:30 IST (Tender247)
+  model: grok (subscription)
+  heartbeat: one email per task per day to aman.55501@gmail.com, subject [GROK-SINGHVI] / [GROK-TENDER]
+  serves: [tenders-washing-rcr, capital-rules]
+  enabled: true
+  charter:
+    purpose: 'Two things only the subscription can do: log in to Tender247 with Aman''s credentials, and read X/YouTube for Anil Singhvi''s calls.'
+    thinks: Extract, never judge. Tables only, with URLs. NONE FOUND is a valid answer.
+    works: Grok scheduled tasks set up by Aman from the Gmail draft "Grok tasks to set up". Results arrive by email; grok-relay files them into the fleet the same morning.
+    limits: No token or password is ever shared with Grok. It cannot post to the fleet directly. Tender247 session expires when Aman changes his password.
+    minimum_output: 'One [GROK-TENDER] and, on weekdays, one [GROK-SINGHVI] email per day. A missing email is reported by grok-relay as "Grok sent nothing today".'
+    rules:
+    - Never submit, pay or download paid documents on any portal
+    - Never suggest leverage or execution
+- id: grok-relay
+  name: Grok inbox relay (emails → tender door + Morning Setup)
+  runs_on: cloud-routine
+  cadence: daily 09:25 IST Mon-Sat
+  model: claude-fable-5-1
+  heartbeat: every run posts one line via /api/agent/report, including "Grok sent nothing today"
+  serves: [tenders-washing-rcr, capital-rules]
+  enabled: true
+  charter:
+    purpose: Turn Grok's result emails into tender pipeline rows and pending Singhvi proposals.
+    thinks: Parse, validate, file. Rows without entry/stop/target are not queued and are counted.
+    works: Routine trig_01H2u2CccEZ2X6EX1UxSySd4, 09:25 IST Mon-Sat; Gmail connector; POST /api/cos/tender-inbound (X-Tender-Token) and /api/singhvi/calls (status pending).
+    limits: Needs Gmail + repo attached to the Routine and MDO_SELF_URL, MDO_AUTH_TOKEN, TENDER_INBOUND_TOKEN in the cloud environment secrets. Never approves or executes.
+    minimum_output: One heartbeat line per run.
+    rules:
+    - Never send email
+    - Never set a Singhvi call to anything but pending
 - id: x-watch
   name: X / web real-time scout (Grok)
   runs_on: vps-cron
