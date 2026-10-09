@@ -18,6 +18,11 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A24 | NIFTY 29-Dec-26 25000 CE alert below 30 — ANSWERED 2026-10-09, built (commit 71e495d), live after the deploy step | the one F&O position with money left | 2026-10-09 |
 | A25 | Deploy day DONE 2026-10-09 12:30 UTC: b9ba16f live, 156 tests, 26 cron jobs, bridges connected, alert sent. 331 holdings across 5 holders + 20 positions loaded. Left: Step 4 confirm the sweep bot's chat list (first WhatsApp line 18:00 IST) | everything built today is running | 2026-10-09 |
 | A26 | Connectors: C1 Gmail app password → VPS .env · C2 Drive sync of BUSINESSES · C3 say "calendar on" · C4 Tally monthly export · C5 five skills on · C6 plugin packs off (baby steps in chat 2026-10-09) | bots read mail, files, books; fewer clicks | 2026-10-09 |
+| A27 | Deploy 2: `bash deploy_vps.sh` (582fbf3: corp-actions, tenders-direct, voice, calendar feed, health check; 4 new cron lines, bridges to v2.2) | switches on the seven needle-movers | 2026-10-09 |
+| A28 | UptimeRobot keyword monitor on https://amanagrawal.cloud/api/health/public, keyword "ok":true, 5 min, alerts to email + app (DEPLOY_HOSTINGER §8a) | the alarm that fires when the fleet itself is dead | 2026-10-09 |
+| A29 | Google Calendar → Other calendars → From URL → paste the calendar feed URL printed by deploy (DEPLOY_HOSTINGER §8b) | compliance, expiries, Vegas on the phone | 2026-10-09 |
+| A30 | HDFC API keys for 4 accounts via Cowork prompt (chat 2026-10-09) | ends CSV uploads | 2026-10-09 |
+| A31 | Jaiprakash Associates (Aman, 30,000; withdrawn from trading 18 Jun 2026): carry at zero, last price, or remove | Share Master row | 2026-10-09 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.
