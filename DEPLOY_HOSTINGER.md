@@ -197,6 +197,8 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 */15 3-10 * * 1-5 $MDO python mdo_agent.py wa-sweep mausaji >> /var/log/mdo-agent.log 2>&1   # every 15 min, 08:30–16:15 IST window Mon-Fri: Mausaji chat → share lines at once; option check self-checks market hours
 */30 2-16 * * *   $MDO python mdo_agent.py wa-sweep ops     >> /var/log/mdo-agent.log 2>&1   # every 30 min, 07:30–22:00 IST daily: site groups → bottleneck + silence flags
 30 15   * * *   $MDO python mdo_agent.py wa-sweep daily   >> /var/log/mdo-agent.log 2>&1   # 21:00 IST: the day's totals + matched chat list to Aman
+30 2    * * *   $MDO python mdo_agent.py compliance-reminder        >> /var/log/mdo-agent.log 2>&1   # 08:00 IST daily: statutory dates due in 7 days → one WhatsApp message (week before, day before, due day); heartbeat even when nothing is due
+35 2    * * 1   $MDO python mdo_agent.py compliance-reminder weekly >> /var/log/mdo-agent.log 2>&1   # Mon 08:05 IST: "this week: …" compliance line, sent even when empty
 30 1-16 * * *   $MDO python mdo_agent.py x-watch             >> /var/log/mdo-agent.log 2>&1   # hourly 07:00-22:00 IST: X/web watch via Grok
 30 14   * * *   $MDO python mdo_agent.py hotel-daily         >> /var/log/mdo-agent.log 2>&1   # 20:00 IST: renovation + Guptasons contract tracker
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10

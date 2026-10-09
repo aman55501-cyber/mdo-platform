@@ -9,6 +9,7 @@ Usage (inside the backend container):
     python mdo_agent.py ops-hourly          # any bot id from fleet.yaml
     python mdo_agent.py daily-brief
     python mdo_agent.py wa-sweep ops        # a bot with modes: the word after the id
+    python mdo_agent.py compliance-reminder # statutory dates due in 7 days → one WhatsApp message (weekly: Mon line)
     python mdo_agent.py hourly              # legacy alias → ops-hourly
     python mdo_agent.py daily               # legacy alias → daily-brief
 
@@ -1177,9 +1178,31 @@ def run_wa_sweep(bot: dict, model: str, cadence_key: str, now: datetime | None =
     return 0
 
 
+# ── compliance-reminder: statutory dates, Aman hears a week before — rule-based, zero LLM spend ──
+# Aman, chat 2026-10-09: "the compliance due dates are the governmentally fixed dates and i need the reminder
+# at least a week before." All the work is the backend's (mdo_compliance.run: calendar expansion, entity or
+# group targets, once-per-stage pushes); this picks the mode from argv (daily | weekly), triggers the run and
+# files the heartbeat — including "0 items due in 7 days, next: …" when there is nothing to push.
+def run_compliance_reminder(bot: dict, model: str, cadence_key: str, now: datetime | None = None, mode: str | None = None) -> int:
+    bot_id = "compliance-reminder"
+    now = now or datetime.now(IST)
+    mode = str(mode or (RUN_ARGS[0] if RUN_ARGS else "") or "daily").strip().lower()
+    if mode not in ("daily", "weekly"):
+        heartbeat(bot_id, cadence_key, "error", f"compliance-reminder: unknown mode '{mode}' — use daily | weekly")
+        return 2
+    res = api("/api/compliance/run", "POST", {"mode": mode, "now": now.isoformat()}, timeout=120)
+    line = str(res.get("line") or f"compliance-reminder {mode}: {res.get('due', 0)} items due")
+    status = "warning" if res.get("push_failed") else "clean"
+    heartbeat(bot_id, cadence_key, status, line)
+    if res.get("text") and res.get("pushed"):
+        log(f"compliance-reminder {mode} pushed: {str(res['text'])[:200]}")
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
 CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
-               "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep}
+               "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
+               "compliance-reminder": run_compliance_reminder}
 
 
 def check_broker_sessions() -> None:

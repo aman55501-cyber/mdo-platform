@@ -482,3 +482,72 @@ export interface WaSweepChatsResponse {
   idle_hours: number
   groups_seen: string[]
 }
+
+// ── Compliance (compliance-reminder bot): statutory calendar + 7-day reminders ──
+export type ComplianceKind = "pvt_ltd" | "llp" | "partnership" | "proprietorship" | "individual"
+export type ComplianceStage = "week" | "eve" | "day"
+
+export interface ComplianceReminder {
+  id: number
+  entity_or_group: string
+  item_id: string
+  item: string
+  due_date: string
+  remind_on: string
+  stage: ComplianceStage
+  sent_at: string | null
+  status: "queued" | "sent" | "done"
+  done_at: string | null
+}
+
+export interface ComplianceUpcomingItem {
+  item_id: string
+  item: string
+  label: string
+  due: string                       // ISO date
+  cadence: string
+  source: string
+  extendable: boolean
+  payment: boolean
+  group: string
+  targets: string[]                 // entity names, or the one group label
+  level: "entity" | "group"
+  days_left: number
+  stage: ComplianceStage | null
+  reminders: ComplianceReminder[]
+  done_for: string[]
+  done: boolean
+}
+
+export interface ComplianceUpcomingResponse {
+  as_of: string
+  today: string
+  days: number
+  items: ComplianceUpcomingItem[]
+  entities_loaded: boolean
+  entity_count: number
+  level: "entity" | "group"
+  footer: string
+  note: string
+}
+
+export interface ComplianceEntity {
+  id: number
+  name: string
+  kind: ComplianceKind
+  gst_registered: boolean
+  gst_qrmp: boolean
+  tds_deductor: boolean
+  audit_case: boolean
+  pf_esi: boolean
+  active: boolean
+  source: string
+  notes: string
+}
+
+export interface ComplianceEntitiesResponse {
+  entities: ComplianceEntity[]
+  kinds: ComplianceKind[]
+  loaded: boolean
+  note: string
+}

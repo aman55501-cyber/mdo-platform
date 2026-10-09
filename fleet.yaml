@@ -334,6 +334,65 @@ bots:
     - Holder on every share line (Directive 18)
     - No LLM call, ever (Directive 15)
     - Every run reports, especially an empty one (Directive 5)
+- id: compliance-reminder
+  name: Compliance reminder — statutory dates, Aman hears a week before
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py compliance-reminder
+  command_weekly: docker compose exec -T backend python mdo_agent.py compliance-reminder weekly
+  cadence: daily 08:00 IST + Mon 08:05 IST (weekly)
+  model: none
+  heartbeat: 'every run, also when nothing is due: "compliance-reminder: N items due in 7 days (K reminders, 1 message
+    pushed)" or "compliance-reminder: 0 items due in 7 days, next: <item> on <date>"; "entity list not loaded — group
+    level" is appended until the CoS loads compliance_entities; Monday adds "compliance-reminder weekly: N items this
+    week (pushed)"'
+  checks: []
+  serves: []          # Aman's instruction of 2026-10-09 is the mandate; no row on the Objectives sheet yet (CoS comments, never adds)
+  enabled: true
+  objective: never miss a statutory date; Aman hears a week before
+  notes: 'Aman, chat 2026-10-09: "compliance deadline [questions are] unnecessary. the compliance due dates are the
+    governmentally fixed dates and i need the reminder at least a week before." The ten questions in
+    briefs/COMPLIANCE_CALENDAR_REVIEW.md were withdrawn on that word (AMAN_PENDING A12). Calendar:
+    data/compliance_calendar_in.json (India FY2026-27 edition; every row carries its section/rule and the entity kinds
+    it binds). Entity list: compliance_entities, EMPTY until the CoS loads names + kinds from the vault registry after
+    A15 (POST /api/compliance/entities) — the registry is not in this repo and nothing is invented.'
+  charter:
+    purpose: Aman hears about every governmentally fixed compliance date at least a week before it, again the day
+      before and on the day, in one WhatsApp message a day — without being asked a single question (Aman, chat
+      2026-10-09).
+    thinks: 'Rules only, no model. The calendar is data: monthly GSTR-1 (11th), GSTR-3B (20th), TDS/TCS deposit
+      (7th; March TDS 30 Apr), PF + ESI (15th); quarterly TDS returns 24Q/26Q, advance tax, QRMP; annual ITR
+      (31 Jul / 30 Sep audit report / 31 Oct / 30 Nov TP), GSTR-9/9C (31 Dec), DIR-3 KYC (30 Sep), AGM (30 Sep),
+      ADT-1 (14 Oct), AOC-4 (29 Oct), MGT-7 (28 Nov), DPT-3 (30 Jun), MSME-1 (30 Apr / 31 Oct), LLP Form 11
+      (30 May), LLP Form 8 (30 Oct). A row binds an entity by kind (pvt_ltd, llp, partnership, proprietorship,
+      individual) and flags (gst_registered, gst_qrmp, tds_deductor, audit_case, pf_esi). With no entities loaded
+      it speaks at group level ("all GST-registered entities"). `extendable: true` rows can move by CBDT/CBIC/MCA
+      notification — the bot never assumes an extension and never shifts a date for a holiday. Professional tax
+      has no date on purpose: state-specific, [UNVERIFIED], to be confirmed with CA Vimal.'
+    works: 'Daily 08:00 IST (cron 30 2 UTC): POST /api/compliance/run mode=daily → everything due in the next 7
+      days (inclusive of exactly 7 days before). A push happens when an item reaches a stage today — week (first
+      run inside the window), eve (day before), day (due date) — once per (target, item, due date, stage), kept in
+      compliance_reminders; the message lists everything due in the 7 days grouped by date, "(payment)" on rows
+      that need Aman''s click, footer "Vimal Agrawal & Co (CA) handles filings; your click only for payments".
+      Nothing due → nothing pushed, heartbeat "0 items due in 7 days, next: <item> on <date>". Monday 08:05 IST
+      (cron 35 2 UTC Mon): mode=weekly → "this week: …" line, pushed even when empty. POST
+      /api/compliance/reminders/{id}/done stops later stages for that item. Morning page card "Compliance" shows
+      the next 30 days (GET /api/compliance/upcoming?days=30).'
+    limits: Knows the statutory rule, not the entity's facts — whether an entity is GST-registered, a TDS deductor,
+      an audit case or an employer comes from compliance_entities, which the CoS fills from the vault registry
+      (not in this repo). Cannot see MCA/GST/TRACES portals, cannot file, cannot confirm a filing was made. Does
+      not know turnover thresholds (GSTR-9 exemption, QRMP eligibility, 44AB) — it reminds, the CA decides.
+      Extensions by notification are not tracked; the statutory date stands until Aman or the CA says otherwise.
+    minimum_output: 'Every run: the heartbeat line with counts, including "0 items due in 7 days, next: …". Every
+      stage reached: one WhatsApp message for the whole 7-day window. Every Monday: the "this week" line, empty or
+      not. A run with no heartbeat is a dead run.'
+    rules:
+    - Never invents an entity, a date or an extension; what it does not know is said as "not loaded" or "[UNVERIFIED]"
+    - Never files, never pays — reminders only; payments are Aman's click (Directive 4)
+    - One message per day for the whole window, never one per item
+    - No LLM call, ever (Directive 15)
+    - Every run reports, especially an empty one (Directive 5)
+    - No questions to Aman (Aman, chat 2026-10-09)
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron

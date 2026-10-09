@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -470,6 +470,9 @@ export default function MorningSetupPage() {
       {/* ── WhatsApp sweep (wa-sweep bot): Mausaji share lines, site-group bottlenecks, silence ── */}
       <WaSweepCard />
 
+      {/* ── Compliance (compliance-reminder bot): statutory dates in the next 30 days ── */}
+      <ComplianceCard />
+
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
         {/* ── Left: Pending calls ── */}
@@ -798,6 +801,102 @@ function WaSweepCard() {
               </table>
             </div>
           )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Compliance card — the statutory calendar's next 30 days (compliance-reminder bot) ──
+// Aman, chat 2026-10-09: governmentally fixed dates, reminder a week before, no questions. Rows come from
+// /api/compliance/upcoming (calendar rules × entity list); until the CoS loads compliance_entities every row is
+// group-level and the card says so. Loading state first, never a half table (Directive 17).
+
+function dueTag(d: ComplianceUpcomingItem): { text: string; color: string } {
+  if (d.done) return { text: "done", color: "var(--green)" }
+  if (d.days_left <= 0) return { text: "today", color: "var(--red)" }
+  if (d.days_left === 1) return { text: "tomorrow", color: "var(--red)" }
+  if (d.days_left <= 7) return { text: `${d.days_left} days`, color: "var(--amber)" }
+  return { text: `${d.days_left} days`, color: "var(--text2)" }
+}
+
+function ComplianceCard() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ["compliance-upcoming"], queryFn: () => api.complianceCalendar.upcoming(30), refetchInterval: 10 * 60_000 })
+  const done = useMutation({
+    mutationFn: (id: number) => api.complianceCalendar.done(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-upcoming"] }),
+  })
+  const items: ComplianceUpcomingItem[] = q.data?.items ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  const fmt = (iso: string) => {
+    const d = new Date(iso + "T00:00:00")
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })
+  }
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Calendar size={15} style={{ color: "var(--amber)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            COMPLIANCE{!q.isLoading && !q.error && q.data ? ` (next 30 days · ${items.length} dated)` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!q.isLoading && !q.error && q.data && (
+            <span>{q.data.entities_loaded ? `${q.data.entity_count} entities loaded` : "entity list not loaded — group level"}</span>
+          )}
+          <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Compliance unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && q.data && (
+        <>
+          {items.length === 0 && <div style={{ fontSize: 12, color: "var(--text2)" }}>Nothing dated in the next 30 days. The bot reports every run even when nothing is due.</div>}
+          {items.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Due</th><th style={th}>In</th><th style={{ ...th, whiteSpace: "normal" }}>Item</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Who</th><th style={th}>Reminded</th><th style={th}></th>
+                </tr></thead>
+                <tbody>
+                  {items.map(it => {
+                    const tag = dueTag(it)
+                    const last = it.reminders.filter(r => r.sent_at).slice(-1)[0]
+                    const open = it.reminders.find(r => r.status !== "done")
+                    return (
+                      <tr key={`${it.item_id}-${it.due}`} style={{ opacity: it.done ? 0.55 : 1 }}>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace" }}>{fmt(it.due)}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap", color: tag.color, fontWeight: 700, fontSize: 11 }}>{tag.text}</td>
+                        <td style={{ ...td, whiteSpace: "normal", minWidth: 220 }} title={it.source}>
+                          {it.label}
+                          {it.payment && <span style={{ color: "var(--amber)", fontSize: 11 }}> · payment (your click)</span>}
+                          {it.extendable && <span style={{ color: "var(--text2)", fontSize: 11 }}> · extendable by notification</span>}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "normal", color: it.level === "group" ? "var(--text2)" : "var(--text)" }}>{it.targets.join(", ")}</td>
+                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 11, color: last ? "var(--green)" : "var(--text2)" }}>
+                          {last ? `${last.stage} · ${istClock(last.sent_at)}` : "not yet"}
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          {open && !it.done && (
+                            <button onClick={() => done.mutate(open.id)} disabled={done.isPending}
+                              className="px-2 py-1 rounded text-xs flex items-center gap-1"
+                              style={{ border: "1px solid var(--border)", color: "var(--text2)", opacity: done.isPending ? 0.6 : 1 }} title="filed / paid — stop further reminders">
+                              <CheckCircle size={12} /> done
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>{q.data.footer}</div>
         </>
       )}
     </div>

@@ -69,15 +69,33 @@ The sentinel's own limits, in its charter: "Knows only the filings table and int
 
 ---
 
-## 3. Questions for Aman
+## 3. Questions withdrawn — statutory calendar + reminder bot instead
 
-1. **Dormant or dead entities.** Of the names in §1.1 with no filing rows — Dadu Developers, Dadu Builders, Raigarh Land Venture, Rukmani Infrastructure, Eureka, ANS Inn, ANS Mining/Minerals/Coals, ANS Infrastructure, ANS Trading Co — which are active, which are dormant (and still owe nil GST / ROC returns), and which are struck off or to be closed? And do any of the 12 `unverified` ANS-* names exist at all?
-2. **What CA Vimal owns end-to-end.** Which filings does he prepare *and* file with his own credentials/DSC so that you never touch them — all GST returns? TDS? ROC annual returns? Those rows can carry his name and a "no click needed" flag.
-3. **What needs your DSC or OTP.** DIR-3 KYC (per-DIN OTP on your phone/email), AOC-4 / MGT-7 director signatures, ITR e-verification for yourself, the HUF and Aditi — which of these must stop at you, so the sentinel files them as `needs_click` jobs rather than CA items?
-4. **Aditi Investments.** Is it a partnership firm (ENRICH, CA briefing) or an individual (seed row 4)? That decides the ITR form, the due date, and whether row 5 (quarterly GST) is real.
-5. **Ozone Steel & Power.** Is regularisation already in CA Vimal's hands, has any ROC/NCLT notice actually been received (the seed says "proceedings underway" without a source), and who is the advocate for §454(8) matters (MDO_VISION §3 is blank)?
-6. **Hotel ANS International Ltd.** Public limited, registered in Kolkata: last filed year for AOC-4 and MGT-7, and once the Guptasons management contract closes, does any filing duty move to them?
-7. **Missing categories (§1.2).** Which of these apply to which entity, and are any of them yours rather than the CA's: GSTR-9/9C, monthly TDS payments, advance tax, PF/ESI/professional tax, Factories Act / pollution consent / any coal-handling licence for the washery, hotel licences (FSSAI, excise, municipal), ROC event filings? I will add rows only for what you confirm.
-8. **Thresholds.** The sentinel says 🔴 at ≤3 days, escalation-routing says L2 at 7 days. Which number do you want, and should a CA-owned item ever reach your phone before it is overdue?
-9. **Pause or run.** Until the calendar is reconciled with CA Vimal, should compliance-sentinel be paused (it serves no confirmed objective, §1.8) or keep sending ~16 stale 🔴 lines each morning? Alternatively, should the 17 seed rows be marked `n/a` now so only confirmed rows alert?
-10. **The CA email.** `docs/CA_VIMAL_BRIEFING.md` holds a ready draft asking for the current status of every item above plus the authoritative entity list. Shall I place it in your Gmail drafts (never sent — Directive 4) and, if you want it, hold a calendar slot for the standing monthly call it proposes?
+The ten questions that stood here were **withdrawn on Aman's word, 2026-10-09**: "compliance deadline
+[questions are] unnecessary. the compliance due dates are the governmentally fixed dates and i need the
+reminder at least a week before." (AMAN_PENDING A12.)
+
+What replaced them, same day:
+
+- **`data/compliance_calendar_in.json`** — the statutory calendar for India FY2026-27 as data. Every row
+  carries the section or rule its date comes from (`source`) and the entity kinds it binds (`applies_to`:
+  pvt_ltd, llp, partnership, proprietorship, individual); `extendable: true` marks dates CBDT/CBIC/MCA can
+  move by notification — no extension is ever assumed. Professional tax has no date on purpose
+  (state-specific, [UNVERIFIED], to be confirmed with CA Vimal).
+- **`compliance-reminder` bot** (`mdo_compliance.py`, fleet.yaml, zero LLM spend) — daily 08:00 IST, one
+  WhatsApp message listing everything due in the next 7 days grouped by date, pushed when an item first
+  enters the window (inclusive of exactly 7 days before), again the day before and on the due date; footer
+  "Vimal Agrawal & Co (CA) handles filings; your click only for payments". Nothing due → no push, heartbeat
+  "0 items due in 7 days, next: <item> on <date>". Monday 08:05 IST: a "this week: …" line even when empty.
+  Endpoints: `GET /api/compliance/calendar`, `GET /api/compliance/upcoming?days=30`,
+  `GET|POST /api/compliance/entities`, `POST /api/compliance/reminders/{id}/done`. Morning page card
+  "Compliance" shows the next 30 days.
+- The 17 seeded `compliance_filings` rows in §1 stay as they are (seed data, [UNVERIFIED]); the new bot does
+  not read them. `compliance-sentinel` remains paused (Aman, 2026-10-09).
+
+**What the CoS still needs — one thing only:** the entity list with kinds. `compliance_entities` is seeded
+EMPTY on purpose — the registry is not in this repo and no name is invented. Once the vault import lands
+(AMAN_PENDING A15: `_memory/entity-registry.md`), the CoS loads each entity with its kind and flags
+(`gst_registered`, `gst_qrmp`, `tds_deductor`, `audit_case`, `pf_esi`) through `POST /api/compliance/entities`,
+and the reminders switch from group level ("all GST-registered entities: GSTR-3B due 20 Oct") to entity level.
+Until then the heartbeat says "entity list not loaded — group level".

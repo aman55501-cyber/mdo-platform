@@ -8,6 +8,7 @@ import type {
   LevelsResponse,
   ShareMasterResponse, PortfolioImportResult,
   WaSweepFlagsResponse, WaSweepChatsResponse, WaSweepChat,
+  ComplianceUpcomingResponse, ComplianceEntitiesResponse, ComplianceEntity,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -177,6 +178,15 @@ export const api = {
     chats:       () => get<WaSweepChatsResponse>("/api/wa/sweep/chats"),
     setPriority: (jid: string, priority: WaSweepChat["priority"]) =>
       post<{ ok: boolean; jid: string; priority: string }>(`/api/wa/sweep/chats/${encodeURIComponent(jid)}/priority`, { priority }),
+  },
+
+  // ── Compliance (compliance-reminder bot): statutory calendar, next 30 days, entity list ──
+  complianceCalendar: {
+    upcoming:  (days = 30) => get<ComplianceUpcomingResponse>(`/api/compliance/upcoming?days=${days}`),
+    entities:  () => get<ComplianceEntitiesResponse>("/api/compliance/entities"),
+    upsertEntities: (items: Partial<ComplianceEntity>[]) =>
+      post<{ upserted: string[]; entities: ComplianceEntity[] }>("/api/compliance/entities", items),
+    done:      (id: number) => post<{ ok: boolean; id: number; status: string }>(`/api/compliance/reminders/${id}/done`, {}),
   },
 
   // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──

@@ -82,6 +82,7 @@ async def vdb() -> aiosqlite.Connection:
         await _share_master["ensure_schema"](_vdb)
         await _wa_sweep["ensure_schema"](_vdb)
         await _options["ensure_schema"](_vdb)
+        await _compliance["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3331,6 +3332,13 @@ _wa_sweep = mdo_wa_sweep.register(app, vdb, lambda text: _cos["send_cos"](text, 
 # once-per-crossing push. Checked from the wa-sweep mausaji run in market hours.
 import mdo_option_levels
 _options = mdo_option_levels.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp))
+
+# compliance-reminder (Aman, chat 2026-10-09: "the compliance due dates are the governmentally fixed dates and i
+# need the reminder at least a week before"): statutory calendar as data (data/compliance_calendar_in.json),
+# compliance_entities (empty until the CoS loads the registry) + compliance_reminders, /api/compliance/*.
+# Zero LLM spend; run by mdo_agent.py compliance-reminder [daily|weekly]. Pushes go through send_cos.
+import mdo_compliance
+_compliance = mdo_compliance.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp))
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

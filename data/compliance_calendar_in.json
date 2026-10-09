@@ -1,0 +1,348 @@
+{
+  "calendar": "IN-FY2026-27",
+  "prepared": "2026-10-09",
+  "prepared_by": "compliance-reminder build (Aman, chat 2026-10-09: 'the compliance due dates are the governmentally fixed dates and i need the reminder at least a week before')",
+  "fy_start": "2026-04-01",
+  "fy_end": "2027-03-31",
+  "how_to_read": "Every row is a statutory rule, not a fact about any entity. `source` is the section or rule the date comes from. `applies_to` lists entity kinds; `requires` names the entity flag that must be set (null = every entity of those kinds), `requires_not` a flag that must be clear, `always_for` kinds for which the flag is irrelevant. `extendable: true` means CBDT / CBIC / MCA can shift the date by notification; the bot never assumes an extension. Monthly rows give the day of the month after the period; `overrides` replace the default occurrence for a period month ({months_after, day, period}). Dated rows list {mmdd, period}; placeholders: {fy} = FY of the due date, {fy_prev} = the FY before it, {ay} = assessment year for {fy_prev}, {month} = the period month of a monthly row. `remind_group: false` rows are listed in the calendar but reminded only once an entity carries the flag.",
+  "entity_kinds": {
+    "pvt_ltd": "private limited company",
+    "llp": "limited liability partnership",
+    "partnership": "partnership firm",
+    "proprietorship": "proprietorship",
+    "individual": "individual"
+  },
+  "footer": "Vimal Agrawal & Co (CA) handles filings; your click only for payments",
+  "items": [
+    {
+      "id": "gstr1",
+      "item": "GSTR-1",
+      "cadence": "monthly",
+      "day": 11,
+      "period": "GSTR-1 for {month}",
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "gst_registered",
+      "group": "all GST-registered entities (monthly filers)",
+      "source": "CGST Act 2017 s.37(1); CGST Rules 2017 r.59(1) — outward supplies by the 11th of the month following the tax period (monthly filers)",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "gstr3b",
+      "item": "GSTR-3B",
+      "cadence": "monthly",
+      "day": 20,
+      "period": "GSTR-3B for {month}",
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "gst_registered",
+      "group": "all GST-registered entities (monthly filers)",
+      "source": "CGST Act 2017 s.39(1); CGST Rules 2017 r.61(1)(i) — return and tax payment by the 20th of the following month (monthly filers)",
+      "extendable": true,
+      "payment": true
+    },
+    {
+      "id": "tds-deposit",
+      "item": "TDS/TCS deposit",
+      "cadence": "monthly",
+      "day": 7,
+      "period": "TDS/TCS deposit for {month}",
+      "overrides": {
+        "3": [
+          {"months_after": 1, "day": 7, "period": "TCS deposit for {month}"},
+          {"months_after": 1, "day": 30, "period": "TDS deposit for {month} (March TDS has its own date)"}
+        ]
+      },
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "tds_deductor",
+      "group": "all TDS deductors / TCS collectors",
+      "source": "Income-tax Rules 1962 r.30(2)(b) — TDS by the 7th of the following month, tax deducted in March by 30 April; r.37CA(1) — TCS within one week of the month end (7th, including March)",
+      "extendable": false,
+      "payment": true
+    },
+    {
+      "id": "pf-ecr",
+      "item": "PF ECR + contribution",
+      "cadence": "monthly",
+      "day": 15,
+      "period": "PF ECR + contribution for {month}",
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship"],
+      "requires": "pf_esi",
+      "group": "all employers covered by EPF",
+      "source": "Employees' Provident Funds Scheme 1952 para 38(1) — contribution and ECR within 15 days of the close of the month",
+      "extendable": false,
+      "payment": true
+    },
+    {
+      "id": "esi",
+      "item": "ESI contribution",
+      "cadence": "monthly",
+      "day": 15,
+      "period": "ESI contribution for {month}",
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship"],
+      "requires": "pf_esi",
+      "group": "all employers covered by ESI",
+      "source": "ESI (General) Regulations 1950 reg.31 — contribution within 15 days of the last day of the month (as amended 2017)",
+      "extendable": false,
+      "payment": true
+    },
+    {
+      "id": "professional-tax",
+      "item": "Professional tax (employer)",
+      "cadence": "state",
+      "dates": [],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship"],
+      "requires": "pf_esi",
+      "group": "employers registered for professional tax",
+      "source": "Chhattisgarh Vritti Kar Adhiniyam 1995 — state-specific payment/return dates; [UNVERIFIED] not loaded, to be confirmed with CA Vimal, never invented",
+      "extendable": false,
+      "remind_group": false,
+      "payment": true,
+      "note": "No date in this row on purpose: the schedule is state-specific and is not in any file the CoS holds."
+    },
+    {
+      "id": "tds-return",
+      "item": "TDS return 24Q/26Q",
+      "cadence": "quarterly",
+      "dates": [
+        {"mmdd": "07-31", "period": "TDS return 24Q/26Q for Q1 (Apr–Jun) {fy}"},
+        {"mmdd": "10-31", "period": "TDS return 24Q/26Q for Q2 (Jul–Sep) {fy}"},
+        {"mmdd": "01-31", "period": "TDS return 24Q/26Q for Q3 (Oct–Dec) {fy}"},
+        {"mmdd": "05-31", "period": "TDS return 24Q/26Q for Q4 (Jan–Mar) {fy_prev}"}
+      ],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "tds_deductor",
+      "group": "all TDS deductors",
+      "source": "Income-tax Rules 1962 r.31A(2) — quarterly statements by 31 Jul, 31 Oct, 31 Jan and 31 May",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "advance-tax",
+      "item": "Advance tax",
+      "cadence": "quarterly",
+      "dates": [
+        {"mmdd": "06-15", "period": "Advance tax 1st instalment (15%) {fy}"},
+        {"mmdd": "09-15", "period": "Advance tax 2nd instalment (45% cumulative) {fy}"},
+        {"mmdd": "12-15", "period": "Advance tax 3rd instalment (75% cumulative) {fy}"},
+        {"mmdd": "03-15", "period": "Advance tax 4th instalment (100%) {fy}; presumptive s.44AD/44ADA assessees pay the whole amount by this date"}
+      ],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": null,
+      "group": "every taxpayer with advance-tax liability (s.208: tax ≥ ₹10,000)",
+      "source": "Income-tax Act 1961 s.211(1) — 15 Jun / 15 Sep / 15 Dec / 15 Mar; s.208 liability threshold",
+      "extendable": false,
+      "payment": true
+    },
+    {
+      "id": "gstr1-qrmp",
+      "item": "GSTR-1 (QRMP, quarterly)",
+      "cadence": "quarterly",
+      "dates": [
+        {"mmdd": "07-13", "period": "GSTR-1 (QRMP) for Q1 (Apr–Jun) {fy}"},
+        {"mmdd": "10-13", "period": "GSTR-1 (QRMP) for Q2 (Jul–Sep) {fy}"},
+        {"mmdd": "01-13", "period": "GSTR-1 (QRMP) for Q3 (Oct–Dec) {fy}"},
+        {"mmdd": "04-13", "period": "GSTR-1 (QRMP) for Q4 (Jan–Mar) {fy_prev}"}
+      ],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "gst_qrmp",
+      "group": "QRMP filers (if any)",
+      "source": "CGST Rules 2017 r.59(1) proviso r/w Notification 84/2020-Central Tax (QRMP scheme) — 13th of the month following the quarter",
+      "extendable": true,
+      "remind_group": false,
+      "payment": false
+    },
+    {
+      "id": "gstr3b-qrmp",
+      "item": "GSTR-3B (QRMP, quarterly)",
+      "cadence": "quarterly",
+      "dates": [
+        {"mmdd": "07-22", "period": "GSTR-3B (QRMP) for Q1 (Apr–Jun) {fy}"},
+        {"mmdd": "10-22", "period": "GSTR-3B (QRMP) for Q2 (Jul–Sep) {fy}"},
+        {"mmdd": "01-22", "period": "GSTR-3B (QRMP) for Q3 (Oct–Dec) {fy}"},
+        {"mmdd": "04-22", "period": "GSTR-3B (QRMP) for Q4 (Jan–Mar) {fy_prev}"}
+      ],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "gst_qrmp",
+      "group": "QRMP filers (if any)",
+      "source": "CGST Rules 2017 r.61(1)(ii) r/w Notification 82/2020-Central Tax — 22nd of the month following the quarter for Chhattisgarh (and the other 'group A' states); 24th for the rest",
+      "extendable": true,
+      "remind_group": false,
+      "payment": true
+    },
+    {
+      "id": "itr-nonaudit",
+      "item": "ITR (non-audit)",
+      "cadence": "annual",
+      "dates": [{"mmdd": "07-31", "period": "ITR for {fy_prev} ({ay}) — individuals, proprietorships, firms and LLPs not under audit"}],
+      "applies_to": ["individual", "proprietorship", "partnership", "llp"],
+      "requires": null,
+      "requires_not": "audit_case",
+      "group": "all non-audit assessees (individuals, proprietorships, partnership firms, LLPs)",
+      "source": "Income-tax Act 1961 s.139(1) Explanation 2(c) — 31 July for assessees whose accounts need no audit",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "tax-audit-report",
+      "item": "Tax audit report (3CA/3CB-3CD)",
+      "cadence": "annual",
+      "dates": [{"mmdd": "09-30", "period": "Tax audit report for {fy_prev} ({ay})"}],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "audit_case",
+      "group": "all tax-audit cases (s.44AB)",
+      "source": "Income-tax Act 1961 s.44AB r/w s.139(1) — audit report one month before the ITR due date, i.e. 30 September",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "itr-audit",
+      "item": "ITR (audit cases and companies)",
+      "cadence": "annual",
+      "dates": [{"mmdd": "10-31", "period": "ITR for {fy_prev} ({ay}) — every company, and every audited assessee"}],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "audit_case",
+      "always_for": ["pvt_ltd"],
+      "group": "all companies and audit cases",
+      "source": "Income-tax Act 1961 s.139(1) Explanation 2(a) — 31 October for a company, for any person whose accounts are audited, and for a working partner of an audited firm",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "itr-tp",
+      "item": "ITR (transfer pricing, s.92E)",
+      "cadence": "annual",
+      "dates": [{"mmdd": "11-30", "period": "ITR for {fy_prev} ({ay}) — assessees with a s.92E transfer-pricing report"}],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "transfer_pricing",
+      "group": "transfer-pricing cases (if any)",
+      "source": "Income-tax Act 1961 s.139(1) Explanation 2(aa) — 30 November where a report under s.92E is required",
+      "extendable": true,
+      "remind_group": false,
+      "payment": false,
+      "note": "No entity flag exists for transfer pricing yet; listed for the calendar only."
+    },
+    {
+      "id": "gstr9",
+      "item": "GSTR-9 / 9C annual return",
+      "cadence": "annual",
+      "dates": [{"mmdd": "12-31", "period": "GSTR-9 (and 9C where turnover > ₹5 cr) for {fy_prev}"}],
+      "applies_to": ["pvt_ltd", "llp", "partnership", "proprietorship", "individual"],
+      "requires": "gst_registered",
+      "group": "all GST-registered entities (GSTR-9 optional below ₹2 cr turnover)",
+      "source": "CGST Act 2017 s.44; CGST Rules 2017 r.80 — 31 December following the financial year; exemption below ₹2 cr by annual CBIC notification, GSTR-9C above ₹5 cr",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "dir3-kyc",
+      "item": "DIR-3 KYC",
+      "cadence": "annual",
+      "dates": [{"mmdd": "09-30", "period": "DIR-3 KYC for {fy_prev} — every DIN holder, OTP on the director's own mobile and email"}],
+      "applies_to": ["individual"],
+      "requires": null,
+      "group": "every director holding a DIN",
+      "source": "Companies (Appointment and Qualification of Directors) Rules 2014 r.12A — 30 September each year; DIN deactivated on default",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "agm",
+      "item": "AGM",
+      "cadence": "annual",
+      "dates": [{"mmdd": "09-30", "period": "Annual general meeting for {fy_prev}"}],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies",
+      "source": "Companies Act 2013 s.96(1) — within six months of the financial year end (30 September); the ROC dates below count from an AGM held on this day",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "adt-1",
+      "item": "ADT-1 auditor appointment",
+      "cadence": "annual",
+      "dates": [{"mmdd": "10-14", "period": "ADT-1 auditor appointment (15 days after the 30 Sep AGM; appointment years only)"}],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies (appointment years only)",
+      "source": "Companies Act 2013 s.139(1) r/w Companies (Audit and Auditors) Rules 2014 r.4(2) — within 15 days of the meeting; AGM by 30 Sep gives 14 Oct",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "aoc-4",
+      "item": "AOC-4 financial statements",
+      "cadence": "annual",
+      "dates": [{"mmdd": "10-29", "period": "AOC-4 financial statements for {fy_prev} (30 days after an AGM held 30 Sep)"}],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies",
+      "source": "Companies Act 2013 s.137(1) — within 30 days of the AGM; AGM by 30 Sep (s.96) gives 29 Oct",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "mgt-7",
+      "item": "MGT-7 / MGT-7A annual return",
+      "cadence": "annual",
+      "dates": [{"mmdd": "11-28", "period": "MGT-7 (MGT-7A for small companies / OPC) annual return for {fy_prev} (60 days after an AGM held 30 Sep)"}],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies",
+      "source": "Companies Act 2013 s.92(4) — within 60 days of the AGM; AGM by 30 Sep (s.96) gives 28 Nov",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "dpt-3",
+      "item": "DPT-3 return of deposits",
+      "cadence": "annual",
+      "dates": [{"mmdd": "06-30", "period": "DPT-3 return of deposits / exempt receipts as at 31 Mar ({fy_prev})"}],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies",
+      "source": "Companies (Acceptance of Deposits) Rules 2014 r.16 and r.16A — by 30 June each year",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "msme-1",
+      "item": "MSME-1 half-yearly return",
+      "cadence": "half-yearly",
+      "dates": [
+        {"mmdd": "04-30", "period": "MSME-1 for Oct–Mar ({fy_prev}) — dues to MSME suppliers outstanding over 45 days"},
+        {"mmdd": "10-31", "period": "MSME-1 for Apr–Sep ({fy}) — dues to MSME suppliers outstanding over 45 days"}
+      ],
+      "applies_to": ["pvt_ltd"],
+      "requires": null,
+      "group": "all private limited companies (nil return not required when nothing is outstanding)",
+      "source": "MCA Order S.O.368(E) of 22 Jan 2019 under Companies Act s.405 — half-yearly by 30 April and 31 October",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "llp-11",
+      "item": "LLP Form 11 annual return",
+      "cadence": "annual",
+      "dates": [{"mmdd": "05-30", "period": "LLP Form 11 annual return for {fy_prev}"}],
+      "applies_to": ["llp"],
+      "requires": null,
+      "group": "all LLPs",
+      "source": "LLP Act 2008 s.35(1); LLP Rules 2009 r.25(1) — within 60 days of the financial year end (30 May)",
+      "extendable": true,
+      "payment": false
+    },
+    {
+      "id": "llp-8",
+      "item": "LLP Form 8 statement of account & solvency",
+      "cadence": "annual",
+      "dates": [{"mmdd": "10-30", "period": "LLP Form 8 statement of account and solvency for {fy_prev}"}],
+      "applies_to": ["llp"],
+      "requires": null,
+      "group": "all LLPs",
+      "source": "LLP Act 2008 s.34(3); LLP Rules 2009 r.24 — within 30 days of the end of six months from the financial year end (30 October)",
+      "extendable": true,
+      "payment": false
+    }
+  ]
+}
