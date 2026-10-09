@@ -22,5 +22,6 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A17 | Run `bash vps_harden.sh` once on the VPS; reboot after | firewall, fail2ban, security updates | 2026-10-09 |
 | A18 | Review and drop the old VPS stash: `git stash show -p stash@{0}` | leftover local Dockerfile edit | 2026-10-08 |
 | A19 | Send the Ayush (Sultania) quote request for curcumin 95% + boswellia 65%, 500 kg FOB (draft in chat 2026-10-09) | botanicals G0 lane; contact was HELD, Aman's send = approval | 2026-10-09 |
+| A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 Removed items (only on Aman's word): A1 key rotation, A10 Vimal filings check — Aman, chat 2026-10-09 ("forget A1 A10").
