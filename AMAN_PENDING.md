@@ -14,10 +14,11 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A13 | Bot targets table: reply row number + ok/edit; the five people whose reply time matters; idle threshold hours (default 2); keep or kill the old `classifier` bot | pulse and ops-hourly tuning | 2026-10-09 |
 | A14 | Vision session, 30 min, VISION_INTAKE.md blocks 2–4 | top-line objectives the bots run toward | 2026-10-08 |
 | A15 | Vault import from the laptop (`_memory` folder + Family_Finance_Master.xlsx) via scp + vault_import.sh; then Shares CFO reconnect | memory and finance bots have nothing to read | 2026-10-08 |
-| A21 | Run on the VPS after the next self-deploy (f47e1fb+): `cd /docker/sharecfo/mdo-platform && docker compose exec -T backend python tools/import_levels.py data/levels_import_2026-10-09.json` → expect `125 rows → 200` | 15-min scan covers all 125 list tickers | 2026-10-09 |
 | A23 | Angel One holdings export (CSV) for the Share Master Portfolio tab; HDFC ×4 received 2026-10-09 | Portfolio tab incomplete without it | 2026-10-09 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.
+
+A21 levels import — evidence 2026-10-09: VPS printed `levels import: 128 rows -> 200`.
 
 Removed items (only on Aman's word): A1 key rotation, A10 Vimal filings check — Aman, chat 2026-10-09 ("forget A1 A10"). A16 Shashank layouts message, A19 Ayush quote request — sent, Aman 2026-10-09. A4 both WhatsApp QRs scanned — Aman 2026-10-09. A2 A3 A5 A17 A18 — evidence 2026-10-09 08:34 UTC: deploy clean on f295e87, alert test sent:true to Aman's phone, amanagrawal.cloud resolves to the VPS IP, aman_setup.sh completed (keys, harden, stash).
