@@ -187,3 +187,14 @@ week, and only once. The credit-guard bot enforces this and reports every run.
 AMAN_PENDING.md is the list of clicks only Aman can make. Every status message ends with it,
 or with its item numbers. Items are carried over indefinitely and removed only when Aman says
 so in his own words. The CoS adds items as they arise, dated, with why they matter.
+
+## Directive 17 — Finished data only (Aman, chat 2026-10-09)
+Never show Aman partial, crashed or "no price yet" output. Finish the computation, fill every
+cell or mark it with the reason, then show it once. A table that could not be completed is
+reported as "not ready, ETA", not as a half table. The dashboard shows a loading state, never
+a partially filled tab.
+
+## Directive 18 — Holder column always (Aman, chat 2026-10-09)
+Every share list (buy/sell, levels alert, Share Master tabs, chat tables) shows which account
+holds the share and how many, or "nobody". Accounts: Aman, Ashok, Sudha, Aditi on HDFC;
+Angel One once exported (A23). No list without the holder column.
