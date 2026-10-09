@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements_server.txt
 COPY *.py ./
 COPY fleet.yaml agenda.yaml CHIEF_OF_STAFF.md DEPLOY_HOSTINGER.md .env.example deploy_vps.sh ./
 COPY tests ./tests
+COPY tools ./tools
+COPY data ./data
 
 # /data is mounted as a Railway persistent volume — SQLite lives here
 ENV VEGA_DB_PATH=/data/vega_data.db
