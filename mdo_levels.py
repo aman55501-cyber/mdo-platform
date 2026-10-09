@@ -153,11 +153,13 @@ def nearest_distance(row: dict, ltp: float | None) -> float:
     return min(gaps) if gaps else math.inf
 
 
-def _side_text(side: str, ltp: float | None, level: float | None) -> str | None:
+def _side_text(side: str, ltp: float | None, level: float | None, best: float | None = None) -> str | None:
     if level is None:
         return None
     sign = "≤" if side == "buy" else "≥"
     head = f"{side.upper()} {sign}{fmt_n(level)}"
+    if side == "buy" and best is not None:                 # Mausaji's best entry beside the zone top (Directive 18)
+        head += f" (best {fmt_n(best)})"
     if ltp is None:
         return head
     if is_hit(side, ltp, level):
@@ -166,18 +168,31 @@ def _side_text(side: str, ltp: float | None, level: float | None) -> str | None:
     return head + f" ({'−' if d < 0 else '+'}{abs(d):.1f}% away)"
 
 
-def format_level_line(row: dict, ltp: float | None) -> str:
+def held_text(entries: list[dict] | None) -> str:
+    """'Aman 500, Aditi 100' or 'nobody' (Directive 18: every list view says who holds the share)."""
+    parts = []
+    for e in entries or []:
+        q = _num(e.get("qty"))
+        parts.append(f"{e.get('holder') or '?'} {fmt_n(q) if q is not None else '?'}")
+    return ", ".join(parts) if parts else "nobody"
+
+
+def format_level_line(row: dict, ltp: float | None, holders: dict[str, list[dict]] | None = None) -> str:
+    """One share. `holders` ({ticker: [{holder, qty}]}) appends ' · held: …' — passed as {} it says
+    'nobody'; left None (a caller with no holdings data) the line has no held part."""
     t = norm_ticker(row.get("ticker"))
     parts = [f"{t} {'₹' + fmt_n(ltp) if ltp is not None else 'ltp n/a'}"]
     for side, key in (("buy", "buy_level"), ("sell", "sell_level")):
-        s = _side_text(side, ltp, _num(row.get(key)))
+        s = _side_text(side, ltp, _num(row.get(key)), _num(row.get("best_entry")) if side == "buy" else None)
         if s:
             parts.append(s)
+    if holders is not None:
+        parts.append("held: " + held_text(holders.get(t)))
     return " · ".join(parts)
 
 
 def format_levels(rows: list[dict], ltps: dict[str, float | None], now_ist: datetime,
-                  hits_today: list[dict] | None = None) -> str:
+                  hits_today: list[dict] | None = None, holders: dict[str, list[dict]] | None = None) -> str:
     """The whole list, nearest-to-level first, never truncated. Same text the bot pushes
     and GET /api/levels/snapshot returns."""
     rows = [r for r in rows if r.get("active", 1)]
@@ -188,7 +203,7 @@ def format_levels(rows: list[dict], ltps: dict[str, float | None], now_ist: date
     if not rows:
         lines.append("(list is empty — say 'add TCS buy 3500 sell 4200' to start)")
     for r in ordered:
-        lines.append(format_level_line(r, ltps.get(norm_ticker(r.get("ticker")))))
+        lines.append(format_level_line(r, ltps.get(norm_ticker(r.get("ticker"))), holders))
     hits = hits_today or []
     if hits:
         parts = []
@@ -298,7 +313,23 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
     async def ensure_schema(db=None):
         db = db if db is not None else await vdb()
         await db.executescript(SCHEMA)
+        # migration (Directive 18, 2026-10-09): Mausaji's best entry beside the zone top. Guarded ADD COLUMN.
+        cols = {dict(r)["name"] for r in await db.execute_fetchall("PRAGMA table_info(share_levels)")}
+        if "best_entry" not in cols:
+            await db.execute("ALTER TABLE share_levels ADD COLUMN best_entry REAL")
         await db.commit()
+
+    # who holds each share: set by mdo_share_master.register (holdings joined by ticker across holders)
+    hooks: dict[str, Any] = {"holders": None}
+
+    async def holders_now() -> dict[str, list[dict]]:
+        fn = hooks.get("holders")
+        if fn is None:
+            return {}
+        try:
+            return await fn()
+        except Exception:
+            return {}
 
     async def rows_all() -> list[dict]:
         db = await vdb()
@@ -331,16 +362,19 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
             (BOT_ID, MEMORY_KEY, value[:2000], f"{BOT_ID} run {as_of[:16]}"))
         await db.commit()
 
-    def decorate(r: dict, ltp: float | None) -> dict:
+    def decorate(r: dict, ltp: float | None, holders: dict[str, list[dict]] | None = None) -> dict:
         buy, sell = _num(r.get("buy_level")), _num(r.get("sell_level"))
         nd = nearest_distance(r, ltp)
+        t = norm_ticker(r.get("ticker"))
+        held = (holders or {}).get(t) or []
         return {
-            **r, "ticker": norm_ticker(r.get("ticker")), "buy_level": buy, "sell_level": sell,
+            **r, "ticker": t, "buy_level": buy, "sell_level": sell, "best_entry": _num(r.get("best_entry")),
             "active": bool(r.get("active", 1)), "ltp": ltp,
             "buy_distance_pct": distance_pct(ltp, buy), "sell_distance_pct": distance_pct(ltp, sell),
             "at_buy": is_hit("buy", ltp, buy), "at_sell": is_hit("sell", ltp, sell),
             "nearest_pct": None if nd == math.inf else round(nd, 2),
-            "line": format_level_line(r, ltp),
+            "held_by": held, "held_text": held_text(held),
+            "line": format_level_line(r, ltp, holders if holders is not None else {}),
         }
 
     async def levels_list() -> dict:
@@ -348,7 +382,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
         rows = await rows_all()
         ltps, as_of = await last_ltps()
         hits = await hits_for(now.date().isoformat())
-        out = [decorate(r, ltps.get(norm_ticker(r["ticker"]))) for r in rows]
+        holders = await holders_now()
+        out = [decorate(r, ltps.get(norm_ticker(r["ticker"])), holders) for r in rows]
         out.sort(key=lambda d: (not d["active"], d["nearest_pct"] if d["nearest_pct"] is not None else math.inf, d["ticker"]))
         return {"levels": out, "count": len(out), "active": sum(1 for d in out if d["active"]),
                 "ltp_as_of": as_of, "hits_today": hits, "market_open": market_open(now),
@@ -374,11 +409,12 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
             merged = {
                 "buy_level": _num(cur["buy_level"]) if cur else None,
                 "sell_level": _num(cur["sell_level"]) if cur else None,
+                "best_entry": _num(cur.get("best_entry")) if cur else None,
                 "note": (cur["note"] if cur else "") or "",
                 "active": int(cur["active"]) if cur else 1,
                 "exchange": (cur["exchange"] if cur else "") or "NSE",
             }
-            for key in ("buy_level", "sell_level"):
+            for key in ("buy_level", "sell_level", "best_entry"):
                 if key in it:
                     v = _num(it[key])
                     if it[key] not in (None, "") and (v is None or v <= 0):
@@ -394,16 +430,16 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
                 raise HTTPException(400, f"{t}: give a buy level, a sell level, or both")
             if cur:
                 await db.execute(
-                    "UPDATE share_levels SET buy_level=?, sell_level=?, note=?, active=?, exchange=?, source=?, "
+                    "UPDATE share_levels SET buy_level=?, sell_level=?, best_entry=?, note=?, active=?, exchange=?, source=?, "
                     "updated_at=datetime('now') WHERE ticker=?",
-                    (merged["buy_level"], merged["sell_level"], merged["note"], merged["active"], merged["exchange"],
-                     str(it.get("source") or source)[:60], t))
+                    (merged["buy_level"], merged["sell_level"], merged["best_entry"], merged["note"], merged["active"],
+                     merged["exchange"], str(it.get("source") or source)[:60], t))
             else:
                 await db.execute(
-                    "INSERT INTO share_levels (ticker, exchange, buy_level, sell_level, note, active, source) "
-                    "VALUES (?,?,?,?,?,?,?)",
-                    (t, merged["exchange"], merged["buy_level"], merged["sell_level"], merged["note"], merged["active"],
-                     str(it.get("source") or source)[:60]))
+                    "INSERT INTO share_levels (ticker, exchange, buy_level, sell_level, best_entry, note, active, source) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (t, merged["exchange"], merged["buy_level"], merged["sell_level"], merged["best_entry"], merged["note"],
+                     merged["active"], str(it.get("source") or source)[:60]))
             done.append(t)
         await db.commit()
         listing = await levels_list()
@@ -423,7 +459,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
         rows = await rows_all()
         ltps, as_of = await last_ltps()
         hits = await hits_for(now.date().isoformat())
-        return {"text": format_levels(rows, ltps, now, hits), "ltp_as_of": as_of,
+        return {"text": format_levels(rows, ltps, now, hits, await holders_now()), "ltp_as_of": as_of,
                 "count": sum(1 for r in rows if r.get("active", 1)), "hits_today": len(hits)}
 
     async def record_hits(hits: list[dict], trading_day: str, ltps: dict | None, as_of: str) -> dict:
@@ -472,5 +508,10 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
     async def levels_del(ticker: str):
         return await levels_delete(ticker)
 
+    def set_holders(fn) -> None:
+        """fn: async () → {ticker: [{holder, qty}]}; wired by mdo_share_master.register."""
+        hooks["holders"] = fn
+
     return {"ensure_schema": ensure_schema, "levels_list": levels_list, "levels_set": levels_upsert,
-            "levels_delete": levels_delete, "levels_snapshot": snapshot, "record_hits": record_hits}
+            "levels_delete": levels_delete, "levels_snapshot": snapshot, "record_hits": record_hits,
+            "set_holders": set_holders, "holders": holders_now}

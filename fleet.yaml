@@ -237,6 +237,50 @@ bots:
     - Shows every share every time, including those not yet at their level, both sides (Aman, chat 2026-10-09)
     - Alert once per level per trading day
     - Never invents a price; no price = "ltp n/a"
+- id: share-master-daily
+  name: Share Master — Portfolio · Mausaji Calls · Levels, one workbook, current every trading day
+  runs_on: vps-cron
+  command: docker compose exec -T backend python mdo_agent.py share-master-daily
+  cadence: daily 15:45 IST + daily 08:45 IST
+  model: claude-haiku-4-5
+  heartbeat: 'every run, also when nothing changed: "share-master: N holdings across A accounts (stale: …) · M Mausaji
+    calls (+0 new calls, h hit target, s stopped) · levels L"; when Bantu Mausaji''s chat has nothing new it says
+    "+0 new calls" and "no new messages since #id"'
+  checks: []
+  serves:
+  - capital-rules
+  enabled: true
+  notes: Aman, chat 2026-10-09. Workbook in the vault at finance/Share_Master.xlsx (previous as .prev); the app's
+    Share Master card downloads it (/api/share-master/xlsx). Levels seed = data/levels_import_2026-10-09.json via
+    tools/import_levels.py; POST /api/levels/import takes further CSV/XLSX rows. HDFC CSV exports go in through
+    POST /api/share-master/portfolio/import (holder name + the file) and are the Portfolio fallback until the
+    broker session is live again.
+  charter:
+    purpose: The master share sheet is current every trading day with no clicks — Portfolio from the broker
+      holdings, Mausaji Calls from "Bantu Mausaji"'s WhatsApp chat, Levels from Aman's buy/sell list, a Summary
+      (Aman, chat 2026-10-09).
+    thinks: 'Portfolio: a holding exists only if a broker session (Shares CFO) or an HDFC export Aman uploaded says
+      so; a logged-out account keeps its last snapshot and the tab says "HDFC1: session expired, last snapshot
+      <date>". Flags CAP >12% weight, L15 / L30 unrealised loss. Mausaji: only explicit calls (stock + buy/sell/
+      hold/avoid), prices only when stated, his words quoted ≤300 chars, deduped on message+ticker+action.
+      Outcomes from prices only: BUY hit_target when ltp ≥ target, hit_stop when ltp ≤ stop; SELL mirrored; open
+      calls expire after 60 days.'
+    works: 'Daily 15:45 IST (post-close) and 08:45 IST (pre-open) Mon–Fri (cron 15 10 / 15 3 UTC). Model
+      claude-haiku-4-5, used only to parse new Mausaji messages (≤60 per call, from the bot_memory watermark).
+      Then POST /api/share-master/refresh: Shares CFO /portfolio per account (HDFC1/2/3 OAuth, ANGEL1 TOTP) or the
+      uploaded HDFC CSV as fallback, prices via mdo_levels.fetch_ltp (Yahoo), outcomes, workbook (openpyxl), vault
+      save. Heartbeat every run.'
+    limits: Holds no broker credential; depends on the Shares CFO sessions Aman logs into daily — a stale account
+      is reported stale, never as a number. Yahoo prices may be missing (then "ltp n/a"). Cannot read a chat the
+      wa-classifier marked personal (nothing is stored for it). Does not know NSE holidays.
+    minimum_output: 'Every run: the heartbeat line with counts, including "no new messages" when the chat is quiet,
+      and the vault path when the workbook was saved. A run with no heartbeat is a dead run.'
+    rules:
+    - Never invents a holding or a call
+    - Never suggests execution
+    - Every call keeps Mausaji's own words
+    - Outcomes computed from prices only
+    - Stale data is reported as stale, per account
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron

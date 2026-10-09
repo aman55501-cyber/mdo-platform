@@ -79,6 +79,7 @@ async def vdb() -> aiosqlite.Connection:
         await _wa["ensure_schema"](_vdb)
         await _grok["ensure_schema"](_vdb)
         await _levels["ensure_schema"](_vdb)
+        await _share_master["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3311,6 +3312,12 @@ _grok = mdo_grok_memory.register(app, vdb)
 import mdo_levels
 _levels = mdo_levels.register(app, vdb)
 mdo_brain.configure({"levels_list": _levels["levels_list"], "levels_set": _levels["levels_set"]})
+
+# Share Master: portfolio_snapshot + mausaji_calls + share_master_holdings tables, /api/share-master*
+# (json, the .xlsx download, refresh, the HDFC CSV import) and /api/levels/import. The bot that drives
+# it is share-master-daily in mdo_agent.py; the workbook lands in the vault at finance/Share_Master.xlsx.
+import mdo_share_master
+_share_master = mdo_share_master.register(app, vdb, _levels)
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

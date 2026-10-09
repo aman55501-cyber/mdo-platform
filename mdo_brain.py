@@ -410,6 +410,7 @@ TOOLS: list[dict] = [
             "ticker": {"type": "string", "description": "NSE symbol, e.g. TCS, RELIANCE, COALINDIA"},
             "buy_level": {"type": ["number", "null"], "description": "alert when ltp <= this"},
             "sell_level": {"type": ["number", "null"], "description": "alert when ltp >= this"},
+            "best_entry": {"type": ["number", "null"], "description": "Mausaji's best entry (the bottom of his buy zone), shown beside the buy level"},
             "note": {"type": "string"},
             "active": {"type": "boolean"}},
             "required": ["ticker"], "additionalProperties": False},
@@ -537,7 +538,7 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["memory"]()
     if name == "set_level":
         item = {"ticker": a["ticker"]}
-        for k in ("buy_level", "sell_level", "note", "active"):
+        for k in ("buy_level", "sell_level", "best_entry", "note", "active"):
             if k in a:
                 item[k] = a[k]
         return await tb["levels_set"]([item], "cos-chat")

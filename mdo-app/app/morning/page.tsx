@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -461,6 +461,9 @@ export default function MorningSetupPage() {
         </div>
       )}
 
+      {/* ── Share Master: the one workbook (share-master-daily bot) ── */}
+      <ShareMasterCard />
+
       {/* ── Share buy/sell levels (levels-alert bot) ── */}
       <LevelsCard />
 
@@ -654,6 +657,7 @@ function LevelsCard() {
               <th style={th}>Share</th><th style={th}>LTP</th>
               <th style={th}>Buy ≤</th><th style={th}>Distance</th>
               <th style={th}>Sell ≥</th><th style={th}>Distance</th>
+              <th style={th}>Held by</th>
               <th style={{ ...th, whiteSpace: "normal" }}>Note</th>
             </tr></thead>
             <tbody>
@@ -662,11 +666,17 @@ function LevelsCard() {
                 return (
                   <tr key={l.ticker} style={{ opacity: l.active ? 1 : 0.45, background: hot ? (l.at_buy ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)") : undefined }}>
                     <td style={{ ...td, fontWeight: 700 }}>{l.ticker}{!l.active && <span style={{ color: "var(--text2)", fontWeight: 400 }}> (paused)</span>}</td>
-                    <td style={{ ...td, fontFamily: "monospace" }}>{l.ltp === null ? <span style={{ color: "var(--text2)" }}>n/a</span> : `₹${fmtN(l.ltp)}`}</td>
-                    <td style={{ ...td, fontFamily: "monospace", color: "var(--green)" }}>{l.buy_level === null ? "—" : fmtN(l.buy_level)}</td>
+                    {/* Directive 17: a missing price shows the reason, never a blank */}
+                    <td style={{ ...td, fontFamily: "monospace" }}>{l.ltp === null ? <span style={{ color: "var(--red)", fontSize: 11 }}>no price (Yahoo n/a)</span> : `₹${fmtN(l.ltp)}`}</td>
+                    <td style={{ ...td, fontFamily: "monospace", color: "var(--green)" }}>
+                      {l.buy_level === null ? "—" : fmtN(l.buy_level)}
+                      {l.best_entry != null && <span style={{ color: "var(--text2)", fontSize: 11 }}> (best {fmtN(l.best_entry)})</span>}
+                    </td>
                     <td style={td}>{l.buy_level === null ? "" : <Distance pct={l.buy_distance_pct} at={l.at_buy} side="buy" />}</td>
                     <td style={{ ...td, fontFamily: "monospace", color: "var(--red)" }}>{l.sell_level === null ? "—" : fmtN(l.sell_level)}</td>
                     <td style={td}>{l.sell_level === null ? "" : <Distance pct={l.sell_distance_pct} at={l.at_sell} side="sell" />}</td>
+                    {/* Directive 18: who holds it and how many, or "nobody" */}
+                    <td style={{ ...td, whiteSpace: "normal", fontSize: 12, color: l.held_text && l.held_text !== "nobody" ? "var(--text)" : "var(--text2)" }}>{l.held_text ?? "nobody"}</td>
                     <td style={{ ...td, whiteSpace: "normal", color: "var(--text2)", fontSize: 12 }}>{l.note}</td>
                   </tr>
                 )
@@ -680,6 +690,123 @@ function LevelsCard() {
           hits today: {hits.map(h => `${h.ticker} ${h.side} ₹${fmtN(h.ltp)} vs ₹${fmtN(h.level)} (${String(h.hit_at).slice(11, 16)})`).join("; ")}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Share Master card — the one workbook Aman opens: Portfolio · Mausaji Calls · Levels · Summary ──
+// Aman, chat 2026-10-09. Numbers come from /api/share-master (the last refresh); the button downloads the
+// same .xlsx the bot saves to the vault. The upload box takes the HDFC Securities portfolio export (CSV)
+// for a named holder — the Portfolio fallback until that broker session is live again.
+
+function inr(x: number | null | undefined) {
+  if (x === null || x === undefined) return "—"
+  return "₹" + Math.round(x).toLocaleString("en-IN")
+}
+
+function ShareMasterCard() {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["share-master"],
+    queryFn: api.shareMaster.get,
+    refetchInterval: 5 * 60_000,
+  })
+  const [busy, setBusy] = useState<"" | "download" | "refresh" | "upload">("")
+  const [msg, setMsg] = useState<string>("")
+  const [holder, setHolder] = useState<string>("")
+  const [file, setFile] = useState<File | null>(null)
+  const s = data?.summary
+  const accounts = data?.portfolio.accounts ?? []
+  const stale = accounts.filter(a => !a.ok)
+
+  const run = async (what: "download" | "refresh" | "upload", fn: () => Promise<string>) => {
+    setBusy(what); setMsg("")
+    try { setMsg(await fn()) } catch (e) { setMsg(`${what} failed: ${(e as Error).message}`) } finally { setBusy("") }
+  }
+  const upload = () => run("upload", async () => {
+    if (!holder.trim()) throw new Error("whose account? type the holder name first")
+    if (!file) throw new Error("choose the HDFC portfolio CSV first")
+    const csv = await file.text()
+    const r: PortfolioImportResult = await api.shareMaster.importPortfolio(holder.trim(), csv)
+    setFile(null)
+    await refetch()
+    const unv = r.unverified.length ? ` · ${r.unverified.length} unverified ticker(s): ${r.unverified.join(", ")}` : ""
+    const skipped = r.skipped.length ? ` · ${r.skipped.length} row(s) skipped` : ""
+    return `${r.holder}: ${r.count} holdings stored from the CSV${unv}${skipped}. The next refresh uses them while the broker session is down.`
+  })
+
+  const Stat = ({ label, value, color }: { label: string; value: string; color?: string }) => (
+    <div style={{ minWidth: 110 }}>
+      <div style={{ fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "monospace", color: color || "var(--text)" }}>{value}</div>
+    </div>
+  )
+  const pnlColor = (s?.total.pnl ?? 0) >= 0 ? "var(--green)" : "var(--red)"
+
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <FileSpreadsheet size={15} style={{ color: "var(--accent)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>SHARE MASTER</span>
+          <span style={{ fontSize: 11, color: "var(--text2)" }}>
+            {data?.portfolio.snap_date ? `portfolio snapshot ${data.portfolio.snap_date}` : "no snapshot yet"} · Mausaji chat “{data?.mausaji_chat ?? "Bantu Mausaji"}”
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => run("refresh", async () => { const r = await api.shareMaster.refresh(); await refetch(); return r.vault?.saved ? `refreshed · saved ${r.vault.path}` : `refreshed · vault save failed: ${r.vault?.error ?? "?"}` })}
+            disabled={busy !== ""} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+            style={{ border: "1px solid var(--border)", color: "var(--text2)", opacity: busy ? 0.6 : 1 }} title="fetch broker holdings + prices now, rebuild the workbook">
+            <RefreshCw size={12} /> {busy === "refresh" ? "Refreshing…" : "Refresh now"}
+          </button>
+          <button onClick={() => run("download", async () => `downloaded ${await api.shareMaster.download()}`)}
+            disabled={busy !== ""} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+            style={{ background: "var(--accent)", color: "#fff", opacity: busy ? 0.6 : 1 }}>
+            <Download size={12} /> {busy === "download" ? "Preparing…" : "Download Share_Master.xlsx"}
+          </button>
+        </div>
+      </div>
+      {isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--red)" }}>Share Master unavailable: {String((error as Error).message)}</div>}
+      {s && (
+        <div className="flex flex-wrap gap-5 mb-3">
+          <Stat label="Holdings" value={`${s.total.n}`} />
+          <Stat label="Invested" value={inr(s.total.invested)} />
+          <Stat label="Value" value={inr(s.total.value)} />
+          <Stat label="Unrealised P&L" value={`${inr(s.total.pnl)}${s.total.pnl_pct !== null ? ` (${s.total.pnl_pct >= 0 ? "+" : ""}${s.total.pnl_pct.toFixed(1)}%)` : ""}`} color={pnlColor} />
+          <Stat label="Flags" value={`${s.flagged}`} color={s.flagged ? "var(--amber)" : undefined} />
+          <Stat label="Mausaji calls" value={`${s.calls.total} · ${s.calls.open} open`} />
+          <Stat label="Hit / stopped" value={`${s.calls.hit_target} / ${s.calls.hit_stop}`} />
+          <Stat label="Levels" value={`${s.levels}`} />
+          <Stat label="Positions P&L" value={`${inr(s.positions?.pl)} (${s.positions?.n ?? 0}${s.positions?.expiring_7d ? `, ${s.positions.expiring_7d} expiring ≤7d` : ""})`}
+            color={(s.positions?.pl ?? 0) >= 0 ? "var(--green)" : "var(--red)"} />
+          {s.unverified > 0 && <Stat label="Unverified tickers" value={`${s.unverified}`} color="var(--amber)" />}
+        </div>
+      )}
+      {accounts.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>
+          {accounts.map(a => (
+            <div key={a.account} style={{ color: a.ok ? "var(--text2)" : "var(--red)" }}>{a.ok ? "●" : "○"} {a.note}</div>
+          ))}
+        </div>
+      )}
+      {s && (s.top_gainers.length > 0 || s.top_losers.length > 0) && (
+        <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>
+          {s.top_gainers.length > 0 && <div>top gainers: {s.top_gainers.map(g => `${g.ticker} +${g.pnl_pct.toFixed(1)}%`).join(" · ")}</div>}
+          {s.top_losers.length > 0 && <div>top losers: {s.top_losers.map(g => `${g.ticker} ${g.pnl_pct.toFixed(1)}%`).join(" · ")}</div>}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap mt-2 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+        <Upload size={13} style={{ color: "var(--text2)" }} />
+        <span style={{ fontSize: 12, color: "var(--text2)" }}>HDFC portfolio CSV{stale.length ? ` (fallback for ${stale.map(a => a.account).join(", ")})` : ""}:</span>
+        <input value={holder} onChange={e => setHolder(e.target.value)} placeholder="holder, e.g. Aditi"
+          className="px-2 py-1 rounded text-xs" style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", width: 140 }} />
+        <input type="file" accept=".csv,text/csv" onChange={e => setFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12, color: "var(--text2)" }} />
+        <button onClick={upload} disabled={busy !== "" || !file || !holder.trim()}
+          className="px-3 py-1 rounded-lg text-xs font-semibold" style={{ border: "1px solid var(--border)", color: "var(--text2)", opacity: (busy || !file || !holder.trim()) ? 0.5 : 1 }}>
+          {busy === "upload" ? "Uploading…" : "Upload"}
+        </button>
+      </div>
+      {msg && <div style={{ fontSize: 12, color: msg.includes("failed") ? "var(--red)" : "var(--green)", marginTop: 6 }}>{msg}</div>}
     </div>
   )
 }

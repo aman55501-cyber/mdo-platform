@@ -291,6 +291,7 @@ export interface ShareLevel {
   exchange: string
   buy_level: number | null
   sell_level: number | null
+  best_entry?: number | null
   note: string
   active: boolean
   source: string
@@ -302,6 +303,8 @@ export interface ShareLevel {
   at_buy: boolean
   at_sell: boolean
   nearest_pct: number | null
+  held_by?: { holder: string; qty: number | null }[]
+  held_text?: string
   line: string
 }
 
@@ -322,4 +325,107 @@ export interface LevelsResponse {
   hits_today: LevelHit[]
   market_open: boolean
   as_of: string
+}
+
+// ── Share Master (share-master-daily bot) ──────────────────────────
+export interface PortfolioRow {
+  snap_date: string
+  account: string
+  ticker: string
+  company?: string
+  qty: number | null
+  avg_price: number | null
+  ltp: number | null
+  invested: number | null
+  value: number | null
+  pnl: number | null
+  pnl_pct: number | null
+  weight_pct: number | null
+  buy_level?: number | null
+  sell_level?: number | null
+  flag: string
+  source: string
+}
+
+export interface PortfolioAccountStatus {
+  account: string
+  ok: boolean
+  reason: string
+  note: string
+  n: number
+  snap_date: string | null
+  fetched_at?: string | null
+  source?: string
+}
+
+export interface MausajiCall {
+  id: number
+  call_date: string
+  ticker: string
+  action: "BUY" | "SELL" | "HOLD" | "AVOID"
+  entry: number | null
+  target: number | null
+  stop: number | null
+  timeframe: string
+  quote: string
+  message_id: number | null
+  chat_name: string
+  extracted_at: string
+  ltp_at_call: number | null
+  status: "open" | "hit_target" | "hit_stop" | "expired"
+  last_ltp: number | null
+  last_checked: string | null
+}
+
+export interface ShareMasterSummary {
+  as_of: string
+  accounts: { account: string; n: number; invested: number; value: number; pnl: number; pnl_pct: number | null; flags: number; ok: boolean; note: string }[]
+  total: { n: number; invested: number; value: number; pnl: number; pnl_pct: number | null }
+  top_gainers: { account: string; ticker: string; pnl: number; pnl_pct: number }[]
+  top_losers: { account: string; ticker: string; pnl: number; pnl_pct: number }[]
+  calls: { open: number; hit_target: number; hit_stop: number; expired: number; total: number }
+  levels: number
+  flagged: number
+  unverified: number
+  stale_accounts: string[]
+  positions: { accounts: { account: string; n: number; pl: number; premium_left: number; options: number; nearest_expiry: string | null; nearest_days: number | null }[]; n: number; pl: number; expiring_7d: number }
+}
+
+export interface SharePosition {
+  account: string
+  instrument: string
+  side: "BUY" | "SELL"
+  qty: number | null
+  avg: number | null
+  ltp: number | null
+  pl: number | null
+  product: string
+  as_of: string
+  source: string
+  kind: "option" | "future" | "equity"
+  expiry: string | null
+  days_to_expiry: number | null
+  premium_left: number | null
+}
+
+export interface ShareMasterResponse {
+  as_of: string
+  portfolio: { rows: PortfolioRow[]; accounts: PortfolioAccountStatus[]; snap_date: string | null }
+  calls: MausajiCall[]
+  levels: ShareLevel[]
+  positions: SharePosition[]
+  positions_source: string
+  summary: ShareMasterSummary
+  vault_file: string
+  mausaji_chat: string
+}
+
+export interface PortfolioImportResult {
+  holder: string
+  stored: number
+  uploaded_at: string
+  count: number
+  unverified: string[]
+  skipped: { row: number; code?: string; reason: string }[]
+  holdings: { ticker: string; hdfc_code: string; company: string; qty: number; avg_price: number | null; cmp: number | null; pnl_pct: number | null; ticker_verified: boolean }[]
 }

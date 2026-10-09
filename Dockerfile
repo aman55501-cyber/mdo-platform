@@ -4,7 +4,8 @@ WORKDIR /app
 
 # ffmpeg needed by yt-dlp for audio extraction; gcc for faster-whisper build
 # tzdata so TZ=Asia/Kolkata gives correct IST market hours
-RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg tzdata openssl \
+# poppler-utils: pdftotext -layout for Angel One DP statements (pypdf is the fallback)
+RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg tzdata openssl poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 ENV TZ=Asia/Kolkata
 

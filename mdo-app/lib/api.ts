@@ -6,6 +6,7 @@ import type {
   WaStats, WaChat, WaSignal, WaRegisterItem, WaRegisterInput, WaPulse,
   WaClassification, WaSignalStatus,
   LevelsResponse,
+  ShareMasterResponse, PortfolioImportResult,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -166,5 +167,26 @@ export const api = {
         if (!r.ok) throw new Error(`API /api/levels/${ticker} → ${r.status}`)
         return r.json() as Promise<LevelsResponse & { deleted: string }>
       }),
+  },
+
+  // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──
+  shareMaster: {
+    get:     () => get<ShareMasterResponse>("/api/share-master"),
+    xlsxUrl: `${BASE}/api/share-master/xlsx`,
+    // fetch (not a plain link) so the X-MDO-Key header the AuthGate adds rides along; the blob becomes the download
+    download: async (): Promise<string> => {
+      const res = await fetch(`${BASE}/api/share-master/xlsx`, { cache: "no-store" })
+      if (!res.ok) throw new Error(`API /api/share-master/xlsx → ${res.status}`)
+      const disp = res.headers.get("content-disposition") || ""
+      const name = /filename="?([^";]+)"?/.exec(disp)?.[1] || "Share_Master.xlsx"
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement("a")
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      return name
+    },
+    refresh: () => post<ShareMasterResponse & { stored: number; outcomes: Record<string, number>; vault: { saved: boolean; path: string; error?: string } }>("/api/share-master/refresh", {}),
+    importPortfolio: (holder: string, csv: string, dryRun = false) =>
+      post<PortfolioImportResult & { dry_run?: boolean }>("/api/share-master/portfolio/import", { holder, csv, dry_run: dryRun }),
   },
 }

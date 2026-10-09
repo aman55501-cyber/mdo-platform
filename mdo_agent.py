@@ -1017,7 +1017,13 @@ def run_levels_alert(bot: dict, model: str, cadence_key: str, now: datetime | No
     res = api("/api/levels/hits", "POST", {"hits": hits, "trading_day": now.date().isoformat(),
                                            "ltps": ltps, "as_of": now.isoformat()})
     new_hits, hits_today = res.get("new") or [], res.get("hits_today") or []
-    text = lv.format_levels(rows, ltps, now, hits_today)
+    # Directive 18 (Aman, 2026-10-09): every line says who holds the share and how many, or "nobody".
+    try:
+        holders = api("/api/share-master/holders").get("holders") or {}
+    except Exception as e:
+        log(f"levels-alert: holders unavailable ({str(e)[:80]}) — lines say 'nobody'")
+        holders = {}
+    text = lv.format_levels(rows, ltps, now, hits_today, holders)
     missing = [t for t in tickers if ltps.get(t) is None]
     line = f"levels-alert: {len(rows)} shares, {len(hits)} at level, {len(hits_today)} hits today"
     if missing:
@@ -1049,8 +1055,90 @@ def run_levels_alert(bot: dict, model: str, cadence_key: str, now: datetime | No
     return 0
 
 
+# ── share-master-daily: the master share sheet, current every trading day with no clicks ──
+# Aman, chat 2026-10-09. The only LLM step is the Mausaji parse (claude-haiku-4-5, ≤60 messages
+# a call). Portfolio, prices, outcomes and the workbook are the backend's: POST /api/share-master/refresh
+# does them in-process and saves finance/Share_Master.xlsx to the vault (previous version kept as .prev).
+def run_share_master(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    import mdo_share_master as sm
+    bot_id = "share-master-daily"
+    now = now or datetime.now(IST)
+    errors: list[str] = []
+    watermark = int(_bot_memory_get(bot_id, sm.WATERMARK_KEY) or 0)
+
+    # 1. Mausaji's chat → calls, from the watermark forward. Never infers; his words ride along.
+    try:
+        res = api(f"/api/share-master/mausaji/messages?since_id={watermark}&limit={sm.MAUSAJI_MAX_PER_RUN}")
+    except Exception as e:
+        res = {"messages": [], "error": str(e)[:80]}
+        errors.append(f"mausaji messages unreadable: {str(e)[:60]}")
+    msgs = res.get("messages") or []
+    chat = str(res.get("chat") or sm.mausaji_chat())
+    new_calls = dups = found = 0
+    done_max = watermark
+    for i in range(0, len(msgs), sm.MAUSAJI_BATCH):
+        batch = msgs[i:i + sm.MAUSAJI_BATCH]
+        try:
+            raw = ask_claude(sm.parse_mausaji_prompt(batch, chat, now), model, bot_id, max_tokens=4000)
+        except Exception as e:
+            errors.append(f"parse batch {i // sm.MAUSAJI_BATCH + 1}: {type(e).__name__}: {str(e)[:40]}")
+            break                                            # the watermark stays before this batch; next run retries
+        calls = sm.parse_mausaji_calls(raw, {int(m["id"]): m for m in batch}, chat)
+        found += len(calls)
+        if calls:
+            try:
+                out = api("/api/share-master/calls", "POST", {"calls": calls}, timeout=60)
+                new_calls += int(out.get("inserted") or 0)
+                dups += int(out.get("duplicates") or 0)
+            except Exception as e:
+                errors.append(f"calls insert: {str(e)[:60]}")
+                break
+        done_max = max(done_max, max(int(m["id"]) for m in batch))
+    if done_max > watermark:
+        _bot_memory_set(bot_id, sm.WATERMARK_KEY, str(done_max), f"{bot_id} run {now:%Y-%m-%d %H:%M} IST")
+
+    # 2. Portfolio snapshot + prices + outcomes + workbook → vault, all in the backend.
+    try:
+        ref = api("/api/share-master/refresh", "POST", {}, timeout=240)
+    except Exception as e:
+        heartbeat(bot_id, cadence_key, "error",
+                  f"share-master: refresh failed ({type(e).__name__}: {str(e)[:120]}) · Mausaji: {len(msgs)} msgs read, "
+                  f"+{new_calls} new calls" + (f" · {len(errors)} error(s): " + "; ".join(errors[:3]) if errors else ""))
+        return 3
+    summ = ref.get("summary") or {}
+    accounts = (ref.get("portfolio") or {}).get("accounts") or []
+    stale = [a["account"] for a in accounts if not a.get("ok")]
+    oc = ref.get("outcomes") or {}
+    cc = summ.get("calls") or {}
+    vault = ref.get("vault") or {}
+    if not vault.get("saved"):
+        errors.append(f"vault save failed: {vault.get('error') or 'unknown'}")
+
+    line = (f"share-master: {summ.get('total', {}).get('n', 0)} holdings across {len([a for a in accounts if a.get('account') != '*'])} accounts"
+            + (f" (stale: {', '.join(stale)})" if stale else "")
+            + f" · {cc.get('total', 0)} Mausaji calls (+{new_calls} new calls, {oc.get('hit_target', 0)} hit target, {oc.get('hit_stop', 0)} stopped"
+            + (f", {oc.get('expired', 0)} expired" if oc.get("expired") else "") + ")"
+            + f" · levels {summ.get('levels', 0)}")
+    if msgs:
+        line += f" · Mausaji chat '{chat}': {len(msgs)} new msg(s) read, {found} call(s) found" + (f", {dups} already known" if dups else "")
+    else:
+        line += f" · Mausaji chat '{chat}': no new messages since #{watermark}"
+        if res.get("chat_total") == 0:
+            line += " (chat never seen in whatsapp_messages — is it classified personal, or named differently?)"
+    missing = ref.get("ltp_missing") or []
+    if missing:
+        line += f" · ltp n/a: {', '.join(missing[:6])}" + (f" +{len(missing) - 6}" if len(missing) > 6 else "")
+    if vault.get("saved"):
+        line += f" · saved {vault.get('path')} ({vault.get('bytes', 0) // 1024} KB)"
+    if errors:
+        line += f" · {len(errors)} error(s): " + "; ".join(errors[:3])
+    heartbeat(bot_id, cadence_key, "warning" if (errors or stale) else "clean", line)
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
-CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert}
+CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
+               "share-master-daily": run_share_master}
 
 
 def check_broker_sessions() -> None:

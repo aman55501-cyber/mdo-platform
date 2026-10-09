@@ -192,6 +192,8 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 35 3-10 * * 1-5 $MDO python mdo_agent.py capital-watcher     >> /var/log/mdo-agent.log 2>&1   # 09:05-15:35 IST Mon-Fri
 */15 3-10 * * 1-5 $MDO python mdo_agent.py levels-alert >> /var/log/mdo-agent.log 2>&1   # every 15 min, 08:30–15:45 IST window; bot self-checks market hours
 35 2    * * 1-5 $MDO python mdo_agent.py singhvi             >> /var/log/mdo-agent.log 2>&1   # 08:05 IST Mon-Fri: Singhvi calls → Morning Setup proposals
+15 10   * * 1-5 $MDO python mdo_agent.py share-master-daily  >> /var/log/mdo-agent.log 2>&1   # 15:45 IST Mon-Fri: Share Master post-close refresh → vault finance/Share_Master.xlsx
+15 3    * * 1-5 $MDO python mdo_agent.py share-master-daily  >> /var/log/mdo-agent.log 2>&1   # 08:45 IST Mon-Fri: Share Master pre-open refresh (Mausaji overnight calls)
 30 1-16 * * *   $MDO python mdo_agent.py x-watch             >> /var/log/mdo-agent.log 2>&1   # hourly 07:00-22:00 IST: X/web watch via Grok
 30 14   * * *   $MDO python mdo_agent.py hotel-daily         >> /var/log/mdo-agent.log 2>&1   # 20:00 IST: renovation + Guptasons contract tracker
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
@@ -335,3 +337,24 @@ there first (`scp`). A fresh VPS needs §3–§5 first, then step 5.
 - **WhatsApp bridge revival** — Chromium fits now; `whatsapp_bridge/` can run
   as another compose service
 - **Stable HDFC callback URL** — no more moving-target OAuth registration
+
+## Share Master — loading the family holdings (one-time, and after every new export)
+
+The holdings files are never in the repo or the image. Aman uploads an HDFC portfolio CSV or an
+Angel One "DP Transaction Cum Holding" PDF through the Share Master card, or the CoS transcribes
+them into `pf/*.json` on the VPS host (`/docker/sharecfo/mdo-platform/pf/`, mode 600, root only).
+
+```bash
+# HDFC CSV (holder = whose account), Angel One DP statement PDF (broker=angel is implied by .pdf)
+curl -sS -H "X-MDO-Key: $MDO_AUTH_TOKEN" -F holder=Aditi -F file=@Aditi_portfolio.csv http://127.0.0.1:8501/api/share-master/portfolio/import
+curl -sS -H "X-MDO-Key: $MDO_AUTH_TOKEN" -F "holder=Aditi Investments" -F broker=angel -F file=@DP_statement.pdf http://127.0.0.1:8501/api/share-master/portfolio/import
+
+# pf/*.json (HDFC-derived, Angel-derived, positions_*.json) piped from the host into the container, then one refresh:
+cd /docker/sharecfo/mdo-platform && for f in pf/*.json; do docker compose exec -T -e DOC="$(cat "$f")" -e DOC_NAME="$f" backend python tools/import_share_master.py --stdin; done; docker compose exec -T backend python tools/import_share_master.py --refresh
+```
+
+Each file prints one line with the HTTP status; `--refresh` prices the whole book once and saves
+`finance/Share_Master.xlsx` to the vault. Tickers resolve from the NSE list (`EQUITY_L.csv`, cached 7
+days in the data volume; ISIN column for Angel rows, company name for HDFC codes) — anything the
+list does not know is stored as given and flagged "unverified ticker", never guessed. The image
+has `poppler-utils` (pdftotext) and `pypdf` for the PDF.

@@ -163,7 +163,9 @@ def test_levels_endpoints_upsert_list_snapshot_delete():
     assert r.json()["upserted"] == ["TCS"]
     tcs = {l["ticker"]: l for l in r.json()["levels"]}["TCS"]
     assert (tcs["buy_level"], tcs["sell_level"], tcs["note"], tcs["active"]) == (3500.0, 4200.0, "IT large cap", True)
-    assert tcs["ltp"] is None and tcs["buy_distance_pct"] is None and tcs["line"] == "TCS ltp n/a · BUY ≤3,500 · SELL ≥4,200"
+    assert tcs["ltp"] is None and tcs["buy_distance_pct"] is None
+    assert tcs["line"] == "TCS ltp n/a · BUY ≤3,500 · SELL ≥4,200 · held: nobody"      # Directive 18: holder on every line
+    assert tcs["held_text"] == "nobody" and tcs["held_by"] == [] and tcs["best_entry"] is None
     # a list upserts many; an omitted side is kept, a null side is cleared; validation says why
     r = c.post("/api/levels", json=[{"ticker": "INFY", "buy_level": 1460}, {"ticker": "TCS", "sell_level": 4300}])
     assert r.status_code == 200 and r.json()["upserted"] == ["INFY", "TCS"]
@@ -335,7 +337,10 @@ def test_brain_tools_set_and_list_levels():
         r = json.loads(await mdo_brain.execute_tool("set_level", {"ticker": "zeel", "buy_level": 120, "sell_level": 150, "note": "media"}))
         assert r["upserted"] == ["ZEEL"] and r["levels"][0]["source"] == "cos-chat"
         r = json.loads(await mdo_brain.execute_tool("list_levels", {}))
-        assert [l["ticker"] for l in r["levels"]] == ["ZEEL"] and r["levels"][0]["line"] == "ZEEL ltp n/a · BUY ≤120 · SELL ≥150"
+        assert [l["ticker"] for l in r["levels"]] == ["ZEEL"] and r["levels"][0]["line"] == "ZEEL ltp n/a · BUY ≤120 · SELL ≥150 · held: nobody"
+        # Directive 18: Mausaji's best entry rides beside the zone top, via the same tool
+        r = json.loads(await mdo_brain.execute_tool("set_level", {"ticker": "ZEEL", "best_entry": 112}))
+        assert r["levels"][0]["best_entry"] == 112.0 and r["levels"][0]["line"] == "ZEEL ltp n/a · BUY ≤120 (best 112) · SELL ≥150 · held: nobody"
         r = json.loads(await mdo_brain.execute_tool("set_level", {"ticker": "ZEEL", "buy_level": None, "sell_level": None}))
         assert "error" in r and "give a buy level" in r["error"]           # tool errors go back to the model, not the user
 
