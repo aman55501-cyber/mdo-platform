@@ -345,6 +345,22 @@ bots:
     - Never spend on reading history unless Aman asked for it this week
     - Background workers only with a stated cost and Aman's ok when the window is above 50% used
     - Readers and summarisers run on the cheapest model that can do the job, never on the CoS model
+- id: vegas-tracker
+  name: Las Vegas trip price tracker (temporary, ends 2026-11-09)
+  runs_on: cloud-routine
+  cadence: every 2 days 08:10 IST
+  model: cheapest available (Aman decides; proposed claude-haiku-5-5)
+  heartbeat: one line per run with every hotel rate, the lowest flight fare seen, and ALERT or none
+  serves: []
+  enabled: true
+  charter:
+    purpose: Re-price the seven shortlisted Strip hotels and DEL⇄LAS flights for 10–12 Nov 2026 until Aman books.
+    thinks: Compare to the 2026-10-09 baseline; a hotel down 15% or a flight at or under ₹1.5 lakh per person is an alert.
+    works: Booking.com connector for hotels (hotel_names list), one web search for fares; ≤8 tool calls; never books.
+    limits: No live airline fare API; flight numbers are web-search evidence only. Ends automatically on 2026-11-09.
+    minimum_output: One line every run, including "no change".
+    rules:
+    - Never book, never pay, never invent a price
 - id: housekeeping
   name: Memory purge + disk health + backups (Directive 12, DEPLOY_HOSTINGER §10)
   runs_on: vps-cron
