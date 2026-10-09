@@ -95,6 +95,19 @@ services:
     build: ./whatsapp_bridge
     restart: unless-stopped
     logging: *default-logging
+    labels:
+      - "autoheal=true"        # autoheal restarts this container only when it reports itself wedged
+    healthcheck:
+      # Liveness, not pairing: /api/whatsapp/status answers 200 whenever the node
+      # process is alive — including while unpaired and waiting for a QR scan.
+      # It answers 503 only when the bridge is wedged (socket creation keeps
+      # failing / watchdog restarts stopped helping), so autoheal never restarts
+      # an unpaired bridge in a loop. node:20-slim has no curl, hence node -e.
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://127.0.0.1:3001/api/whatsapp/status',res=>process.exit(res.statusCode===200?0:1));r.setTimeout(8000,()=>process.exit(1));r.on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       MDO_BACKEND_URL: http://backend:8501
       AUTH_DIR: /data/wa_auth
@@ -116,6 +129,19 @@ services:
     build: ./whatsapp_bridge
     restart: unless-stopped
     logging: *default-logging
+    labels:
+      - "autoheal=true"        # autoheal restarts this container only when it reports itself wedged
+    healthcheck:
+      # Liveness, not pairing: /api/whatsapp/status answers 200 whenever the node
+      # process is alive — including while unpaired and waiting for a QR scan.
+      # It answers 503 only when the bridge is wedged (socket creation keeps
+      # failing / watchdog restarts stopped helping), so autoheal never restarts
+      # an unpaired bridge in a loop. node:20-slim has no curl, hence node -e.
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://127.0.0.1:3001/api/whatsapp/status',res=>process.exit(res.statusCode===200?0:1));r.setTimeout(8000,()=>process.exit(1));r.on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       MDO_BACKEND_URL: http://backend:8501
       AUTH_DIR: /data/wa_auth

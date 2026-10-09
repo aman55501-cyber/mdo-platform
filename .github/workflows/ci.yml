@@ -25,7 +25,7 @@ jobs:
         run: python -m py_compile mdo_server.py mdo_brain.py mdo_cos.py mdo_cos_api.py mdo_agent.py mdo_housekeeping.py
 
   bridge:
-    name: WhatsApp bridge syntax (node)
+    name: WhatsApp bridge syntax + tests (node)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,3 +33,5 @@ jobs:
         with:
           node-version: "20"
       - run: node --check whatsapp_bridge/index.js
+      # Stubs Baileys/express — no npm install, no network.
+      - run: node whatsapp_bridge/test/run.js
