@@ -170,6 +170,7 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
+      - ALT_DOMAINS=${ALT_DOMAINS:-}
       - MDO_DOMAIN=${MDO_DOMAIN:-mdo.localhost}
       - MDO_API_DOMAIN=${MDO_API_DOMAIN:-api.localhost}
       - CFO_DOMAIN=${CFO_DOMAIN:-cfo.localhost}

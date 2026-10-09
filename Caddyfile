@@ -16,8 +16,12 @@
 # which would collide with the MDO app if mounted under one.
 #
 # Set in .env:  DOMAIN=srv1641037.hstgr.cloud
+#               ALT_DOMAINS=amanagrawal.cloud www.amanagrawal.cloud   (optional, space-separated)
+# Every name listed is served by the same block, so the HDFC callback keeps working on
+# the Hostinger name while the dashboard is opened on amanagrawal.cloud. Caddy fetches a
+# certificate for each name on first request; the DNS A record must already point here.
 
-{$DOMAIN} {
+{$DOMAIN} {$ALT_DOMAINS} {
 	# Order matters — Caddy matches the most specific path first, but being explicit
 	# keeps this readable for whoever edits it next.
 	handle /api/* {
