@@ -520,6 +520,40 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         got = (request.headers.get("x-tender-token") or request.query_params.get("token") or "").strip()
         return hmac.compare_digest(got, tok)
 
+    async def tender_ingest(items: list, source_default: str = "external") -> dict:
+        """The tender door's body: {buyer, title, category, due_date (YYYY-MM-DD), url, volume_mt, source, notes}
+        rows into vwlr_tender_pipeline. Duplicates (same url, or same buyer + due_date + title) are ignored.
+        Shared by POST /api/cos/tender-inbound (token-guarded) and the in-process mail-reader (bidsnrfp results)."""
+        db = await vdb()
+        added, skipped = 0, 0
+        for t in items[:50]:
+            if not isinstance(t, dict):
+                continue
+            buyer = str(t.get("buyer") or "")[:120].strip()
+            title = str(t.get("title") or t.get("notes") or "")[:300].strip()
+            if not buyer and not title:
+                skipped += 1
+                continue
+            url = str(t.get("url") or "")[:500].strip()
+            due = str(t.get("due_date") or "")[:10] or None
+            notes = (f"[{str(t.get('source') or source_default)[:40]}] {title}" + (" — " + str(t["notes"])[:500] if t.get("notes") and t.get("title") else ""))[:800]
+            dup = await db.execute_fetchall(
+                "SELECT id FROM vwlr_tender_pipeline WHERE (url=? AND url!='') OR (buyer=? AND COALESCE(due_date,'')=COALESCE(?, '') AND substr(notes,1,80)=substr(?,1,80)) LIMIT 1",
+                (url, buyer, due, notes))
+            if dup:
+                skipped += 1
+                continue
+            try:
+                vol = float(t.get("volume_mt") or 0)
+            except (TypeError, ValueError):
+                vol = 0.0
+            await db.execute(
+                "INSERT INTO vwlr_tender_pipeline (buyer,volume_mt,category,due_date,status,url,notes,eligibility_score) VALUES (?,?,?,?,?,?,?,?)",
+                (buyer or "Unknown buyer", vol, str(t.get("category") or "Other")[:60], due, str(t.get("status") or "evaluating")[:30], url, notes, 0.0))
+            added += 1
+        await db.commit()
+        return {"added": added, "skipped": skipped}
+
     @app.post("/api/cos/tender-inbound")
     async def tender_inbound(request: Request):
         """Any outside agent with TENDER_INBOUND_TOKEN may post tenders here and
@@ -533,34 +567,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         except json.JSONDecodeError:
             raise HTTPException(400, "bad json")
         items = body if isinstance(body, list) else body.get("tenders") or [body]
-        db = await vdb()
-        added, skipped = 0, 0
-        for t in items[:50]:
-            if not isinstance(t, dict):
-                continue
-            buyer = str(t.get("buyer") or "")[:120].strip()
-            title = str(t.get("title") or t.get("notes") or "")[:300].strip()
-            if not buyer and not title:
-                skipped += 1
-                continue
-            url = str(t.get("url") or "")[:500].strip()
-            due = str(t.get("due_date") or "")[:10] or None
-            notes = (f"[{str(t.get('source') or 'external')[:40]}] {title}" + (" — " + str(t["notes"])[:500] if t.get("notes") and t.get("title") else ""))[:800]
-            dup = await db.execute_fetchall(
-                "SELECT id FROM vwlr_tender_pipeline WHERE (url=? AND url!='') OR (buyer=? AND COALESCE(due_date,'')=COALESCE(?, '') AND substr(notes,1,80)=substr(?,1,80)) LIMIT 1",
-                (url, buyer, due, notes))
-            if dup:
-                skipped += 1
-                continue
-            try:
-                vol = float(t.get("volume_mt") or 0)
-            except (TypeError, ValueError):
-                vol = 0.0
-            await db.execute(
-                "INSERT INTO vwlr_tender_pipeline (buyer,volume_mt,category,due_date,status,url,notes,eligibility_score) VALUES (?,?,?,?,?,?,?,?)",
-                (buyer or "Unknown buyer", vol, str(t.get("category") or "Other")[:60], due, "evaluating", url, notes, 0.0))
-            added += 1
-        await db.commit()
+        res = await tender_ingest(items)
+        added, skipped = res["added"], res["skipped"]
         await record_run("tender-inbound", "event", "clean", f"{added} added, {skipped} skipped")
         return {"added": added, "skipped": skipped}
 
@@ -727,5 +735,5 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         "ensure_schema": ensure_schema, "record_run": record_run, "send_cos": send_cos,
         "agenda": agenda_get, "jobs": jobs_list, "job_add": job_add, "job_resolve": job_resolve,
         "fleet": fleet_status, "spend": spend_summary, "spend_record": spend_record, "memory": memory_get,
-        "chat_load": chat_load, "chat_save": chat_save,
+        "chat_load": chat_load, "chat_save": chat_save, "tender_ingest": tender_ingest,
     }

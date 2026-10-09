@@ -9,6 +9,7 @@ import type {
   ShareMasterResponse, PortfolioImportResult,
   WaSweepFlagsResponse, WaSweepChatsResponse, WaSweepChat,
   ComplianceUpcomingResponse, ComplianceEntitiesResponse, ComplianceEntity,
+  MailRecentResponse, MailStatsResponse,
 } from "./types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
@@ -187,6 +188,14 @@ export const api = {
     upsertEntities: (items: Partial<ComplianceEntity>[]) =>
       post<{ upserted: string[]; entities: ComplianceEntity[] }>("/api/compliance/entities", items),
     done:      (id: number) => post<{ ok: boolean; id: number; status: string }>(`/api/compliance/reminders/${id}/done`, {}),
+  },
+
+  // ── Mail (mail-reader bot): 7-day counts by category, the actionable rows, ack ──
+  mail: {
+    stats:  (days = 7) => get<MailStatsResponse>(`/api/mail/stats?days=${days}`),
+    recent: (days = 7, category = "") =>
+      get<MailRecentResponse>(`/api/mail/recent?days=${days}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
+    ack:    (id: number) => post<{ ok: boolean; id: number; status: string }>(`/api/mail/${id}/ack`, {}),
   },
 
   // ── Share Master (share-master-daily bot): one workbook, Portfolio · Mausaji Calls · Levels ──

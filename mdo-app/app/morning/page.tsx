@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
-  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar
+  ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem } from "@/lib/types"
+import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8501"
 
@@ -472,6 +472,9 @@ export default function MorningSetupPage() {
 
       {/* ── Compliance (compliance-reminder bot): statutory dates in the next 30 days ── */}
       <ComplianceCard />
+
+      {/* ── Mail (mail-reader bot): statements, contract notes and tender results — 7-day counts + the actionable rows ── */}
+      <MailCard />
 
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 380px" }}>
 
@@ -1070,6 +1073,130 @@ function HDFCStatus() {
       >
         Login to HDFC (Daily)
       </button>
+    </div>
+  )
+}
+
+
+// ── Mail card — what landed in the vault from Gmail (mail-reader bot) ──
+// Aman, chat 2026-10-09 (A26 C1). Rows come from /api/mail/stats: 7-day counts by category and the last 10
+// actionable rows (tender result, bank statement, broker holding statement). A locked PDF is shown as locked —
+// it was stored, never opened; the PAN/password stays with Aman. Loading state first, never a half table (Directive 17).
+
+const MAIL_CATEGORY_LABEL: Record<string, string> = {
+  "tender-result": "Tender results", "bank-statement": "Bank statements", "broker-statement": "Broker statements",
+  "contract-note": "Contract notes", "exchange-balance": "Exchange balances", "mf-transaction": "MF transactions",
+  insurance: "Insurance", evoting: "e-Voting", other: "Other",
+}
+
+function MailCard() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ["mail-stats"], queryFn: () => api.mail.stats(7), refetchInterval: 5 * 60_000 })
+  const ack = useMutation({
+    mutationFn: (id: number) => api.mail.ack(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["mail-stats"] }),
+  })
+  const rows: MailMessage[] = q.data?.actionable ?? []
+  const th: React.CSSProperties = { fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "left", padding: "6px 8px", borderBottom: "1px solid var(--border)" }
+  const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid var(--border)", fontSize: 13, verticalAlign: "top" }
+  const when = (iso: string | null) => {
+    if (!iso) return "—"
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return String(iso).slice(0, 10)
+    return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+  }
+  const cats = q.data ? q.data.categories.filter(c => (q.data!.by_category[c]?.count ?? 0) > 0) : []
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Mail size={15} style={{ color: "var(--cyan)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>
+            MAIL{!q.isLoading && !q.error && q.data ? ` (7 days · ${q.data.total} stored · ${q.data.locked} locked)` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: "var(--text2)" }}>
+          {!q.isLoading && !q.error && q.data && (
+            <span title={q.data.state.last_line || ""}>
+              {q.data.configured
+                ? (q.data.state.last_run_at ? `last run ${when(q.data.state.last_run_at)} IST` : "configured — no run yet")
+                : "IMAP not configured — GMAIL_IMAP_USER / GMAIL_APP_PASSWORD in the VPS .env"}
+            </span>
+          )}
+          <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+        </div>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Mail unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && q.data && (
+        <>
+          {cats.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              Nothing stored in the last 7 days. The bot reports every run even when the mailbox is quiet.
+            </div>
+          )}
+          {cats.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {cats.map(c => {
+                const v = q.data!.by_category[c]
+                return (
+                  <div key={c} className="rounded-lg px-3 py-2" style={{ background: "var(--bg)", border: "1px solid var(--border)", minWidth: 120 }}>
+                    <div style={{ fontSize: 10, color: "var(--text2)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{MAIL_CATEGORY_LABEL[c] ?? c}</div>
+                    <div className="flex items-baseline gap-2">
+                      <span style={{ fontSize: 18, fontWeight: 700, color: v.actionable > 0 ? "var(--amber)" : "var(--text)" }}>{v.count}</span>
+                      {v.locked > 0 && <span style={{ fontSize: 11, color: "var(--text2)" }} className="flex items-center gap-1"><Lock size={10} /> {v.locked} locked</span>}
+                      {v.new > 0 && <span style={{ fontSize: 11, color: "var(--cyan)" }}>{v.new} new</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ fontSize: 11, color: "var(--text2)", marginBottom: 4 }}>Actionable — the last {rows.length}: tender results, bank statements, broker holding statements</div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Received</th><th style={th}>From</th><th style={{ ...th, whiteSpace: "normal" }}>Subject</th>
+                  <th style={{ ...th, whiteSpace: "normal" }}>Summary</th><th style={th}>Entity</th><th style={th}>Files</th><th style={th}></th>
+                </tr></thead>
+                <tbody>
+                  {rows.map(m => (
+                    <tr key={m.id} style={{ opacity: m.status === "ack" ? 0.55 : 1 }}>
+                      <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 12 }}>{when(m.received_at)}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }} title={m.from_addr}>{m.sender}</td>
+                      <td style={{ ...td, whiteSpace: "normal", minWidth: 200 }}>
+                        {m.subject}
+                        <span style={{ color: "var(--text2)", fontSize: 11 }}> · {MAIL_CATEGORY_LABEL[m.category] ?? m.category}</span>
+                      </td>
+                      <td style={{ ...td, whiteSpace: "normal", minWidth: 200, color: m.attachment_locked ? "var(--amber)" : "var(--text)" }}>
+                        {m.attachment_locked && <Lock size={11} style={{ display: "inline", marginRight: 4 }} />}{m.summary}
+                      </td>
+                      <td style={{ ...td, whiteSpace: "nowrap", color: m.entity_hint ? "var(--text)" : "var(--text2)" }}>{m.entity_hint || "—"}</td>
+                      <td style={{ ...td, whiteSpace: "normal", fontSize: 11, color: "var(--text2)" }} title={m.stored_path}>
+                        {m.attachment_names.length ? m.attachment_names.join(", ") : "none"}
+                      </td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        {m.status !== "ack" && (
+                          <button onClick={() => ack.mutate(m.id)} disabled={ack.isPending}
+                            className="px-2 py-1 rounded text-xs flex items-center gap-1"
+                            style={{ border: "1px solid var(--border)", color: "var(--text2)", opacity: ack.isPending ? 0.6 : 1 }} title="seen — take it off the list">
+                            <CheckCircle size={12} /> ack
+                          </button>
+                        )}
+                        {m.status === "ack" && <span style={{ fontSize: 11, color: "var(--green)" }}>acked</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-2" style={{ fontSize: 11, color: "var(--text2)" }}>
+            Locked PDFs are stored in the vault and never opened — the PAN and the bank/broker passwords stay with you. Vault: finance/mail/.
+          </div>
+        </>
+      )}
     </div>
   )
 }

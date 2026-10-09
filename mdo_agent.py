@@ -10,6 +10,7 @@ Usage (inside the backend container):
     python mdo_agent.py daily-brief
     python mdo_agent.py wa-sweep ops        # a bot with modes: the word after the id
     python mdo_agent.py compliance-reminder # statutory dates due in 7 days → one WhatsApp message (weekly: Mon line)
+    python mdo_agent.py mail-reader         # IMAP intake: statements, contract notes, tender results → vault; one line when actionable
     python mdo_agent.py hourly              # legacy alias → ops-hourly
     python mdo_agent.py daily               # legacy alias → daily-brief
 
@@ -1199,10 +1200,29 @@ def run_compliance_reminder(bot: dict, model: str, cadence_key: str, now: dateti
     return 0
 
 
+# ── mail-reader: IMAP intake of statements, contract notes and tender results — rule-based, zero LLM spend ──
+# Aman, chat 2026-10-09 (A26 C1). All the work is the backend's (mdo_mail.run: watermark, categories, vault
+# storage, locked-PDF flag, the one push); this triggers the run and files the heartbeat — including
+# "0 new (…), 0 locked — IMAP ok", "IMAP not configured" and "IMAP login failed: <reason>" (a warning, never a crash).
+# Nothing here prints or files a credential: the backend returns only "configured" / "not configured".
+def run_mail_reader(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    bot_id = "mail-reader"
+    now = now or datetime.now(IST)
+    res = api("/api/mail/run", "POST", {"now": now.isoformat()}, timeout=300)
+    line = str(res.get("line") or f"{bot_id}: {res.get('new', 0)} new, {res.get('locked', 0)} locked")
+    status = str(res.get("status") or "clean")
+    if status not in ("clean", "warning", "error"):
+        status = "clean"
+    heartbeat(bot_id, cadence_key, status, line)
+    if res.get("text") and res.get("pushed"):
+        log(f"mail-reader pushed: {str(res['text'])[:200]}")
+    return 0
+
+
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
 CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
-               "compliance-reminder": run_compliance_reminder}
+               "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader}
 
 
 def check_broker_sessions() -> None:

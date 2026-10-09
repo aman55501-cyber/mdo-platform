@@ -83,6 +83,7 @@ async def vdb() -> aiosqlite.Connection:
         await _wa_sweep["ensure_schema"](_vdb)
         await _options["ensure_schema"](_vdb)
         await _compliance["ensure_schema"](_vdb)
+        await _mail["ensure_schema"](_vdb)
     return _vdb
 
 async def _ensure_schema():
@@ -3339,6 +3340,14 @@ _options = mdo_option_levels.register(app, vdb, lambda text: _cos["send_cos"](te
 # Zero LLM spend; run by mdo_agent.py compliance-reminder [daily|weekly]. Pushes go through send_cos.
 import mdo_compliance
 _compliance = mdo_compliance.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp))
+
+# mail-reader (Aman, chat 2026-10-09, A26 C1: Gmail app password → VPS .env): IMAP intake of statements, contract
+# notes, exchange balances, bank statements, MF confirmations, insurance, e-voting and bidsnrfp tender results into
+# the vault (finance/mail/…), mail_messages + mail_state, /api/mail/*. Locked PDFs are flagged, never opened. ONE
+# WhatsApp line only for the actionable ones (tender result, bank statement, broker holding statement). Zero LLM
+# spend; run by mdo_agent.py mail-reader. bidsnrfp results also go through the tender door's in-process body.
+import mdo_mail
+_mail = mdo_mail.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos["tender_ingest"])
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

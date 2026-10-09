@@ -551,3 +551,52 @@ export interface ComplianceEntitiesResponse {
   loaded: boolean
   note: string
 }
+
+// ── Mail (mail-reader bot): IMAP intake of statements, contract notes and tender results ──
+export type MailCategory = "broker-statement" | "contract-note" | "exchange-balance" | "bank-statement" | "tender-result"
+  | "mf-transaction" | "insurance" | "evoting" | "other"
+export type MailStatus = "new" | "seen" | "ack"
+
+export interface MailMessage {
+  id: number
+  uid: number
+  message_id: string
+  from_addr: string
+  sender: string                    // short label (SIB, HDFC Sec, Angel One, bidsnrfp …)
+  subject: string
+  received_at: string | null        // ISO UTC
+  category: MailCategory
+  entity_hint: string               // exact name matches only, "" when none
+  attachment_names: string[]
+  attachment_locked: boolean        // encrypted PDF — stored, never opened
+  stored_path: string               // relative to the vault, "" when nothing stored
+  summary: string
+  status: MailStatus
+  actionable: boolean
+  pushed_at: string | null
+  acked_at: string | null
+}
+
+export interface MailRecentResponse {
+  items: MailMessage[]
+  count: number
+  days: number
+  category: string
+  status: string
+  as_of: string
+}
+
+export interface MailStatsResponse {
+  days: number
+  as_of: string
+  total: number
+  locked: number
+  by_category: Record<string, { count: number; locked: number; actionable: number; new: number }>
+  categories: MailCategory[]
+  actionable: MailMessage[]         // the last 10 actionable rows, newest first
+  configured: boolean
+  host: string
+  mailbox: string
+  state: { last_uid: number; last_run_at: string | null; last_line: string; runs: number }
+  note: string
+}

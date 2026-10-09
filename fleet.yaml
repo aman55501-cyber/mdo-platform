@@ -393,6 +393,74 @@ bots:
     - No LLM call, ever (Directive 15)
     - Every run reports, especially an empty one (Directive 5)
     - No questions to Aman (Aman, chat 2026-10-09)
+- id: mail-reader
+  name: Mail reader — statements, contract notes and tender results into the vault
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py mail-reader
+  cadence: every 30 min 07:00-22:00 IST + daily 22:30 IST
+  model: none
+  heartbeat: 'every run, even when nothing arrived: "mail-reader: N new (tender R, broker B, bank K, mf M, other O), W locked
+    — IMAP ok"; "mail-reader: IMAP not configured (GMAIL_IMAP_USER / GMAIL_APP_PASSWORD missing in .env)" or
+    "mail-reader: IMAP login failed: <reason without credentials>" as a warning; "1 line pushed" / "push NOT delivered"
+    appended when something actionable arrived'
+  checks: []
+  serves:
+  - capital-rules
+  - tenders-washing-rcr
+  enabled: true
+  objective: every statement, note and tender result lands in the vault the day it arrives; Aman hears only about the actionable ones
+  notes: 'Aman, chat 2026-10-09 (AMAN_PENDING A26 C1): Gmail app password → VPS .env (GMAIL_IMAP_USER, GMAIL_APP_PASSWORD;
+    never printed, the bot logs only configured / not configured). Senders: nse_alerts@nse.co.in + info@bseindia.in
+    (Funds/Securities Balance), edocs@hdfcsec.com (contract notes, consolidated statements; PDF password-protected),
+    contract.notes@angeltrade.in + donotreply@angelone.in (Aditi Investments A1504046: contract notes, margin statements,
+    DP Transaction Cum Holding, Register of Securities & Funds; PDFs locked with the PAN — not held, never asked for),
+    alerts@sib.bank.in (monthly bank statement, locked), admin@bidsnrfp.com ("(N) New Tender Results : Participation
+    Insights", Vedanta Washery And Logistic Solutions), kfintech / camsonline (MF SIP confirmations, monthly portfolio
+    disclosures), custcomm@services.hdfcergo.com (insurance), donotreply.evoting@cdslindia.co.in (e-voting). The
+    DP Transaction Cum Holding PDF is stored and flagged locked — the Share Master Angel import (A23) takes the
+    unlocked PDF Aman prints himself.'
+  charter:
+    purpose: Every statement, contract note, exchange balance, bank statement, MF confirmation, insurance mail,
+      e-voting notice and bidsnrfp tender result that reaches aman.55501@gmail.com is in the vault the day it
+      arrives, categorised and counted; Aman hears one WhatsApp line only when something actionable arrived.
+    thinks: 'Rules only, no model. Category by sender domain + subject: exchange-balance (nse.co.in, bseindia.in),
+      contract-note / broker-statement (hdfcsec.com, angeltrade.in, angelone.in — "contract note" in the subject
+      decides), bank-statement (sib.bank.in), tender-result (bidsnrfp.com with "tender" or "participation" in the
+      subject), mf-transaction (kfintech, camsonline), insurance (hdfcergo.com), evoting (cdslindia.co.in), else
+      other — an unknown sender is never guessed into a category. entity_hint only on an exact name match (ADITI
+      INVESTMENTS, AMAN AGRAWAL, ASHOK KUMAR AGRAWAL, VEDANTA WASHERY). Actionable = tender result, bank statement,
+      or a broker mail whose subject says holding / DP transaction / register of securities / consolidated;
+      contract notes, margin statements, MF confirmations, insurance and e-voting are stored silently and counted.
+      A PDF that pypdf reports encrypted is attachment_locked=1, summary "locked PDF (PAN/password) — not opened";
+      no password is tried, none is asked for in chat.'
+    works: 'cron 30 1 UTC + */30 2-16 UTC + 0 17 UTC (07:00, every 30 min to 22:00, and 22:30 IST): POST
+      /api/mail/run → imaplib.IMAP4_SSL(GMAIL_IMAP_HOST) login, MAIL_READER_FOLDER selected read-only, UIDs above
+      the mail_state watermark fetched with BODY.PEEK[] (nothing marked read; first run = last 7 days, newest 300;
+      later runs 300 oldest-first, the rest next run). Each message: parsed with the email stdlib, deduped by
+      Message-ID (mail_messages.message_id UNIQUE), attachments written to the vault at
+      finance/mail/<date>_<category>_<safe-subject>/<filename> (tender-result mails also keep body.html), every
+      write audited in vault_audit. bidsnrfp HTML parsed into "N tender results: title — result" (≤600 chars) and
+      each row posted through the tender door''s body (mdo_cos_api tender_ingest, source bidsnrfp, status result).
+      One push per run when anything actionable arrived: "Mail: 2 tender results (bidsnrfp), 1 SIB bank statement
+      (locked) — see Morning › Mail". Endpoints: GET /api/mail/recent?days=7&category=…, GET /api/mail/stats,
+      POST /api/mail/{id}/ack. Morning page card "Mail": 7-day counts by category + the last 10 actionable rows
+      with ack.'
+    limits: Reads one mailbox over IMAP; a locked PDF stays locked (the PAN and the bank/broker passwords are not
+      held and never requested). Category rules know the senders listed above — a new sender lands in "other"
+      until a rule is added here. The bidsnrfp parser keeps the table rows as the mail wrote them; it does not
+      judge a result. A UIDVALIDITY change resets the watermark and re-reads the last 7 days (dedupe by Message-ID
+      keeps the table clean). No LLM, no outbound mail, no capital.
+    minimum_output: 'Every run: the heartbeat line with counts, including "0 new (…), 0 locked — IMAP ok". Login
+      failure or missing credentials: the warning line, never a crash. Anything actionable: the one WhatsApp line.'
+    rules:
+    - Never opens a locked PDF, never tries or asks for a password or the PAN (Directive 9)
+    - Never sends email (Directive 4) — IMAP read-only, nothing marked read
+    - Credentials never appear in a log, a report or an endpoint reply — only configured / not configured
+    - entity_hint on exact name matches only; nothing guessed
+    - One line per run at most, only for the actionable categories
+    - No LLM call, ever (Directive 15)
+    - Every run reports, especially an empty one (Directive 5)
 - id: hotel-daily
   name: Hotel ANS renovation + management-contract tracker
   runs_on: vps-cron
