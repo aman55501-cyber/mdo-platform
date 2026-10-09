@@ -182,3 +182,8 @@ the CoS states the cost in model-time and the deliverable. No fan-out of backgro
 once the plan window is above 50% used. Readers and summarisers run on the cheapest model
 that can do the job. Reading past sessions or chats happens only on Aman's request for that
 week, and only once. The credit-guard bot enforces this and reports every run.
+
+## Directive 16 — Aman's pending list (added 2026-10-09)
+AMAN_PENDING.md is the list of clicks only Aman can make. Every status message ends with it,
+or with its item numbers. Items are carried over indefinitely and removed only when Aman says
+so in his own words. The CoS adds items as they arise, dated, with why they matter.
