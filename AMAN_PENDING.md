@@ -11,10 +11,11 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A9 | PAUSED 2026-10-09: all cloud Routines disabled on Aman's word. When un-pausing, say **haiku** or **keep** for the model of the cheap Routines | cost per run ÷ 20 | 2026-10-09 |
 | A11 | Decide on the three CoS systems: keep this fleet as the one CoS, Notion as the board it writes to, retire the PC "CoS box" loop and Grok desks' CoS role (briefs/NOTION_CONTROL_ROOM.md §6) | two systems in parallel waste credits and contradict each other | 2026-10-09 |
 | A12 | Answer the 10 questions in briefs/COMPLIANCE_CALENDAR_REVIEW.md; mark which filings are yours vs Vimal's | compliance-sentinel objective | 2026-10-09 |
-| A13 | Bot targets table: reply row number + ok/edit; the five people whose reply time matters; idle threshold hours (default 2); keep or kill the old `classifier` bot | pulse and ops-hourly tuning | 2026-10-09 |
+| A13 | Bot targets table: reply row number + ok/edit; the five people whose reply time matters. ANSWERED 2026-10-09: idle threshold = 1 hour; watched chats = Bantu Mausaji, Vedanta Daily Report, Washery Civil Update, Ans Management, VWLR Indent Planning, Core Group (priorities later); classifier kill/keep = analysis in progress, decision pending | pulse and ops-hourly tuning | 2026-10-09 |
 | A14 | Vision session, 30 min, VISION_INTAKE.md blocks 2–4 | top-line objectives the bots run toward | 2026-10-08 |
 | A15 | Vault import from the laptop (`_memory` folder + Family_Finance_Master.xlsx) via scp + vault_import.sh; then Shares CFO reconnect | memory and finance bots have nothing to read | 2026-10-08 |
 | A23 | Angel One holdings export (CSV) for the Share Master Portfolio tab; HDFC ×4 received 2026-10-09 | Portfolio tab incomplete without it | 2026-10-09 |
+| A24 | NIFTY 29-Dec-26 25000 CE alert below 30 — ANSWERED 2026-10-09, being wired into levels-alert (fleet) | the one F&O position with money left | 2026-10-09 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.
