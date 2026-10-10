@@ -46,7 +46,7 @@ from mdo_cos import IST
 
 BOT_ID = "mail-reader"
 CATEGORIES = ("broker-statement", "contract-note", "exchange-balance", "bank-statement", "tender-result",
-              "mf-transaction", "insurance", "evoting", "grok-tender", "other")
+              "mf-transaction", "insurance", "evoting", "grok-tender", "tender-alert", "other")
 ACTIONABLE_CATEGORIES = ("tender-result", "bank-statement", "broker-statement")
 STATUSES = ("new", "seen", "ack")
 ENTITY_NAMES = ("ADITI INVESTMENTS", "AMAN AGRAWAL", "ASHOK KUMAR AGRAWAL", "VEDANTA WASHERY")   # exact, never guessed
@@ -153,6 +153,8 @@ def categorise(from_addr: str, subject: str) -> str:
         return "broker-statement"
     if _domain_in(d, "sib.bank.in", "sib.co.in", "southindianbank.com"):
         return "bank-statement"
+    if _domain_in(d, "bidsnrfp.com") and "new tender/s" in s:
+        return "tender-alert"                # Tender247's own "N New Tender/s" alert for Aman's subscription: tenders, not results
     if _domain_in(d, "bidsnrfp.com"):
         return "tender-result" if ("tender" in s or "participation" in s) else "other"
     if "kfintech" in d or "camsonline" in d or _domain_in(d, "kfintech.com", "camsonline.com"):
@@ -162,6 +164,45 @@ def categorise(from_addr: str, subject: str) -> str:
     if _domain_in(d, "cdslindia.co.in", "cdslindia.com") and ("evoting" in d or "e-voting" in s or "evoting" in s or "voting" in s):
         return "evoting"
     return "other"
+
+
+_T247_ID = re.compile(r"^\s*\d+\.\s*\|?\s*T247 ID\s*:\s*(\d+)", re.I)
+_T247_DUE = re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$")
+_T247_TOTAL = re.compile(r"view all\s*\((\d+)\)", re.I)
+
+
+def _t247_match(t: dict) -> bool:
+    """True when the tender's title or buyer carries one of the TENDERS_KEYWORDS (the same words tenders-direct uses)."""
+    from mdo_tenders_direct import classify
+    return bool(classify({"title": t.get("title", ""), "org": t.get("buyer", ""), "value_text": t.get("value", "")})["matched"])
+
+
+def parse_tender247_alert(text: str) -> tuple[list[dict], int]:
+    """Tender247's alert mail, as html_to_text renders it: per tender "N. | T247 ID : n", then title, organisation,
+    place, value, closing date (dd-mm-yyyy). Returns (tenders, total) — the mail lists at most five and says
+    "view all (N)". A tender whose block does not end in a date keeps due_date ''. Nothing is inferred."""
+    from mdo_tenders_direct import parse_date
+    lines = [l.strip() for l in str(text or "").splitlines() if l.strip()]
+    m = _T247_TOTAL.search(" ".join(lines))
+    out, i = [], 0
+    while i < len(lines):
+        m1 = _T247_ID.match(lines[i])
+        if not m1:
+            i += 1
+            continue
+        block, j = [], i + 1
+        while j < len(lines) and not _T247_ID.match(lines[j]) and not lines[j].lower().startswith("click here"):
+            block.append(lines[j])
+            j += 1
+        due = block[-1] if block and _T247_DUE.match(block[-1]) else ""
+        body = block[:-1] if due else block
+        value = body[-1] if len(body) >= 4 else ""
+        core = body[:-1] if value else body
+        out.append({"t247_id": m1.group(1), "title": (core[0] if core else "")[:300], "buyer": (core[1] if len(core) > 1 else "")[:120],
+                    "location": (core[2] if len(core) > 2 else "")[:80], "value": value[:40], "due_date": parse_date(due) if due else "",
+                    "line": " | ".join(block)[:300]})
+        i = j
+    return out, int(m.group(1)) if m else len(out)
 
 
 GROK_DOMAINS = ("x.ai", "grok.com", "xai.com")
@@ -394,10 +435,17 @@ def describe(parsed: dict, category: str) -> dict:
         body_text = html_text                                  # the summary fallback reads the real body
     if category == "grok-tender":
         tenders = parse_grok_tenders(html_text or body_text)
+    alert_total = 0
+    if category == "tender-alert":
+        tenders, alert_total = parse_tender247_alert(html_text or body_text)
     if locked_names:
         summary = LOCKED_SUMMARY + (f" · {', '.join(locked_names)}" if len(locked_names) <= 3 else f" · {len(locked_names)} files")
     elif category == "tender-result":
         summary = tender_summary(tenders, body_text)
+    elif category == "tender-alert":
+        rel = [t for t in tenders if _t247_match(t)]
+        summary = (f"{alert_total} new Tender247 tender{'s' if alert_total != 1 else ''} ({len(tenders)} listed, {len(rel)} match your keywords)"
+                   + (": " + "; ".join(f"{t['buyer']} — {t['title']}" for t in rel[:3]) if rel else "")) if tenders else "Tender247 alert: no tenders parsed"
     elif category == "grok-tender":
         summary = (f"{len(tenders)} tender{'s' if len(tenders) != 1 else ''} from Grok: "
                    + "; ".join(f"{t['buyer']} — {t['title']}" for t in tenders[:4])) if tenders else "Grok: NONE FOUND"
@@ -407,7 +455,9 @@ def describe(parsed: dict, category: str) -> dict:
         summary = " ".join(body_text.split())[:200]
     return {"category": category, "entity_hint": hint, "attachment_names": names, "locked": bool(locked_names),
             "locked_names": locked_names, "summary": summary[:SUMMARY_MAX], "tenders": tenders,
-            "actionable": bool(tenders) if category == "grok-tender" else is_actionable(category, parsed["subject"])}
+            "actionable": (bool(tenders) if category == "grok-tender" else
+                           any(_t247_match(t) for t in tenders) if category == "tender-alert" else
+                           is_actionable(category, parsed["subject"]))}
 
 
 def push_text(rows: list[dict]) -> str:
@@ -416,12 +466,14 @@ def push_text(rows: list[dict]) -> str:
     groups: dict[tuple[str, str], list[dict]] = {}
     for r in rows:
         groups.setdefault((r["category"], sender_label(r["from_addr"])), []).append(r)
-    order = {"tender-result": 0, "grok-tender": 0, "bank-statement": 1, "broker-statement": 2}
+    order = {"tender-result": 0, "tender-alert": 0, "grok-tender": 0, "bank-statement": 1, "broker-statement": 2}
     parts = []
     for (cat, label), rs in sorted(groups.items(), key=lambda kv: (order.get(kv[0][0], 9), kv[0][1])):
         n = len(rs)
         locked = all(int(r.get("attachment_locked") or 0) for r in rs) and n > 0
-        if cat == "grok-tender":
+        if cat == "tender-alert":
+            parts.append(f"{n} Tender247 alert{'s' if n != 1 else ''} with matching tenders")
+        elif cat == "grok-tender":
             parts.append(f"{n} Grok tender list{'s' if n != 1 else ''}")
         elif cat == "tender-result":
             parts.append(f"{n} tender result{'s' if n != 1 else ''} ({label})")
@@ -437,7 +489,8 @@ def heartbeat_line(counts: dict, locked: int, imap: str = "IMAP ok") -> str:
     broker = counts.get("broker-statement", 0) + counts.get("contract-note", 0) + counts.get("exchange-balance", 0)
     other = counts.get("insurance", 0) + counts.get("evoting", 0) + counts.get("other", 0)
     total = sum(counts.values())
-    grok = f", grok {counts['grok-tender']}" if counts.get("grok-tender") else ""
+    grok = (f", grok {counts['grok-tender']}" if counts.get("grok-tender") else "") + \
+           (f", t247 {counts['tender-alert']}" if counts.get("tender-alert") else "")
     return (f"{BOT_ID}: {total} new (tender {counts.get('tender-result', 0)}, broker {broker}, "
             f"bank {counts.get('bank-statement', 0)}, mf {counts.get('mf-transaction', 0)}, other {other}{grok}), "
             f"{locked} locked — {imap}")
@@ -709,6 +762,25 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
                     posted += int(r.get("added") or 0)
                 except Exception as e:
                     out["note"] = (out["note"] + " · " if out["note"] else "") + f"tender door failed: {redact(e, cfg)[:80]}"
+        t247_posted = t247_seen = 0
+        for row in new_rows:                                 # Tender247 alert mails → the pipeline, source "tender247"
+            if row["category"] != "tender-alert" or not row.get("tenders"):
+                continue
+            from mdo_tenders_direct import classify
+            items = []
+            for t in row["tenders"]:
+                c = classify({"title": t["title"], "org": t["buyer"], "value_text": t["value"]})
+                items.append({"buyer": t["buyer"], "title": t["title"], "category": c["category"] or "Other", "due_date": t["due_date"],
+                              "url": "", "source": "tender247",
+                              "notes": " · ".join(x for x in (f"T247 ID {t['t247_id']}", t["value"] and f"value {t['value']}", t["location"]) if x)})
+            t247_seen += len(items)
+            out["tenders"].extend(items)
+            if tender_ingest is not None:
+                try:
+                    r = await tender_ingest(items, "tender247")
+                    t247_posted += int(r.get("added") or 0)
+                except Exception as e:
+                    out["note"] = (out["note"] + " · " if out["note"] else "") + f"tender door failed: {redact(e, cfg)[:80]}"
         grok_posted = 0
         for row in new_rows:                                 # Grok's [GROK-TENDER] table → the pipeline, source "grok"
             if row["category"] != "grok-tender" or not row.get("tenders"):
@@ -725,7 +797,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
                     grok_posted += int(r.get("added") or 0)
                 except Exception as e:
                     out["note"] = (out["note"] + " · " if out["note"] else "") + f"tender door failed: {redact(e, cfg)[:80]}"
-        out["tenders_posted"] = posted + grok_posted
+        out["tenders_posted"] = posted + grok_posted + t247_posted
         if out["tenders"] and tender_ingest is None:
             out["note"] = (out["note"] + " · " if out["note"] else "") + "tender door not wired — results stored only"
         # ONE WhatsApp line when something actionable arrived
@@ -753,6 +825,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             line += " · 1 line pushed" if out["pushed"] else " · push NOT delivered"
         if posted:
             line += f" · {posted} tender result{'s' if posted != 1 else ''} → pipeline"
+        if counts.get("tender-alert"):
+            line += f" · Tender247: {t247_posted} new of {t247_seen} listed → pipeline"
         if counts.get("grok-tender"):
             line += f" · Grok: {grok_posted} new tender{'s' if grok_posted != 1 else ''} → pipeline"
         if out["note"]:

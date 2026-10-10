@@ -316,7 +316,7 @@ def test_run_stores_categorises_locks_pushes_once_and_heartbeats_zero_next_time(
     r = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
     assert r["configured"] and r["status"] == "clean" and r["new"] == 6 and r["dupes"] == 0 and r["locked"] == 2
     assert r["counts"] == {"broker-statement": 1, "contract-note": 1, "exchange-balance": 1, "bank-statement": 1,
-                           "tender-result": 1, "mf-transaction": 1, "insurance": 0, "evoting": 0, "grok-tender": 0, "other": 0}
+                           "tender-result": 1, "mf-transaction": 1, "insurance": 0, "evoting": 0, "grok-tender": 0, "tender-alert": 0, "other": 0}
     # the one line: tender result + bank statement (locked) + Angel holding statement (locked)
     assert r["pushed"] == 1 and sent.texts == [
         "Mail: 1 tender result (bidsnrfp), 1 SIB bank statement (locked), 1 Angel One holding statement (locked) — see Morning › Mail"]
@@ -496,3 +496,47 @@ def test_grok_email_flows_into_the_pipeline_with_one_push_and_a_heartbeat(monkey
     # a second run adds nothing: the mails are stored, the tenders are duplicates
     r2 = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
     assert r2["new"] == 0 and r2["tenders_posted"] == 0
+
+
+T247_HTML = """<html><body><table><tr><td>TENDER DETAILS</td><td>ORGANIZATION &amp; LOCATION</td><td>VALUE &amp; DEADLINE</td></tr>
+<tr><td>1.</td><td>T247 ID : 105156689</td></tr><tr><td>supply of coal - supply of g12 coal</td></tr>
+<tr><td>Orissa State Co-operative Milk Producers Federation Limited</td></tr><tr><td>Keonjhar, Orissa, India</td></tr>
+<tr><td>1.16 Cr</td></tr><tr><td>23-10-2026</td></tr>
+<tr><td>2.</td><td>T247 ID : 105135072</td></tr><tr><td>operation and maintenance of coal washery and rcr transportation at kusmunda</td></tr>
+<tr><td>South Eastern Coalfields Limited</td></tr><tr><td>Korba, Chhattisgarh, India</td></tr>
+<tr><td>2.33 Lacs</td></tr><tr><td>22-10-2026</td></tr>
+<tr><td><a href="https://r.example/x">Click here to view all (6) Fresh Tenders</a></td></tr></table></body></html>"""
+
+
+def test_tender247_alert_is_parsed_as_new_tenders_not_results(monkeypatch):
+    assert mm.categorise("Tender247 <alerts@tenders.bidsnrfp.com>", "6 New Tender/s, 10-Oct-26 (Noon) - Tender247") == "tender-alert"
+    assert mm.categorise("BidsNRFP <admin@bidsnrfp.com>", "(27) New Tender Results : Participation Insights - 10-10-2026") == "tender-result"
+    rows, total = mm.parse_tender247_alert(mm.html_to_text(T247_HTML))
+    assert total == 6 and [(r["t247_id"], r["buyer"], r["location"], r["value"], r["due_date"]) for r in rows] == [
+        ("105156689", "Orissa State Co-operative Milk Producers Federation Limited", "Keonjhar, Orissa, India", "1.16 Cr", "2026-10-23"),
+        ("105135072", "South Eastern Coalfields Limited", "Korba, Chhattisgarh, India", "2.33 Lacs", "2026-10-22")]
+    assert rows[1]["title"].startswith("operation and maintenance of coal washery")
+    assert mm.parse_tender247_alert("") == ([], 0)
+    d = mm.describe({"subject": "2 New Tender/s", "text": "", "html": T247_HTML, "attachments": [], "from_addr": "x"}, "tender-alert")
+    assert d["actionable"] is True and d["summary"].startswith("6 new Tender247 tenders (2 listed, 1 match your keywords): South Eastern")
+    quiet = mm.describe({"subject": "1 New Tender/s", "text": "", "html": T247_HTML.split("<tr><td>2.</td>")[0] + "</table></body></html>",
+                         "attachments": [], "from_addr": "x"}, "tender-alert")
+    assert quiet["actionable"] is False                     # no keyword match → pipeline only, no WhatsApp line
+
+
+def test_tender247_alert_run_files_the_pipeline_and_pushes_only_on_a_match(monkeypatch):
+    msgs = {301: _eml("Tender247 <alerts@tenders.bidsnrfp.com>", "2 New Tender/s, 10-Oct-26 - Tender247", "see html",
+                      html=T247_HTML, when=NOW - timedelta(hours=1))}
+    c, sent, _, _ = _setup(monkeypatch, messages=msgs)
+    db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
+    db.execute("DELETE FROM vwlr_tender_pipeline WHERE notes LIKE '[tender247]%'"); db.commit(); db.close()
+    r = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
+    assert r["counts"]["tender-alert"] == 1 and r["tenders_posted"] == 2 and ", t247 1" in r["line"]
+    assert "Tender247: 2 new of 2 listed → pipeline" in r["line"]
+    assert sent.texts == ["Mail: 1 Tender247 alert with matching tenders — see Morning › Mail"]
+    db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
+    rows = db.execute("SELECT buyer, due_date, category, notes FROM vwlr_tender_pipeline WHERE notes LIKE '[tender247]%' ORDER BY id").fetchall()
+    db.close()
+    assert [(b, d) for b, d, _, _ in rows] == [("Orissa State Co-operative Milk Producers Federation Limited", "2026-10-23"),
+                                                ("South Eastern Coalfields Limited", "2026-10-22")]
+    assert rows[1][2] == "Coal washing" and "T247 ID 105135072" in rows[1][3] and "value 2.33 Lacs" in rows[1][3]

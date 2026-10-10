@@ -1247,7 +1247,7 @@ function HDFCStatus() {
 
 const MAIL_CATEGORY_LABEL: Record<string, string> = {
   "tender-result": "Tender results", "bank-statement": "Bank statements", "broker-statement": "Broker statements",
-  "contract-note": "Contract notes", "grok-tender": "Grok tenders", "exchange-balance": "Exchange balances", "mf-transaction": "MF transactions",
+  "contract-note": "Contract notes", "grok-tender": "Grok tenders", "tender-alert": "Tender247 alerts", "exchange-balance": "Exchange balances", "mf-transaction": "MF transactions",
   insurance: "Insurance", evoting: "e-Voting", other: "Other",
 }
 

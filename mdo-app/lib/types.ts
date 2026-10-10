@@ -554,7 +554,7 @@ export interface ComplianceEntitiesResponse {
 
 // ── Mail (mail-reader bot): IMAP intake of statements, contract notes and tender results ──
 export type MailCategory = "broker-statement" | "contract-note" | "exchange-balance" | "bank-statement" | "tender-result"
-  | "grok-tender"
+  | "grok-tender" | "tender-alert"
   | "mf-transaction" | "insurance" | "evoting" | "other"
 export type MailStatus = "new" | "seen" | "ack"
 
