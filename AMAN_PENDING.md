@@ -22,7 +22,6 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A28 | UptimeRobot keyword monitor on https://amanagrawal.cloud/api/health/public, keyword "ok":true, 5 min, alerts to email + app (DEPLOY_HOSTINGER §8a) | the alarm that fires when the fleet itself is dead | 2026-10-09 |
 | A29 | Google Calendar → Other calendars → From URL → paste the calendar feed URL printed by deploy (DEPLOY_HOSTINGER §8b) | compliance, expiries, Vegas on the phone | 2026-10-09 |
 | A30 | HDFC API keys for 4 accounts via Cowork prompt (chat 2026-10-09) | ends CSV uploads | 2026-10-09 |
-| A31 | Jaiprakash Associates (Aman, 30,000; withdrawn from trading 18 Jun 2026): carry at zero, last price, or remove | Share Master row | 2026-10-09 |
 | A32 | Reply **yes** so the fix also lands on the branch the VPS tracks (`claude/chief-of-staff-bot-4i2jyz`); this session may push only to `claude/nifty-darwin-j8xylv`. Until then nothing built since 2026-10-09 evening is live | unblocks A27 with zero VPS clicks: self-deploy picks it up in 10 min | 2026-10-10 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
@@ -30,4 +29,4 @@ A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as de
 
 A21 levels import — evidence 2026-10-09: VPS printed `levels import: 128 rows -> 200`.
 
-Removed items (only on Aman's word): A33 GRAPHITE sell level — Aman 2026-10-10 ("forget graphite sell level"); A29 calendar — Aman 2026-10-10 ("calender done"); A1 key rotation, A10 Vimal filings check — Aman, chat 2026-10-09 ("forget A1 A10"). A16 Shashank layouts message, A19 Ayush quote request — sent, Aman 2026-10-09. A4 both WhatsApp QRs scanned — Aman 2026-10-09. A2 A3 A5 A17 A18 — evidence 2026-10-09 08:34 UTC: deploy clean on f295e87, alert test sent:true to Aman's phone, amanagrawal.cloud resolves to the VPS IP, aman_setup.sh completed (keys, harden, stash).
+Removed items (only on Aman's word): A31 Jaiprakash Associates — Aman 2026-10-10 ("forget click 1"; the row stays unpriced); A33 GRAPHITE sell level — Aman 2026-10-10 ("forget graphite sell level"); A29 calendar — Aman 2026-10-10 ("calender done"); A1 key rotation, A10 Vimal filings check — Aman, chat 2026-10-09 ("forget A1 A10"). A16 Shashank layouts message, A19 Ayush quote request — sent, Aman 2026-10-09. A4 both WhatsApp QRs scanned — Aman 2026-10-09. A2 A3 A5 A17 A18 — evidence 2026-10-09 08:34 UTC: deploy clean on f295e87, alert test sent:true to Aman's phone, amanagrawal.cloud resolves to the VPS IP, aman_setup.sh completed (keys, harden, stash).
