@@ -755,7 +755,7 @@ bots:
     works: 'Every 30 min (cron */30). POST /api/credits/run → one heartbeat line, plus ONE WhatsApp line per state
       change (deduped per plan window or per month in credit_guard_alerts). GET /api/credits returns the policy
       every Claude session obeys before spawning work: workers yes/no, max workers, and the model per kind of
-      work (read → haiku, build → sonnet, cos → opus when ok; all haiku/sonnet when tight; nothing new when
+      work (read → haiku, build → sonnet, hard → opus, cos → sonnet when ok; haiku/sonnet when tight; nothing new when
       blocked or on overage). VPS bots switch models by themselves through /api/spend mode.'
     limits: No API exposes the plan balance; the reading is only as fresh as the last session that posted it, and
       "no live reading" is said out loud. Cannot stop a session mid-turn.

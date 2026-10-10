@@ -782,7 +782,7 @@ export interface CreditsStatus {
     forecast_inr: number; mode: "normal" | "economy" | "paused"; mode_reason: string
     by_bot: { bot: string; model: string; inr: number; calls: number }[]
   }
-  policy: { state: string; workers: "yes" | "no"; max_workers: number; models: { read: string; build: string; cos: string }; fleet_api_mode: string }
+  policy: { state: string; workers: "yes" | "no"; max_workers: number; models: { read: string; build: string; hard: string; cos: string }; fleet_api_mode: string }
   line: string
   last_run: { at: string; status: string; line: string } | null
 }

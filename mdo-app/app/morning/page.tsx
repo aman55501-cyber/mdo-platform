@@ -853,7 +853,7 @@ function CreditsCard() {
               {d.plan_state === "unknown" ? "no live reading" : d.plan_state}{resets && d.plan_state !== "unknown" ? ` · resets ${resets} IST` : ""}
             </div>
             <div style={{ fontSize: 11, color: "var(--text2)" }}>
-              workers {d.policy.workers === "yes" ? `allowed (max ${d.policy.max_workers})` : "stopped"} · read {d.policy.models.read} · build {d.policy.models.build} · CoS {d.policy.models.cos}
+              workers {d.policy.workers === "yes" ? `allowed (max ${d.policy.max_workers})` : "stopped"} · read {d.policy.models.read} · build {d.policy.models.build} · hard {d.policy.models.hard} · CoS {d.policy.models.cos}
             </div>
           </div>
           <div>

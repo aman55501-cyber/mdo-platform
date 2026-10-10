@@ -82,7 +82,7 @@ def test_reading_posted_from_a_session_drives_the_policy_and_alerts_once_per_win
     assert r.json()["plan_state"] in ("ok", "unknown")       # GET uses the wall clock; the run below pins NOW
     run = c.post("/api/credits/run", json={"now": NOW.isoformat()}).json()
     assert run["plan_state"] == "ok" and run["pushed"] == 0 and sent.texts == []
-    assert run["policy"]["workers"] == "yes" and run["policy"]["models"] == {"read": "haiku", "build": "sonnet", "cos": "opus"}
+    assert run["policy"]["workers"] == "yes" and run["policy"]["models"] == {"read": "haiku", "build": "sonnet", "hard": "opus", "cos": "sonnet"}
     assert run["line"].startswith("credit-guard: credits fine · plan: ok · resets 15:00 IST · overage no · API ₹0 (no cap set)")
 
     c.post("/api/credits/plan", json={"status": "allowed_warning", "resetsAt": resets, "now": NOW.isoformat()})

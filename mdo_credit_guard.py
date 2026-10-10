@@ -48,13 +48,15 @@ PLAN_STATUSES = ("allowed", "allowed_warning", "rejected")
 STALE_HOURS = 6          # an older plan reading says nothing about the current 5-hour window
 
 # Which model each kind of work runs on, per plan state. Aliases are the Agent tool's.
-# "read" = search, summarise, parse, check; "build" = code, analysis; "cos" = the session talking to Aman.
+# "read" = search, summarise, parse, check; "build" = code, analysis; "hard" = money/legal/regulator reasoning,
+# a failed or contradicted cheaper attempt, or the final check before anything reaches Aman; "cos" = the
+# session talking to Aman (it routes; the heavy lifting is delegated).
 POLICY = {
-    "ok":      {"workers": "yes",      "max_workers": 2, "models": {"read": "haiku", "build": "sonnet", "cos": "opus"}},
-    "unknown": {"workers": "yes",      "max_workers": 1, "models": {"read": "haiku", "build": "sonnet", "cos": "opus"}},
-    "tight":   {"workers": "no",       "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "cos": "sonnet"}},
-    "blocked": {"workers": "no",       "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "cos": "haiku"}},
-    "overage": {"workers": "no",       "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "cos": "sonnet"}},
+    "ok":      {"workers": "yes", "max_workers": 2, "models": {"read": "haiku", "build": "sonnet", "hard": "opus", "cos": "sonnet"}},
+    "unknown": {"workers": "yes", "max_workers": 1, "models": {"read": "haiku", "build": "sonnet", "hard": "opus", "cos": "sonnet"}},
+    "tight":   {"workers": "no",  "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "hard": "sonnet", "cos": "sonnet"}},
+    "blocked": {"workers": "no",  "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "hard": "haiku", "cos": "haiku"}},
+    "overage": {"workers": "no",  "max_workers": 0, "models": {"read": "haiku", "build": "haiku", "hard": "sonnet", "cos": "sonnet"}},
 }
 
 
