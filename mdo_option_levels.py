@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS option_levels (
 
 
 # ── pure helpers ──────────────────────────────────────────────────────────────
+
+def _query_tz(s: str) -> str:
+    """'2026-10-09T08:00:00 05:30' → '+05:30': an unescaped '+' in a query string arrives as a space."""
+    return re.sub(r" (\d\d:\d\d)$", r"+\1", s.strip())
+
 def parse_instrument(s: Any) -> dict | None:
     """'NIFTY 29-Dec-26 25000 CE' → {instrument, symbol, expiry '29-Dec-2026' (NSE's spelling), strike, opt_type}."""
     m = _INSTR.match(str(s or ""))
@@ -268,7 +273,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         """Fetch each active instrument's last price (one chain call per symbol), apply the crossing rule,
         push, store the state. `ltps` ({instrument: price}) replaces the fetch — tests, or a manual run."""
         try:
-            now = datetime.fromisoformat(str(now_v).replace("Z", "+00:00")) if now_v else datetime.now(IST)
+            now = datetime.fromisoformat(_query_tz(str(now_v).replace("Z", "+00:00"))) if now_v else datetime.now(IST)
         except ValueError:
             now = datetime.now(IST)
         if now.tzinfo is None:

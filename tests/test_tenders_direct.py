@@ -276,7 +276,7 @@ def test_run_parses_every_site_pushes_once_posts_the_pipeline_and_heartbeats_zer
     rcr = by_url["https://coalindiatenders.nic.in/nicgep/app?sp=3"]
     assert rcr["category"] == "RCR" and rcr["buyer"] == "South Eastern Coalfields Limited / Kusmunda Area"
     # Morning card: the next 30 days by due date, matched only; the later ones are outside the window
-    up = c.get("/api/tenders/direct/upcoming?days=30").json()
+    up = c.get("/api/tenders/direct/upcoming", params={"days": 30, "now": NOW.isoformat()}).json()
     assert up["from"] == NOW.strftime("%Y-%m-%d") and up["count"] == 8
     assert [x["due"] for x in up["items"]] == ["2026-10-25", "2026-10-28", "2026-10-29", "2026-10-29", "2026-10-31", "2026-11-02", "2026-11-05", "2026-11-05"]
     assert all(x["matched"] for x in up["items"]) and up["items"][0]["keywords"] == ["crushing"] and up["undated"] == []

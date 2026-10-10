@@ -1280,7 +1280,18 @@ def run_voice(bot: dict, model: str, cadence_key: str, now: datetime | None = No
 
 
 # Bots with their own runner instead of the checks registry (run() dispatches here first).
-CUSTOM_BOTS = {**WA_BOTS, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
+# ── credit-guard: the plan window + the fleet API cap → one policy, one line per state change — zero LLM ──
+# Aman, chat 2026-10-10: "one major bot that you must focus on is a bot that manages that we dont run out of
+# credits" and "effectively change models whenever required". The backend (mdo_credit_guard.run) reads the last
+# plan reading and the spend ledger, pushes deduped alerts and returns the line; this files the heartbeat.
+def run_credit_guard(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    now = now or datetime.now(IST)
+    res = api("/api/credits/run", "POST", {"now": now.isoformat()}, timeout=60)
+    heartbeat("credit-guard", cadence_key, str(res.get("status") or "clean"), str(res.get("line") or "credit-guard: no line"))
+    return 0
+
+
+CUSTOM_BOTS = {**WA_BOTS, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
                "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader,
                "corp-actions": run_corp_actions, "tenders-direct": run_tenders_direct, "voice": run_voice}

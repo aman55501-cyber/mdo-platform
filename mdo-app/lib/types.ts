@@ -771,3 +771,18 @@ export interface VoiceRecentResponse {
   status: string
   as_of: string
 }
+
+// ── credit-guard (GET /api/credits) ──
+export interface CreditsStatus {
+  as_of: string
+  plan_state: "ok" | "tight" | "blocked" | "overage" | "unknown"
+  plan: { at: string; session: string; status: string; limit_type: string; resets_at: number | null; overage: number } | null
+  api: {
+    month: string; month_to_date_inr: number; calls: number; cap_inr: number | null; pct_of_cap: number | null
+    forecast_inr: number; mode: "normal" | "economy" | "paused"; mode_reason: string
+    by_bot: { bot: string; model: string; inr: number; calls: number }[]
+  }
+  policy: { state: string; workers: "yes" | "no"; max_workers: number; models: { read: string; build: string; cos: string }; fleet_api_mode: string }
+  line: string
+  last_run: { at: string; status: string; line: string } | null
+}

@@ -735,22 +735,37 @@ bots:
     - Never invent a counterparty, an amount or an entity
 - id: credit-guard
   name: Claude credit guard (never run out again)
-  runs_on: cloud-routine
-  cadence: daily 07:40 IST + on demand
-  model: cheapest available (Aman decides; proposed claude-haiku-5-5)
-  heartbeat: 'one line every run: "credits: <status> · resets <when> · overage <yes/no> · fleet API spend ₹x of cap"'
-  serves: []
-  enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py credit-guard
+  cadence: every 30 min
+  model: none
+  heartbeat: 'every run: "credit-guard: credits fine|TIGHT · plan: <ok|tight|blocked|overage|no live reading> · resets
+    HH:MM IST · API ₹x of ₹cap (p%) · forecast ₹f · <mode> · top <bot> <model> ₹y"'
+  checks: []
+  serves: []          # Aman's instruction of 2026-10-10 is the mandate
+  enabled: true       # Aman, chat 2026-10-10: "one major bot that you must focus on" — zero LLM, so the 2026-10-09 pause does not bind it
   charter:
-    purpose: Aman never hits the Claude usage wall again, and never pays for work that returns nothing he can use.
-    thinks: 'Two budgets: the claude.ai plan (rate_limit_info on the sessions: status, isUsingOverage, resetsAt) and the fleet API cap (spend ledger). Either near its limit = act, do not just report.'
-    works: 'Reads rate_limit_info of the CoS and recent sessions via the claude-code-remote tools; reads /api/spend. At ≥80% of the window or status rejected: disable every non-essential Routine (memory sync, finance update, backup-offsite, grok-relay stay; readers and builds stop), tell Aman in one line, re-enable when the window resets.'
-    limits: 'No API exposes the plan balance directly; rate_limit_info is the only signal. Cannot stop a session mid-turn.'
+    purpose: Aman never hits the Claude usage wall again, and never pays for work that returns nothing he can use
+      (Aman, chat 2026-10-09 and 2026-10-10).
+    thinks: 'Two budgets. Plan: the newest rate_limit_info any Claude session posted (POST /api/credits/plan) —
+      allowed → ok, allowed_warning → tight, rejected → blocked, isUsingOverage → overage; older than 6 h or past
+      its resetsAt → unknown. API: spend_ledger vs SPEND_CAP_INR_MONTH; on pace to pass the cap (straight-line
+      forecast, from day 4 or once 25% is spent) → economy now, ≥100% → paused (mdo_cos.pace_mode).'
+    works: 'Every 30 min (cron */30). POST /api/credits/run → one heartbeat line, plus ONE WhatsApp line per state
+      change (deduped per plan window or per month in credit_guard_alerts). GET /api/credits returns the policy
+      every Claude session obeys before spawning work: workers yes/no, max workers, and the model per kind of
+      work (read → haiku, build → sonnet, cos → opus when ok; all haiku/sonnet when tight; nothing new when
+      blocked or on overage). VPS bots switch models by themselves through /api/spend mode.'
+    limits: No API exposes the plan balance; the reading is only as fresh as the last session that posted it, and
+      "no live reading" is said out loud. Cannot stop a session mid-turn.
     minimum_output: One line per run, including "credits fine".
     rules:
+    - No LLM call, ever (Directive 15)
     - Never spend on reading history unless Aman asked for it this week
-    - Background workers only with a stated cost and Aman's ok when the window is above 50% used
+    - Background workers only when policy.workers is yes, and never more than policy.max_workers
     - Readers and summarisers run on the cheapest model that can do the job, never on the CoS model
+    - Every run reports, especially an empty one (Directive 5)
 - id: vegas-tracker
   name: Las Vegas trip price tracker (temporary, ends 2026-11-09)
   runs_on: cloud-routine

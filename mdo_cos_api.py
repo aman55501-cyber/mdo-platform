@@ -179,9 +179,12 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
             "WHERE created_at >= ? GROUP BY bot, model ORDER BY inr DESC", (f"{month}-01",))
         mtd = float(dict(rows[0])["inr"] or 0) if rows else 0.0
         cap = spend_cap_inr()
+        now = datetime.now(IST)
+        mode, reason = mdo_cos.pace_mode(mtd, cap, now)
         return {"month": month, "month_to_date_inr": round(mtd, 2), "calls": dict(rows[0])["calls"] if rows else 0,
                 "cap_inr": cap, "pct_of_cap": round(mtd / cap * 100, 1) if cap else None,
-                "mode": budget_mode(mtd, cap), "usd_inr": mdo_cos.usd_inr(),
+                "forecast_inr": mdo_cos.month_forecast_inr(mtd, now),
+                "mode": mode, "mode_reason": reason, "usd_inr": mdo_cos.usd_inr(),
                 "by_bot": [dict(r) for r in by_bot]}
 
     @app.get("/api/spend")

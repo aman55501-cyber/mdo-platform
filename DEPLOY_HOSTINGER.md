@@ -212,6 +212,7 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
 20 */6  * * *   $MDO python mdo_agent.py wa-intel            >> /var/log/mdo-agent.log 2>&1   # every 6h at :20
 30 1    * * 0   $MDO python mdo_agent.py business-pulse      >> /var/log/mdo-agent.log 2>&1   # Sun 07:00 IST
+*/30 *  * * *   $MDO python mdo_agent.py credit-guard        >> /var/log/mdo-agent.log 2>&1   # every 30 min: plan window + API cap → policy for every Claude session; one WhatsApp line per state change; heartbeat "credits fine" even when nothing happens
 30 21   * * *   $MDO python mdo_housekeeping.py --daily      >> /var/log/mdo-agent.log 2>&1   # 03:00 IST daily: DB snapshots (§10)
 30 21   * * 6   $MDO python mdo_housekeeping.py              >> /var/log/mdo-agent.log 2>&1   # Sun 03:00 IST: purge + weekly bundle
 0  22   * * 6   savelog -n -c 8 /var/log/mdo-agent.log                                        # keep 8 weeks of log

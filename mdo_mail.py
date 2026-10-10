@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS mail_state (
 # ═════════════════════════════════════════════════════════════════════════════
 # Pure helpers — no database, no network
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _query_tz(s: str) -> str:
+    """'2026-10-09T08:00:00 05:30' → '+05:30': an unescaped '+' in a query string arrives as a space."""
+    return re.sub(r" (\d\d:\d\d)$", r"+\1", s.strip())
+
 def config() -> dict:
     """The IMAP settings. The password never leaves this dict's `password` key; `configured` is what gets logged."""
     user = os.environ.get("GMAIL_IMAP_USER", "").strip()
@@ -516,7 +521,7 @@ def _parse_now(v: Any) -> datetime:
         d = v
     elif v:
         try:
-            d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(_query_tz(str(v).replace("Z", "+00:00")))
         except ValueError:
             d = datetime.now(IST)
     else:

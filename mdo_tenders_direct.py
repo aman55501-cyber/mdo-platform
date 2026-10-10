@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS tenders_direct_runs (
 # ═════════════════════════════════════════════════════════════════════════════
 # Pure helpers — no database, no network
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _query_tz(s: str) -> str:
+    """'2026-10-09T08:00:00 05:30' → '+05:30': an unescaped '+' in a query string arrives as a space."""
+    return re.sub(r" (\d\d:\d\d)$", r"+\1", s.strip())
+
 def keywords(raw: str | None = None) -> list[str]:
     """TENDERS_KEYWORDS — semicolon (or comma) separated, matched case-insensitively; duplicates dropped."""
     raw = os.environ.get("TENDERS_KEYWORDS", KEYWORDS_DEFAULT) if raw is None else raw
@@ -532,7 +537,7 @@ def _parse_now(v: Any) -> datetime:
         d = v
     elif v:
         try:
-            d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(_query_tz(str(v).replace("Z", "+00:00")))
         except ValueError:
             d = datetime.now(IST)
     else:
@@ -756,8 +761,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
 
     # ── endpoints ─────────────────────────────────────────────────────────────
     @app.get("/api/tenders/direct/upcoming")
-    async def tenders_direct_upcoming(days: int = 30):
-        return await upcoming(days)
+    async def tenders_direct_upcoming(days: int = 30, now: str | None = None):
+        return await upcoming(days, now)
 
     @app.get("/api/tenders/direct/recent")
     async def tenders_direct_recent(days: int = 7, matched: int = 1, source: str = "", limit: int = 200):

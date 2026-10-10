@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS corp_actions_runs (
 # ═════════════════════════════════════════════════════════════════════════════
 # Pure helpers — no database, no network
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _query_tz(s: str) -> str:
+    """'2026-10-09T08:00:00 05:30' → '+05:30': an unescaped '+' in a query string arrives as a space."""
+    return re.sub(r" (\d\d:\d\d)$", r"+\1", s.strip())
+
 def parse_nse_date(s: Any) -> str:
     """'07-Oct-2026' / '09-Oct-2026 17:32:11' / ISO → ISO date; '-' or blank → ''."""
     s = str(s or "").strip()
@@ -204,7 +209,7 @@ def _parse_now(now_v: Any) -> datetime:
         now = now_v
     else:
         try:
-            now = datetime.fromisoformat(str(now_v).replace("Z", "+00:00")) if now_v else datetime.now(IST)
+            now = datetime.fromisoformat(_query_tz(str(now_v).replace("Z", "+00:00"))) if now_v else datetime.now(IST)
         except ValueError:
             now = datetime.now(IST)
     if now.tzinfo is None:

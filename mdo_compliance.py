@@ -27,6 +27,7 @@ without a server.
 """
 from __future__ import annotations
 
+import re
 import calendar as _cal
 import json
 import os
@@ -78,6 +79,11 @@ CREATE INDEX IF NOT EXISTS idx_compliance_reminders_due ON compliance_reminders(
 # ═════════════════════════════════════════════════════════════════════════════
 # Pure helpers — no database, no network
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _query_tz(s: str) -> str:
+    """'2026-10-09T08:00:00 05:30' → '+05:30': an unescaped '+' in a query string arrives as a space."""
+    return re.sub(r" (\d\d:\d\d)$", r"+\1", s.strip())
+
 def load_calendar(path: str | None = None) -> dict:
     with open(path or CALENDAR_PATH, encoding="utf-8") as f:
         cal = json.load(f)
@@ -228,7 +234,7 @@ def _parse_now(now_v: Any) -> datetime:
         now = now_v
     else:
         try:
-            now = datetime.fromisoformat(str(now_v).replace("Z", "+00:00")) if now_v else datetime.now(IST)
+            now = datetime.fromisoformat(_query_tz(str(now_v).replace("Z", "+00:00"))) if now_v else datetime.now(IST)
         except ValueError:
             now = datetime.now(IST)
     if now.tzinfo is None:

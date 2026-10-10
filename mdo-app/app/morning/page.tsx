@@ -6,7 +6,7 @@ import {
   Sun, Plus, Trash2, CheckCircle, XCircle, Youtube, Edit3,
   TrendingUp, TrendingDown, Minus, Clock, Zap, AlertTriangle,
   ChevronRight, RefreshCw, Send, Crosshair, FileSpreadsheet, Download, Upload, MessageCircle, Calendar, Mail, Lock, Landmark,
-  FileText, Mic
+  FileText, Mic, Gauge
 } from "lucide-react"
 import { api } from "@/lib/api"
 import type { ShareLevel, PortfolioImportResult, WaSweepFlag, WaSweepChat, ComplianceUpcomingItem, MailMessage, CorpAction, TenderDirect, VoiceMedia } from "@/lib/types"
@@ -462,6 +462,9 @@ export default function MorningSetupPage() {
         </div>
       )}
 
+      {/* ── Credits (credit-guard bot): plan window + fleet API cap, and the models each kind of work runs on ── */}
+      <CreditsCard />
+
       {/* ── Share Master: the one workbook (share-master-daily bot) ── */}
       <ShareMasterCard />
 
@@ -816,6 +819,62 @@ function WaSweepCard() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// ── Credits card — credit-guard (Aman, 2026-10-10: "a bot that manages that we dont run out of credits") ──
+// Shows the plan window state, the fleet API month (spent, forecast, mode) and the models the policy assigns.
+// Nothing here is computed in the browser: every value comes from GET /api/credits.
+function CreditsCard() {
+  const q = useQuery({ queryKey: ["credits"], queryFn: () => api.credits.status(), refetchInterval: 5 * 60_000 })
+  const d = q.data
+  const color = (s?: string) => s === "ok" || s === "normal" ? "var(--green)" : s === "unknown" ? "var(--text2)" : s === "tight" || s === "economy" ? "var(--amber)" : "var(--red)"
+  const resets = d?.plan?.resets_at ? new Date(d.plan.resets_at * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) : null
+  const inr = (n: number | null | undefined) => n == null ? "—" : `₹${Math.round(n).toLocaleString("en-IN")}`
+  const pct = d?.api.cap_inr ? Math.min(100, Math.round((d.api.month_to_date_inr / d.api.cap_inr) * 100)) : null
+  const bar = pct == null ? "" : "█".repeat(Math.round(pct / 10)) + "░".repeat(10 - Math.round(pct / 10))
+  return (
+    <div className="rounded-xl p-4 mb-6" style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Gauge size={15} style={{ color: color(d?.plan_state) }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text2)" }}>CREDITS</span>
+        </div>
+        <button onClick={() => q.refetch()} style={{ color: "var(--text2)" }} title="refresh"><RefreshCw size={13} /></button>
+      </div>
+      {q.isLoading && <div style={{ fontSize: 12, color: "var(--text2)" }}>Loading…</div>}
+      {!q.isLoading && q.error && <div style={{ fontSize: 12, color: "var(--red)" }}>Credits unavailable: {String((q.error as Error).message)}</div>}
+      {!q.isLoading && !q.error && d && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, fontSize: 13 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text2)", textTransform: "uppercase" }}>Claude plan</div>
+            <div style={{ color: color(d.plan_state), fontWeight: 600 }}>
+              {d.plan_state === "unknown" ? "no live reading" : d.plan_state}{resets && d.plan_state !== "unknown" ? ` · resets ${resets} IST` : ""}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text2)" }}>
+              workers {d.policy.workers === "yes" ? `allowed (max ${d.policy.max_workers})` : "stopped"} · read {d.policy.models.read} · build {d.policy.models.build} · CoS {d.policy.models.cos}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text2)", textTransform: "uppercase" }}>Fleet API · {d.api.month}</div>
+            <div style={{ color: color(d.api.mode), fontWeight: 600 }}>
+              {inr(d.api.month_to_date_inr)}{d.api.cap_inr ? ` of ${inr(d.api.cap_inr)}` : " (no cap set)"} · {d.api.mode}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text2)", fontFamily: "monospace" }}>
+              {bar && `${bar} ${pct}% · `}forecast {inr(d.api.forecast_inr)}{d.api.mode_reason ? ` · ${d.api.mode_reason}` : ""}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text2)", textTransform: "uppercase" }}>Top spenders this month</div>
+            {d.api.by_bot.length === 0 && <div style={{ fontSize: 12, color: "var(--text2)" }}>nothing spent</div>}
+            {d.api.by_bot.slice(0, 3).map(b => (
+              <div key={`${b.bot}-${b.model}`} style={{ fontSize: 12 }}>{b.bot} · {b.model.replace("claude-", "")} · {inr(b.inr)} ({b.calls})</div>
+            ))}
+          </div>
+        </div>
+      )}
+      {d?.last_run && <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 8 }}>last run {d.last_run.at.slice(11, 16)} IST · {d.last_run.status}</div>}
     </div>
   )
 }

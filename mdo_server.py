@@ -3385,6 +3385,13 @@ _tenders_direct = mdo_tenders_direct.register(app, vdb, lambda text: _cos["send_
 import mdo_voice
 _voice = mdo_voice.register(app, vdb, _wa["ingest"])
 
+# credit-guard: the claude.ai plan window (rate_limit_info posted by every Claude session) + the fleet API cap
+# (pace-based economy switch in mdo_cos.pace_mode) → one policy the sessions obey (GET /api/credits), one
+# WhatsApp line per state change, a heartbeat every run. Zero LLM.
+import mdo_credit_guard
+_credit_guard = mdo_credit_guard.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp),
+                                          _cos["spend"])
+
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):
     """Ask the MDO Brain / Chief of Staff — an LLM with live tool access to the

@@ -33,6 +33,8 @@ SUMMARY=""
 HEARTBEAT_SENT=0
 PREV_SHA=""
 SHORT_SHA="unknown"
+DEPLOYED_FILE=/var/lib/mdo/deployed_sha   # commit the running containers were built from
+FAILED_FILE=/var/lib/mdo/failed_sha       # commit whose gate failed; not retried until HEAD moves
 SERVICES_UP="none"
 CRON_RESULT="skipped"
 ALERT_RESULT="skipped"
@@ -83,7 +85,7 @@ post_heartbeat() {           # ALWAYS called on exit (trap) — CHIEF_OF_STAFF.m
 
 on_exit() {
     local rc=$?
-    if [[ $rc -ne 0 && "$STATUS" != "clean" ]]; then
+    if [[ $rc -ne 0 && "$STATUS" != "clean" && "$STATUS" != "stale" ]]; then
         STATUS="error"
         [[ -n "$SUMMARY" ]] || SUMMARY="failed at ${STEP} (exit ${rc})"
     fi
@@ -116,15 +118,34 @@ step_repo() {
         say "switched ${current} → ${MDO_BRANCH}"
     fi
 
-    local behind
+    local behind head live failed
     behind="$(git rev-list --count "HEAD..origin/${MDO_BRANCH}" 2>/dev/null || echo 0)"
+    head="$(git rev-parse HEAD)"
+    # "Up to date" means the RUNNING containers were built from HEAD, not merely that
+    # HEAD matches origin: a pull whose tests failed leaves HEAD ahead of what runs.
+    # (2026-10-10: date-bound tests failed after midnight and every run since said
+    # "up to date" while yesterday's build never went live — silence that looked alive.)
+    live="$(cat "$DEPLOYED_FILE" 2>/dev/null || true)"
+    failed="$(cat "$FAILED_FILE" 2>/dev/null || true)"
     if [[ "$AUTO" == 1 && "$behind" == 0 ]]; then
         SHORT_SHA="$(git rev-parse --short HEAD)"
-        STATUS="clean"; SUMMARY="up to date"
-        say "up to date at ${SHORT_SHA} — nothing to do"
-        exit 0
+        if [[ "$live" == "$head" ]]; then
+            STATUS="clean"; SUMMARY="up to date"
+            say "up to date at ${SHORT_SHA} — nothing to do"
+            exit 0
+        fi
+        if [[ -n "$failed" && "$failed" == "$head" ]]; then
+            # The 💀 went to the phone on the first failure; repeats file "stale" (ledger and
+            # fleet page, no WhatsApp) so a broken gate is visible without a message every 10 min.
+            STATUS="stale"
+            SUMMARY="NOT LIVE: ${SHORT_SHA} failed its gate; still running ${live:0:7}. A fix pushed to the branch deploys on the next slot"
+            say "$SUMMARY"; exit 1
+        fi
+        say "HEAD ${SHORT_SHA} is not what runs (${live:0:7}) — deploying it"
     fi
-    PREV_SHA="$(git rev-parse HEAD)"
+    PREV_SHA="${live:-$head}"
+    # No record of what runs (first run with this marker): rebuild the frontend too, once.
+    [[ -n "$live" ]] || FORCE_FRONTEND=1
     if ! git pull --quiet --ff-only origin "$MDO_BRANCH"; then
         die "git pull --ff-only failed (local edits or diverged history on the VPS? run: git status)"
     fi
@@ -210,6 +231,7 @@ step_tests() {
             -e VAULT_DIR=/tmp/t/vault -e MDO_AUTH_TOKEN= -e MDO_MCP_SECRET= \
             -e ANTHROPIC_API_KEY= -e GROK_API_KEY= -e WA_BRIDGE_URL= -e ALERT_WHATSAPP_TO= \
             "$img" sh -c "mkdir -p /tmp/t/vault && python -m pytest -q tests/ --ignore=tests/test_core.py"; then
+        git rev-parse HEAD > "$FAILED_FILE" 2>/dev/null || true
         die "unit tests FAILED — live services left untouched, nothing deployed"
     fi
     say "tests passed (backend suite, scratch DB, no volumes)"
@@ -227,7 +249,9 @@ step_up() {
     if [[ "${FORCE_FRONTEND:-0}" == 1 ]] || { [[ -n "${PREV_SHA:-}" ]] && git diff --name-only "$PREV_SHA" HEAD -- mdo-app/ | grep -q .; }; then
         services+=(frontend)
     fi
-    docker compose up -d --build "${services[@]}" || die "docker compose up failed"
+    docker compose up -d --build "${services[@]}" || { git rev-parse HEAD > "$FAILED_FILE" 2>/dev/null || true; die "docker compose up failed"; }
+    git rev-parse HEAD > "$DEPLOYED_FILE"
+    rm -f "$FAILED_FILE"
     SERVICES_UP="${services[*]}"
     say "up: ${SERVICES_UP}"
 }
@@ -385,7 +409,7 @@ main() {
     fi
     if [[ "${1:-}" == "--auto" ]]; then AUTO=1; fi
     need_root
-    mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")"
+    mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")" "$(dirname "$DEPLOYED_FILE")"
 
     if [[ "$AUTO" == 1 ]]; then
         exec >> "$LOG_FILE" 2>&1

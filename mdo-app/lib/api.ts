@@ -8,7 +8,7 @@ import type {
   LevelsResponse,
   ShareMasterResponse, PortfolioImportResult,
   WaSweepFlagsResponse, WaSweepChatsResponse, WaSweepChat,
-  ComplianceUpcomingResponse, ComplianceEntitiesResponse, ComplianceEntity,
+  ComplianceUpcomingResponse, CreditsStatus, ComplianceEntitiesResponse, ComplianceEntity,
   MailRecentResponse, MailStatsResponse,
   CorpAction, CorpActionsUpcomingResponse,
   TendersDirectUpcomingResponse, TendersDirectStatsResponse, TenderDirect,
@@ -182,6 +182,11 @@ export const api = {
     chats:       () => get<WaSweepChatsResponse>("/api/wa/sweep/chats"),
     setPriority: (jid: string, priority: WaSweepChat["priority"]) =>
       post<{ ok: boolean; jid: string; priority: string }>(`/api/wa/sweep/chats/${encodeURIComponent(jid)}/priority`, { priority }),
+  },
+
+  // ── Credits (credit-guard bot): plan window + fleet API cap → the policy every session obeys ──
+  credits: {
+    status: () => get<CreditsStatus>("/api/credits"),
   },
 
   // ── Compliance (compliance-reminder bot): statutory calendar, next 30 days, entity list ──

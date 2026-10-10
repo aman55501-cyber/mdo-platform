@@ -75,6 +75,33 @@ def budget_mode(month_to_date_inr: float, cap_inr: float | None) -> str:
     return "normal"
 
 
+def month_forecast_inr(month_to_date_inr: float, now: datetime) -> float:
+    """Straight-line month-end spend: month-to-date ÷ days elapsed × days in month."""
+    import calendar
+    days = calendar.monthrange(now.year, now.month)[1]
+    elapsed = max(now.day - 1 + (now.hour * 60 + now.minute) / 1440, 0.5)
+    return round(month_to_date_inr / elapsed * days, 2)
+
+
+def pace_mode(month_to_date_inr: float, cap_inr: float | None, now: datetime) -> tuple[str, str]:
+    """budget_mode plus the pace rule the credit guard enforces: on pace to pass the cap
+    → economy now, not at 90%. The first 3 days are too noisy to project, unless a
+    quarter of the cap is already gone. Returns (mode, reason)."""
+    mode = budget_mode(month_to_date_inr, cap_inr)
+    if mode == "paused":
+        return mode, "cap reached"
+    if mode == "economy":
+        return mode, "≥90% of cap"
+    if not cap_inr:
+        return "normal", ""
+    if now.day < 4 and month_to_date_inr < 0.25 * cap_inr:
+        return "normal", ""
+    fc = month_forecast_inr(month_to_date_inr, now)
+    if fc >= cap_inr:
+        return "economy", f"on pace for ₹{fc:,.0f} of ₹{cap_inr:,.0f}"
+    return "normal", ""
+
+
 # ── reply routing — what Aman types back on WhatsApp ─────────────────────────
 _ACK = re.compile(r"^\s*(ok|okay|yes|y|go|approve|approved|buy)\s*#?\s*(\d+)\s*$", re.I)
 _NACK = re.compile(r"^\s*(no|n|skip|reject|cancel|kill)\s*#?\s*(\d+)\s*$", re.I)

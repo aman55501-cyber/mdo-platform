@@ -138,6 +138,13 @@ def test_fetch_ltp_batches_falls_back_and_never_raises(monkeypatch):
 
 
 # ── endpoints through the real app ───────────────────────────────────────────
+class _FrozenFri(datetime):
+    """The endpoints read the wall clock for "today"; pin it to the fixtures' Friday."""
+    @classmethod
+    def now(cls, tz=None):
+        return FRI_1045 if tz is None else FRI_1045.astimezone(tz)
+
+
 def _client():
     from fastapi.testclient import TestClient
     import mdo_server
@@ -155,7 +162,8 @@ def _wipe(c):
     db.commit(); db.close()
 
 
-def test_levels_endpoints_upsert_list_snapshot_delete():
+def test_levels_endpoints_upsert_list_snapshot_delete(monkeypatch):
+    monkeypatch.setattr(lv, "datetime", _FrozenFri)
     c = _client()
     _wipe(c)
     r = c.post("/api/levels", json={"ticker": "tcs", "buy_level": "3,500", "sell_level": 4200, "note": "IT large cap"})
@@ -229,6 +237,7 @@ class _Fake:
 
 
 def test_run_levels_alert_pushes_red_once_per_day_and_snapshots(monkeypatch):
+    monkeypatch.setattr(lv, "datetime", _FrozenFri)
     c = _client()
     _wipe(c)
     c.post("/api/levels", json=[{"ticker": "TCS", "buy_level": 3500, "sell_level": 4200},
