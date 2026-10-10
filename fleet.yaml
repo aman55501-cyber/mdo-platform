@@ -962,6 +962,7 @@ bots:
   heartbeat: every run posts one line via /api/agent/report, including "Grok sent nothing today"
   serves: [tenders-washing-rcr, capital-rules]
   enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
+  notes: 'Tender half REPLACED 2026-10-10 by the VPS mail-reader (category grok-tender, zero LLM, briefs/GROK_TASK_TENDERS.md). Only the Singhvi half would still need this Routine.'
   charter:
     purpose: Turn Grok's result emails into tender pipeline rows and pending Singhvi proposals.
     thinks: Parse, validate, file. Rows without entry/stop/target are not queued and are counted.

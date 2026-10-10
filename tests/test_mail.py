@@ -316,7 +316,7 @@ def test_run_stores_categorises_locks_pushes_once_and_heartbeats_zero_next_time(
     r = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
     assert r["configured"] and r["status"] == "clean" and r["new"] == 6 and r["dupes"] == 0 and r["locked"] == 2
     assert r["counts"] == {"broker-statement": 1, "contract-note": 1, "exchange-balance": 1, "bank-statement": 1,
-                           "tender-result": 1, "mf-transaction": 1, "insurance": 0, "evoting": 0, "other": 0}
+                           "tender-result": 1, "mf-transaction": 1, "insurance": 0, "evoting": 0, "grok-tender": 0, "other": 0}
     # the one line: tender result + bank statement (locked) + Angel holding statement (locked)
     assert r["pushed"] == 1 and sent.texts == [
         "Mail: 1 tender result (bidsnrfp), 1 SIB bank statement (locked), 1 Angel One holding statement (locked) — see Morning › Mail"]
@@ -450,3 +450,49 @@ def test_fleet_cron_env_and_morning_card_wiring():
     assert "q.isLoading && <div" in page.split("function MailCard()")[1]     # loading state before any table (Directive 17)
     api_ts = open(os.path.join(ROOT, "mdo-app", "lib", "api.ts"), encoding="utf-8").read()
     assert "/api/mail/stats?days=" in api_ts and "/api/mail/${id}/ack" in api_ts and "/api/mail/recent?days=" in api_ts
+
+
+GROK_BODY = """[GROK-TENDER] buyer|title|tender id|category|publish|closing|value|EMD|eligibility|location|URL
+SECL|Operation & maintenance of coal washery, 2.5 MTPA, Korba|SECL/GM/2026/W/41|Coal washing|01-10-2026|28-10-2026|Rs 1,250 Crore|Rs 2 Cr|Class A washery experience|Korba|https://www.secl-cil.in/t/w41.pdf
+WCL|RCR transportation Umrer OC|WCL/RCR/9|RCR|2 Oct 2026|2026-11-05|Rs 40 Crore||5 yrs RCR|Nagpur|https://tender247.com/x/9
+WCL|RCR transportation Umrer OC|WCL/RCR/9|RCR|2 Oct 2026|2026-11-05|Rs 40 Crore||5 yrs RCR|Nagpur|https://tender247.com/x/9
+|||
+not a table line
+"""
+
+
+def test_grok_tender_table_is_parsed_and_only_trusted_senders_count(monkeypatch):
+    rows = mm.parse_grok_tenders(GROK_BODY)
+    assert [(r["buyer"], r["tender_id"], r["due_date"]) for r in rows] == [
+        ("SECL", "SECL/GM/2026/W/41", "2026-10-28"), ("WCL", "WCL/RCR/9", "2026-11-05")]      # header, duplicate, junk skipped
+    assert rows[0]["url"] == "https://www.secl-cil.in/t/w41.pdf" and rows[0]["value"] == "Rs 1,250 Crore" and rows[1]["emd"] == ""
+    assert mm.parse_grok_tenders("[GROK-TENDER] NONE FOUND") == [] and mm.parse_grok_tenders("") == []
+    monkeypatch.setenv("GMAIL_IMAP_USER", "aman.55501@gmail.com")
+    assert mm.categorise("Grok <noreply@x.ai>", "[GROK-TENDER] 10 Oct") == "grok-tender"
+    assert mm.categorise("Aman <aman.55501@gmail.com>", "Fwd: [GROK-TENDER] 10 Oct") == "grok-tender"
+    assert mm.categorise("Mallory <m@evil.example>", "[GROK-TENDER] 10 Oct") == "other"       # cannot feed the pipeline
+    d = mm.describe({"subject": "[GROK-TENDER]", "text": GROK_BODY, "html": "", "attachments": [], "from_addr": "x"}, "grok-tender")
+    assert d["actionable"] is True and d["summary"].startswith("2 tenders from Grok: SECL — Operation")
+    empty = mm.describe({"subject": "[GROK-TENDER]", "text": "NONE FOUND", "html": "", "attachments": [], "from_addr": "x"}, "grok-tender")
+    assert empty["actionable"] is False and empty["summary"] == "Grok: NONE FOUND"
+
+
+def test_grok_email_flows_into_the_pipeline_with_one_push_and_a_heartbeat(monkeypatch):
+    msgs = {201: _eml("Grok <noreply@x.ai>", "[GROK-TENDER] 2026-10-09", GROK_BODY, when=NOW - timedelta(hours=1)),
+            202: _eml("Mallory <m@evil.example>", "[GROK-TENDER] 2026-10-09", GROK_BODY, when=NOW - timedelta(hours=1)),
+            203: _eml("Grok <noreply@x.ai>", "[GROK-TENDER] 2026-10-08", "NONE FOUND", when=NOW - timedelta(hours=30))}
+    c, sent, _, _ = _setup(monkeypatch, messages=msgs)
+    db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
+    db.execute("DELETE FROM vwlr_tender_pipeline WHERE notes LIKE '[grok]%'"); db.commit(); db.close()
+    r = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
+    assert r["counts"]["grok-tender"] == 2 and r["counts"]["other"] == 1          # the stranger's mail is just "other"
+    assert r["tenders_posted"] == 2 and "Grok: 2 new tenders → pipeline" in r["line"] and ", grok 2" in r["line"]
+    assert sent.texts == ["Mail: 1 Grok tender list — see Morning › Mail"]         # the NONE FOUND mail is not actionable
+    db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
+    rows = db.execute("SELECT buyer, due_date, url, notes FROM vwlr_tender_pipeline WHERE notes LIKE '[grok]%' ORDER BY buyer").fetchall()
+    db.close()
+    assert [(b, d) for b, d, _, _ in rows] == [("SECL", "2026-10-28"), ("WCL", "2026-11-05")]
+    assert "ref SECL/GM/2026/W/41" in rows[0][3] and "Korba" in rows[0][3] and rows[1][2] == "https://tender247.com/x/9"
+    # a second run adds nothing: the mails are stored, the tenders are duplicates
+    r2 = c.post("/api/mail/run", json={"now": NOW.isoformat()}).json()
+    assert r2["new"] == 0 and r2["tenders_posted"] == 0
