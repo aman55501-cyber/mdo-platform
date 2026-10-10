@@ -31,6 +31,7 @@ tests/test_tenders_direct.py runs them on canned HTML per site.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import html as _html
 import os
@@ -62,7 +63,7 @@ SITES: tuple[dict, ...] = (
     {"key": "coalindia", "label": "Coal India tenders", "org": "Coal India", "parser": "table",
      "url": "https://www.coalindia.in/tenders/"},
     {"key": "ntpc", "label": "NTPC tenders", "org": "NTPC", "parser": "table",
-     "url": "https://www.ntpctender.com/"},
+     "url": "https://ntpctender.ntpc.co.in/"},
     {"key": "eprocure", "label": "CPP portal (eprocure)", "org": "", "parser": "cpp",
      "url": "https://eprocure.gov.in/eprocure/app?page=FrontEndLatestActiveTenders&service=page"},
     {"key": "mstc", "label": "MSTC coal e-auction notices", "org": "MSTC", "parser": "table",
@@ -473,6 +474,18 @@ def parse_listing(html: str, site: dict) -> list[dict]:
     return out
 
 
+def probe_summary(html: str, url: str, max_links: int = 40) -> dict:
+    """A compact picture of a fetched page, for tuning a parser: size, <title>, every table's first rows, links."""
+    tables, links = parse_tables(html)
+    title = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    body = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
+    text = _clean(re.sub(r"<[^>]+>", " ", body))
+    return {"url": url, "ok": True, "bytes": len(html), "title": _clean(title.group(1)) if title else "",
+            "scripts": len(re.findall(r"(?i)<script", html)), "text_head": text[:600],
+            "tables": [{"rows": len(t), "first_rows": [[c["text"][:70] for c in r][:8] for r in t[:4]]} for t in tables[:8]],
+            "links": [{"text": _clean(l.get("text", ""))[:80], "href": l.get("href", "")[:160]} for l in links[:max_links]]}
+
+
 def fetch_page(url: str, timeout: int = FETCH_TIMEOUT) -> dict:
     """GET one public page. {ok, status, html, reason}. Never raises; a block (403/429/503) is named as such."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
@@ -771,6 +784,18 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
     @app.get("/api/tenders/direct/stats")
     async def tenders_direct_stats():
         return await stats()
+
+    @app.get("/api/tenders/direct/probe")
+    async def tenders_direct_probe(site: str, links: int = 40):
+        """What this server actually receives from one listed site: status, title, the tables' first rows and the
+        first links. For fixing a parser against the real page; keyed like every other /api route, public pages only."""
+        match = [x for x in SITES if x["key"] == site.strip().lower()]
+        if not match:
+            raise HTTPException(404, f"unknown site; one of: {', '.join(x['key'] for x in SITES)}")
+        got = await asyncio.to_thread(fetch_page, match[0]["url"])
+        if not got["ok"]:
+            return {"site": site, "url": match[0]["url"], "ok": False, "status": got["status"], "reason": got["reason"]}
+        return probe_summary(got["html"], match[0]["url"], max(0, min(int(links), 200)))
 
     @app.post("/api/tenders/direct/run")
     async def tenders_direct_run(body: dict | None = None):

@@ -168,7 +168,7 @@ def test_parse_coalindia_ntpc_and_an_empty_js_page():
     assert [x["matched"] for x in (td.classify(r, floor_cr=5) for r in rows)] == [True, False, False]
     n = td.parse_listing(NTPC_HTML, SITE["ntpc"])
     assert [r["tender_id"] for r in n] == ["NTPC/LARA/2026/CT/11", "NTPC/SIPAT/2026/AMC/5", "NTPC/KORBA/2026/RL/2"]
-    assert n[0]["org"] == "NTPC / Lara" and n[0]["url"] == "https://www.ntpctender.com/tender.php?id=9981"
+    assert n[0]["org"] == "NTPC / Lara" and n[0]["url"] == "https://ntpctender.ntpc.co.in/tender.php?id=9981"
     assert n[0]["due"] == "2026-10-31" and n[2]["due"] == "2026-11-02" and n[2]["title"] == "Rake loading & wagon cleaning at Korba MGR siding"
     assert [td.classify(r, floor_cr=0)["matched"] for r in n] == [True, False, True]
     assert td.parse_listing(MSTC_HTML, SITE["mstc"]) == []            # script-only page: nothing parsed, nothing invented
@@ -388,3 +388,14 @@ def test_fleet_cron_env_and_morning_card_wiring():
     assert "q.isLoading && <div" in page.split("function TendersCard()")[1]     # loading state before any table (Directive 17)
     api_ts = open(os.path.join(ROOT, "mdo-app", "lib", "api.ts"), encoding="utf-8").read()
     assert "/api/tenders/direct/upcoming?days=" in api_ts and "/api/tenders/direct/stats" in api_ts
+
+
+def test_probe_shows_what_the_server_receives_and_names_a_block(monkeypatch):
+    c, _, fetch = _setup(monkeypatch)
+    r = c.get("/api/tenders/direct/probe", params={"site": "ntpc", "links": 5}).json()
+    assert r["ok"] is True and r["url"] == "https://ntpctender.ntpc.co.in/" and r["bytes"] > 0
+    assert r["tables"] and r["tables"][0]["first_rows"] and len(r["links"]) <= 5
+    assert c.get("/api/tenders/direct/probe", params={"site": "nope"}).status_code == 404
+    monkeypatch.setattr(td, "fetch_page", _fetcher(PAGES, {SITE["coalindia"]["url"]: {"ok": False, "status": 403, "html": "", "reason": "blocked (HTTP 403 — anti-bot/maintenance)"}}))
+    r = c.get("/api/tenders/direct/probe", params={"site": "coalindia"}).json()
+    assert r["ok"] is False and r["status"] == 403 and "blocked" in r["reason"]
