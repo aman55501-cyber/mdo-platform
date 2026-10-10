@@ -73,9 +73,16 @@ post_heartbeat() {           # ALWAYS called on exit (trap) — CHIEF_OF_STAFF.m
         say "heartbeat NOT sent: MDO_AUTH_TOKEN empty in .env (status=${STATUS}: ${SUMMARY})"
         return 0
     fi
-    resp="$(curl -s -m 15 -X POST "${API_URL}/api/agent/report" \
-        -H "Content-Type: application/json" -H "X-MDO-Key: ${TOKEN}" \
-        --data "$body" 2>&1 || true)"
+    # The backend was just restarted by step d and needs a few seconds to answer; a heartbeat sent at once
+    # is lost, which made every self-deploy invisible on the fleet page (2026-10-10). Retry for ~90 s.
+    local try
+    for try in 1 2 3 4 5 6 7 8 9; do
+        resp="$(curl -s -m 15 -X POST "${API_URL}/api/agent/report" \
+            -H "Content-Type: application/json" -H "X-MDO-Key: ${TOKEN}" \
+            --data "$body" 2>&1 || true)"
+        [[ "$resp" == *'"stored"'* ]] && break
+        sleep 10
+    done
     if [[ "$resp" == *'"stored"'* ]]; then
         say "heartbeat filed: status=${STATUS} — ${SUMMARY}"
     else
