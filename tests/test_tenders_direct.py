@@ -399,3 +399,16 @@ def test_probe_shows_what_the_server_receives_and_names_a_block(monkeypatch):
     monkeypatch.setattr(td, "fetch_page", _fetcher(PAGES, {SITE["coalindia"]["url"]: {"ok": False, "status": 403, "html": "", "reason": "blocked (HTTP 403 — anti-bot/maintenance)"}}))
     r = c.get("/api/tenders/direct/probe", params={"site": "coalindia"}).json()
     assert r["ok"] is False and r["status"] == 403 and "blocked" in r["reason"]
+
+
+def test_a_site_never_reached_is_named_but_only_a_regression_raises_the_alarm(monkeypatch):
+    block = {"ok": False, "status": 403, "html": "", "reason": "blocked (HTTP 403 — anti-bot/maintenance)"}
+    c, sent, _ = _setup(monkeypatch, blocked={SITE["coalindia"]["url"]: block})
+    r = c.post("/api/tenders/direct/run", json={"now": NOW.isoformat()}).json()
+    assert r["sites_failed"] == 1 and r["status"] == "clean" and "coalindia: blocked" in r["line"] and "REGRESSION" not in r["line"]
+    # the same site answering once, then blocking again, IS news
+    c, sent, _ = _setup(monkeypatch)
+    assert c.post("/api/tenders/direct/run", json={"now": NOW.isoformat()}).json()["status"] == "clean"
+    monkeypatch.setattr(td, "fetch_page", _fetcher(PAGES, {SITE["coalindia"]["url"]: block}))
+    r = c.post("/api/tenders/direct/run", json={"now": NOW.isoformat()}).json()
+    assert r["status"] == "warning" and r["line"].endswith(" · REGRESSION: coalindia")

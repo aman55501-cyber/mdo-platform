@@ -621,7 +621,14 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         db = await vdb()
         await ensure_schema(db)
         failures: dict[str, str] = {}
+        ever_ok: set[str] = set()          # sites that have answered in some earlier run: only their failure is news
+        for r in await db.execute_fetchall("SELECT sites_json FROM tenders_direct_runs ORDER BY id DESC LIMIT 200"):
+            try:
+                ever_ok.update(k for k, v in json.loads(dict(r)["sites_json"] or "{}").items() if v.get("ok"))
+            except (ValueError, AttributeError):
+                pass
         empty: list[str] = []
+        parse_errors: list[str] = []       # a parser that blows up is always news
         new_matched: list[dict] = []
         for site in sites():
             info: dict[str, Any] = {"label": site["label"], "url": site["url"], "ok": False, "status": 0, "rows": 0,
@@ -645,6 +652,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             except Exception as e:
                 tenders = []
                 info["reason"] = f"parse error: {type(e).__name__}"
+                parse_errors.append(site["key"])
             if not tenders:
                 empty.append(site["key"])
             for t in tenders:
@@ -713,8 +721,11 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             line += " · " + out["note"]
         if out["sites_failed"] and out["sites_ok"] == 0:
             out["status"] = "error"
-        elif out["sites_failed"] and out["status"] == "clean":
-            out["status"] = "warning"
+        elif (parse_errors or any(k in ever_ok for k in failures)) and out["status"] == "clean":
+            out["status"] = "warning"       # a site that used to answer has stopped; one never reached stays in the line, not the alarm
+            bad = [k for k in failures if k in ever_ok] + parse_errors
+            line += " · REGRESSION: " + ", ".join(bad)
+            out["line"] = line
         out["line"] = line
         await db.execute(
             "INSERT INTO tenders_direct_runs (ran_at, sites_ok, sites_failed, pages, rows, matched, new, pushed, line, sites_json) "
