@@ -279,7 +279,12 @@ step_disk() {
     docker_df="$(docker system df --format '{{.Type}} {{.Size}} ({{.Reclaimable}} reclaimable)' 2>/dev/null | tr '\n' ';' || true)"
     say "docker before: ${docker_df:-unavailable}"
     docker image prune -f >/dev/null 2>&1 || true
-    docker builder prune -f --filter "until=48h" >/dev/null 2>&1 || true
+    # tagged images no container uses and nothing built in the last 24 h (old stacks, superseded bases)
+    docker image prune -af --filter "until=24h" >/dev/null 2>&1 || true
+    # build cache: keep 1 GB of the most recently used layers (2026-10-11: 5.7 GB of cache was the biggest reclaimable item)
+    docker builder prune -f --reserved-space 1gb >/dev/null 2>&1 \
+        || docker builder prune -f --keep-storage 1gb >/dev/null 2>&1 \
+        || docker builder prune -f --filter "until=24h" >/dev/null 2>&1 || true
     docker container prune -f >/dev/null 2>&1 || true
     journalctl --vacuum-size=200M >/dev/null 2>&1 || true
     apt-get clean >/dev/null 2>&1 || true

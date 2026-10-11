@@ -91,7 +91,9 @@ def parse_results(text: str) -> list[dict]:
             iso = ""
         c = classify({"title": brief, "org": dept, "value_text": ""})
         # whole words only: "washing" alone (hospital kits) and "siding" inside other words are not our work
-        coalish = bool(COAL_WORDS.search(f"{brief} {dept}"))
+        # the subject is at the start of a brief; long supply lists name "coal tar" or "rake" somewhere in the tail
+        head = re.sub(r"coal[- ]?tar", " ", brief[:200], flags=re.I)
+        coalish = bool(COAL_WORDS.search(f"{head} {dept}"))
         out.append({"result_id": rid, "brief": brief[:600], "dept": dept[:160], "stage": stage[:20], "winner": winner[:160],
                     "participants": participants[:40], "n_participants": len(participants), "value_text": value[:40],
                     "value_cr": value_to_cr(value), "city": city.strip()[:80], "state": (state or city).strip()[:60], "contract_date": iso,

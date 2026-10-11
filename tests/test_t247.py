@@ -54,6 +54,9 @@ def test_results_are_parsed_from_the_right_with_winner_participants_and_value():
     assert b["brief"] == "supply of - briquette agrowaste_ 100001213_ rcf - quantity - 2000"               # the extra ' | ' cell stays in the brief, not the department
     assert b["dept"] == "rashtriya chemicals and fertilizers limited" and b["relevant"] == 0
     assert rows[3]["relevant"] == 1 and "washery" in rows[3]["keywords"] and rows[0]["relevant"] == 1   # 'steam coal' is coal-related
+    long_list = ("18777777 | supply of hire charges of concrete mixer 0.25 to 0.40 cum, hire charges of road roller, " + "tractor with trolley, " * 12
+                 + "coal tar drum, garden rake | zilla parishad | AOC | ramu dey | ramu dey, dipankar dam | 10.2 Lacs | Howrah, West Bengal | 08-10-2026")
+    assert t2.parse_results("Fresh Results\n" + long_list)[0]["relevant"] == 0                          # 'coal tar' and 'rake' deep in a supply list
     comps = t2.parse_competitors(TEXT)
     assert comps[0] == {"bidder": "varma manufacturer", "participated": 1, "awarded": 1, "lost": 0, "financial": 0, "technical": 0} and len(comps) == 3
     assert t2.headline(TEXT) == {"new_results": 10, "total_competitors": 41}
