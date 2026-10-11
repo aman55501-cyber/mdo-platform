@@ -141,7 +141,7 @@ step_repo() {
         if [[ "$live" == "$head" ]]; then
             cron_sync_auto || true
             disk_maybe || true; step_retire || true; step_retire_waha || true
-            DISK_NOTE+=" · waha now: imgs[$(docker images --format '{{.Repository}}:{{.Tag}}={{.ID}}' 2>/dev/null | grep -i waha | tr '\n' ' ')] ctrs[$(docker ps -a --format '{{.Names}}={{.Image}}={{.Status}}' 2>/dev/null | grep -i waha | tr '\n' ' ')]"
+            DISK_NOTE=" · waha: $(docker ps -a --format '{{.ID}}' 2>/dev/null | while read -r c; do docker inspect -f '{{.Config.Image}} {{.State.Status}} proj={{index .Config.Labels "com.docker.compose.project"}} dir={{index .Config.Labels "com.docker.compose.project.working_dir"}} restart={{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null; done | grep -i waha | cut -c1-200 | tr '\n' ';')${DISK_NOTE}"
             DISK_NOTE+=" · disk now $(( $(disk_free_mb) * 100 / $(disk_total_mb) ))% free; images: $(docker images --format '{{.Size}} {{.Repository}}' 2>/dev/null | sed 's/GB/G/;s/MB/M/;s/kB/K/;s/ B/ /' | sort -h -r | head -4 | sed 's# [^ ]*/# #' | tr '\n' ';')"
             STATUS="clean"; SUMMARY="up to date${CRON_NOTE}${DISK_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
