@@ -140,7 +140,7 @@ step_repo() {
         SHORT_SHA="$(git rev-parse --short HEAD)"
         if [[ "$live" == "$head" ]]; then
             cron_sync_auto || true
-            disk_maybe || true
+            disk_maybe || true; step_retire || true
             STATUS="clean"; SUMMARY="up to date${CRON_NOTE}${DISK_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
             exit 0
@@ -370,6 +370,53 @@ step_cron() {
 
 # Housekeeping also runs on an "up to date" slot when the disk is below 70% free and the last cleanup is over 6 hours old,
 # so it does not wait for the next commit (Aman, 2026-10-11: keep more than 70% free).
+# ── j. one-time retirement of waha and the tender scanner (Aman, chat 2026-10-11: "remove waha and its data completely;
+# keep the code from vwlr scanner and delete the rest") ──────────────────────────────────────────────────────────
+# waha: containers, their volumes and the image go. vwlr-vwlr-scanner: the code is copied out of the image to
+# /var/backups/vwlr-scanner-code FIRST (nothing is deleted unless that copy is non-empty); then its containers,
+# volumes and image go. Host folders and bind mounts are never touched. Runs once (marker), never fails a deploy.
+RETIRE_MARK=/var/lib/mdo/retired_waha_scanner
+RETIRE_NOTE=""
+retire_images() {
+    local pattern="$1" label="$2" ids vols n=0
+    ids="$(docker ps -aq --filter "ancestor=$pattern" 2>/dev/null; docker ps -a --format '{{.ID}} {{.Image}}' 2>/dev/null | awk -v p="$pattern" '$2 ~ p {print $1}')"
+    ids="$(echo "$ids" | sort -u | grep -v '^$' || true)"
+    if [[ -n "$ids" ]]; then
+        vols="$(for c in $ids; do docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$c" 2>/dev/null; done | tr ' ' '\n' | sort -u | grep -v '^$' || true)"
+        # shellcheck disable=SC2086
+        docker rm -f $ids >/dev/null 2>&1 || true
+        for v in $vols; do docker volume rm "$v" >/dev/null 2>&1 && n=$((n+1)); done
+    fi
+    docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | awk -v p="$pattern" '$1 ~ p {print $2}' | sort -u | xargs -r docker rmi -f >/dev/null 2>&1 || true
+    RETIRE_NOTE+=" · ${label}: containers $(echo "$ids" | grep -c . || true), volumes removed ${n}"
+}
+step_retire() {
+    [[ -e "$RETIRE_MARK" ]] && return 0
+    step "j. retire waha and the tender scanner (one time)"
+    local img wd tmp out=/var/backups/vwlr-scanner-code ok=1
+    img="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -i 'vwlr.*scanner' | head -1 || true)"
+    if [[ -n "$img" ]]; then
+        wd="$(docker inspect -f '{{.Config.WorkingDir}}' "$img" 2>/dev/null || true)"; wd="${wd:-/app}"
+        mkdir -p "$out"
+        tmp="$(docker create "$img" 2>/dev/null || true)"
+        if [[ -n "$tmp" ]] && docker cp "${tmp}:${wd}/." "$out/" >/dev/null 2>&1 && [[ -n "$(ls -A "$out" 2>/dev/null)" ]]; then
+            RETIRE_NOTE+=" · scanner code saved to ${out} ($(du -sm "$out" | cut -f1) MB)"
+        else
+            ok=0; RETIRE_NOTE+=" · scanner code copy FAILED - scanner left untouched"
+        fi
+        [[ -n "$tmp" ]] && docker rm -f "$tmp" >/dev/null 2>&1 || true
+        (( ok )) && retire_images 'vwlr.*scanner' "scanner"
+    else
+        RETIRE_NOTE+=" · no scanner image found"
+    fi
+    retire_images 'waha' "waha"
+    docker image prune -f >/dev/null 2>&1 || true
+    (( ok )) && touch "$RETIRE_MARK"
+    say "retire:${RETIRE_NOTE}"
+    DISK_NOTE+="${RETIRE_NOTE}"
+    return 0
+}
+
 disk_maybe() {
     local total free marker=/var/lib/mdo/disk_last now last
     total="$(disk_total_mb)"; free="$(disk_free_mb)"
@@ -378,6 +425,7 @@ disk_maybe() {
     now="$(date +%s)"; last="$(stat -c %Y "$marker" 2>/dev/null || echo 0)"
     (( now - last > 21600 )) || return 0
     step_disk || true
+    step_retire || true
     touch "$marker" 2>/dev/null || true
 }
 
@@ -509,6 +557,7 @@ main() {
     step_tests
     step_up
     step_disk || true
+    step_retire || true
     STATUS="clean"; SUMMARY="deployed ${SHORT_SHA} — tests passed${DISK_NOTE}"
     if [[ "$AUTO" == 0 ]]; then
         step_cron
