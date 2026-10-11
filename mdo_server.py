@@ -3391,6 +3391,11 @@ import mdo_plan
 _plan = mdo_plan.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos,
                           mdo_cos_api.INBOUND_HOOKS)
 
+# volume-watch: NSE archive files (bhavcopy with volume + delivery %, bulk/block deals) for the shares held or on the
+# levels list; relative volume, distribution/strength/breakout/buy-zone/accumulation signals; one WhatsApp message a day.
+import mdo_volume
+_volume = mdo_volume.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _share_master)
+
 # credit-guard: the claude.ai plan window (rate_limit_info posted by every Claude session) + the fleet API cap
 # (pace-based economy switch in mdo_cos.pace_mode) → one policy the sessions obey (GET /api/credits), one
 # WhatsApp line per state change, a heartbeat every run. Zero LLM.

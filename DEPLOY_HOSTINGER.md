@@ -212,6 +212,8 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 10 */2  * * *   $MDO python mdo_agent.py wa-classifier       >> /var/log/mdo-agent.log 2>&1   # every 2h at :10
 20 */6  * * *   $MDO python mdo_agent.py wa-intel            >> /var/log/mdo-agent.log 2>&1   # every 6h at :20
 30 1    * * 0   $MDO python mdo_agent.py business-pulse      >> /var/log/mdo-agent.log 2>&1   # Sun 07:00 IST
+45 13   * * 1-5 $MDO python mdo_agent.py volume-watch       >> /var/log/mdo-agent.log 2>&1   # 19:15 IST Mon-Fri: NSE bhavcopy (volume, delivery %) + bulk/block deals for held and watched shares; ONE WhatsApp message; heartbeat every run
+45 15   * * 1-5 $MDO python mdo_agent.py volume-watch       >> /var/log/mdo-agent.log 2>&1   # 21:15 IST: second try if NSE had not published yet (never pushes twice for one day)
 0  2    * * *   $MDO python mdo_agent.py daily-plan morning  >> /var/log/mdo-agent.log 2>&1   # 07:30 IST: today's objectives + project plan to WhatsApp (yesterday's unreported items closed as missed and carried over)
 0  14   * * *   $MDO python mdo_agent.py daily-plan evening  >> /var/log/mdo-agent.log 2>&1   # 19:30 IST: planned vs actual, where it stalled, what to reply
 */30 *  * * *   $MDO python mdo_agent.py credit-guard        >> /var/log/mdo-agent.log 2>&1   # every 30 min: plan window + API cap → policy for every Claude session; one WhatsApp line per state change; heartbeat "credits fine" even when nothing happens

@@ -1303,7 +1303,15 @@ def run_daily_plan(bot: dict, model: str, cadence_key: str, now: datetime | None
     return 0
 
 
-CUSTOM_BOTS = {**WA_BOTS, "daily-plan": run_daily_plan, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
+# ── volume-watch: volume, delivery % and bulk/block deals after the close — rule-based, zero LLM (Aman, chat 2026-10-11) ──
+def run_volume_watch(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    now = now or datetime.now(IST)
+    res = api("/api/volume/run", "POST", {"now": now.isoformat()}, timeout=900)
+    heartbeat("volume-watch", cadence_key, str(res.get("status") or "clean"), str(res.get("line") or "volume-watch: no line"))
+    return 0
+
+
+CUSTOM_BOTS = {**WA_BOTS, "volume-watch": run_volume_watch, "daily-plan": run_daily_plan, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
                "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader,
                "corp-actions": run_corp_actions, "tenders-direct": run_tenders_direct, "voice": run_voice}

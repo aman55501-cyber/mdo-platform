@@ -766,6 +766,33 @@ bots:
     - Background workers only when policy.workers is yes, and never more than policy.max_workers
     - Readers and summarisers run on the cheapest model that can do the job, never on the CoS model
     - Every run reports, especially an empty one (Directive 5)
+- id: volume-watch
+  name: Volume watch — relative volume, delivery % and bulk/block deals on the shares Aman holds or watches
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py volume-watch
+  cadence: Mon-Fri 19:15 IST + retry 21:15 IST
+  model: none
+  heartbeat: 'every run: "volume-watch: <day> · N shares watched, S signals (P on held shares to protect), D new bulk/block deals · 1 message pushed|nothing to push"'
+  checks: []
+  serves: [capital-rules, algo-trading]
+  enabled: true
+  objective: use volume to confirm or distrust every price move on the shares Aman holds or has a level on
+  charter:
+    purpose: Put volume into Aman's daily trading and investing (Aman, chat 2026-10-11) — protection first, then opportunity.
+    thinks: 'Rules only. RVOL = volume / mean of the previous 20 sessions. Distribution (down 2%+ on 2x), strength (up 2%+ on 2x), breakout
+      (close above the prior 20-day high on 1.5x), quiet-at-buy / heavy-at-buy (within 3% of the buy level on <=0.8x / >=2x), accumulation
+      (delivery % 1.3x its 20-day mean, price flat or up), plus named bulk and block deals. Held shares are listed first.'
+    works: 'NSE archive files from our server: sec_bhavdata_full_<DDMMYYYY>.csv (volume, delivery) and bulk.csv / block.csv; the first run loads
+      about 30 days of history. Kept: 60 days, only held or levelled shares. One WhatsApp message a day, at most 10 lines, holder column on every line.
+      GET /api/volume/latest, /api/volume/symbol/<SYM>.'
+    limits: Needs NSE's archive host to keep answering (the API host does not). A holiday is simply no file. Does not predict; it reports what volume
+      said. Never a trade instruction; the algo proposals use it as one input.
+    minimum_output: One heartbeat per run, also "0 signals, nothing to push".
+    rules:
+    - Never trade or suggest a loss-booking exit (capital-rules)
+    - Holder column on every line (Directive 18)
+    - No LLM call, ever (Directive 15)
 - id: daily-plan
   name: Daily plan — today's objectives each morning, planned-vs-actual each evening, where the fault lay
   runs_on: vps-cron
