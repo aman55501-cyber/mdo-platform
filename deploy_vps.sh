@@ -140,7 +140,8 @@ step_repo() {
         SHORT_SHA="$(git rev-parse --short HEAD)"
         if [[ "$live" == "$head" ]]; then
             cron_sync_auto || true
-            STATUS="clean"; SUMMARY="up to date${CRON_NOTE}"
+            disk_maybe || true
+            STATUS="clean"; SUMMARY="up to date${CRON_NOTE}${DISK_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
             exit 0
         fi
@@ -364,6 +365,19 @@ step_cron() {
             say "no old mdo_agent lines in ${u}'s crontab"
         fi
     done
+}
+
+# Housekeeping also runs on an "up to date" slot when the disk is below 70% free and the last cleanup is over 6 hours old,
+# so it does not wait for the next commit (Aman, 2026-10-11: keep more than 70% free).
+disk_maybe() {
+    local total free marker=/var/lib/mdo/disk_last now last
+    total="$(disk_total_mb)"; free="$(disk_free_mb)"
+    [[ -n "$total" && "$total" -gt 0 && -n "$free" ]] || return 0
+    (( free * 100 / total < 70 )) || return 0
+    now="$(date +%s)"; last="$(stat -c %Y "$marker" 2>/dev/null || echo 0)"
+    (( now - last > 21600 )) || return 0
+    step_disk || true
+    touch "$marker" 2>/dev/null || true
 }
 
 # Auto-runs keep the job schedule in step with the repo (Aman, 2026-10-11: no more "re-run deploy_vps.sh" clicks).
