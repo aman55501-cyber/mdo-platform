@@ -29,3 +29,15 @@ Only 5 real NY/NJ leads were found; New York is the thinnest state.
 ## Next steps
 1. Verify rows 1-8 with a working fetch (haiku, read-only) or the Vibe Prospecting connector (estimate-cost first).
 2. When Ayush's samples and rates arrive this week, price each lead; then draft outreach (drafts only).
+
+## Tracker rules (Aman, chat 2026-10-11)
+- This file is the USA buyer trail: every lead, every fact with its source URL, every status change dated. Add, never overwrite.
+- **No outreach until (a) Ayush's quotes are in and (b) supply-chain logistics are worked out.** No hurry; keep gathering information on every lead meanwhile.
+- **Before anyone is contacted, these must exist (the concrete-ideas gate):** landed cost per kg to NY/FL/NV; the spec sheet and COA for each sample; payment and shipping terms; minimum order and lead time; who imports (importer of record) and what US paperwork the buyer will ask for [UNVERIFIED - confirm with a customs broker]; a one-page offer per product; answers to the buyer's likely first three questions.
+- Status per lead: found -> verified (site and contact checked) -> profiled (what they buy, from whom, volumes) -> ready (gate passed) -> drafted -> sent by Aman -> replied.
+- Info to collect per lead while waiting: products using curcumin/boswellia, current suppliers, certifications, size, decision-maker's published title, trade shows they attend.
+
+## SupplySide Global 2026 (what is known)
+- Mandalay Bay, Las Vegas. Education 26-30 Oct; **expo hall 28, 29, 30 Oct** (official listing; one article says 27-30, treat as outdated). New three-day expo format.
+- Sources: wholefoodsmagazine.com/articles/17696-supplyside-global-announces-new-format-dates-for-2026; supplysideglobal.com.
+- Not found: registration price, exhibitor list for botanical extracts [UNVERIFIED]. Get both from the official site before deciding.

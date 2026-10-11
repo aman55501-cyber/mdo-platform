@@ -30,7 +30,7 @@ def test_today_endpoint_shape_and_plan_roundtrip(monkeypatch):
     r = c.get("/api/today")
     assert r.status_code == 200
     d = r.json()
-    for k in ("as_of", "date", "reasons", "plan", "objectives", "pending", "system", "tenders", "volume", "competitors", "credits"):
+    for k in ("as_of", "date", "reasons", "plan", "objectives", "pending", "system", "tenders", "volume", "competitors", "credits", "logins"):
         assert k in d, k
     assert "material" in d["reasons"] and any(o.startswith("• algo-trading:") for o in d["objectives"])
     assert d["pending"] and d["pending"][0]["id"].startswith("A")
@@ -66,3 +66,16 @@ def test_notes_roundtrip_and_the_brain_has_the_tools():
     names = {t["name"] for t in mdo_brain.TOOLS}
     assert {"save_note", "list_notes", "get_note"} <= names
     assert "web_search" in open(os.path.join(ROOT, "mdo_brain.py"), encoding="utf-8").read()
+
+
+def test_logins_card_lists_accounts_and_the_login_link(monkeypatch):
+    from fastapi.testclient import TestClient
+    import mdo_server
+    monkeypatch.setattr(mdo_server, "_cfo_get", lambda path, timeout=25: {"accounts": [
+        {"key": "HDFC1", "label": "Aman", "broker": "hdfc", "logged_in": True, "client_code": "x"},
+        {"key": "ANGEL1", "label": "Aditi", "broker": "angel", "logged_in": False, "client_code": "y"}]})
+    monkeypatch.setattr(mdo_server, "CFO_TOKEN", "tok")
+    monkeypatch.setenv("CFO_PUBLIC_URL", "https://cfo.example")
+    d = TestClient(mdo_server.app).get("/api/today").json()["logins"]
+    assert [(a["key"], a["logged_in"]) for a in d["accounts"]] == [("HDFC1", True), ("ANGEL1", False)] and "client_code" not in d["accounts"][0]
+    assert d["login_url"] == "https://cfo.example/login?token=tok" and d["error"] == ""

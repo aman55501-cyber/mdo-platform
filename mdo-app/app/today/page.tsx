@@ -21,6 +21,7 @@ interface TodayData {
   tenders: { buyer: string; category: string; due_date: string | null; status: string; notes: string; url: string }[]
   volume: string
   competitors: string
+  logins?: { accounts: { key: string; label: string; broker: string; logged_in: boolean; needs_setup?: boolean }[]; login_url: string; error: string }
 }
 
 const card: React.CSSProperties = { background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 14, padding: 14, marginBottom: 12 }
@@ -78,6 +79,19 @@ export default function TodayPage() {
             </div>
           ))}
           {d.pending.length > 8 && <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>+{d.pending.length - 8} more — ask the CoS on WhatsApp: "pending"</div>}
+        </div>
+
+        <div style={card}>
+          <div style={h}><ListChecks size={14} /> Daily logins{d.logins ? ` · ${d.logins.accounts.filter(a => a.logged_in).length}/${d.logins.accounts.length} in` : ""}</div>
+          {d.logins?.error && <div style={{ fontSize: 13, color: "var(--red)" }}>Could not read accounts: {d.logins.error}</div>}
+          {(d.logins?.accounts ?? []).map(a => (
+            <div key={a.key} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontSize: 14 }}>
+              <span>{a.label || a.key} <span style={{ color: "var(--text2)", fontSize: 12 }}>{a.broker}</span></span>
+              <span style={{ color: a.logged_in ? "var(--green)" : "var(--text2)" }}>{a.needs_setup ? "needs keys" : a.logged_in ? "● logged in" : "○ not logged in"}</span>
+            </div>
+          ))}
+          {d.logins?.login_url && <a href={d.logins.login_url} style={{ ...btn, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 10, textDecoration: "none" }}>Log in to all accounts →</a>}
+          <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>HDFC needs a fresh code from your phone each day. I never see or store it.</div>
         </div>
 
         <div style={card}>

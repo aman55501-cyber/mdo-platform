@@ -3413,7 +3413,18 @@ mdo_brain.configure({"note_add": lambda title, body, tags="", source="brain": _n
 
 # today: one JSON for the phone page (/today in the app)
 import mdo_today
-_today = mdo_today.register(app, vdb, _cos, _credit_guard)
+def _logins_payload() -> dict:
+    """Broker accounts and whether each is logged in today. The login link carries the CFO token, so it only leaves through the keyed /api."""
+    r = _cfo_get("/accounts")
+    if r.get("error"):
+        return {"accounts": [], "login_url": "", "error": r["error"]}
+    pub = os.environ.get("CFO_PUBLIC_URL", "").strip().rstrip("/")
+    url = f"{pub}/login?token={urllib.parse.quote(CFO_TOKEN)}" if pub and CFO_TOKEN else ""
+    return {"accounts": [{k: a.get(k) for k in ("key", "label", "broker", "logged_in", "needs_setup")} for a in r.get("accounts", [])],
+            "login_url": url, "error": ""}
+
+
+_today = mdo_today.register(app, vdb, _cos, _credit_guard, logins=_logins_payload)
 
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):

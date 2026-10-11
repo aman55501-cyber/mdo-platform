@@ -7,6 +7,7 @@ can't be in front of a laptop all the time." The page is /today in the app (inst
 from __future__ import annotations
 
 import json
+import asyncio
 import os
 import re
 from datetime import datetime
@@ -34,7 +35,7 @@ def parse_pending(md: str) -> list[dict]:
 
 
 def register(app, vdb: Callable[[], Awaitable[Any]], cos: dict, credit_guard: dict | None = None,
-             agenda_path: str | None = None, pending_path: str | None = None) -> dict:
+             agenda_path: str | None = None, pending_path: str | None = None, logins: Callable[[], dict] | None = None) -> dict:
     agenda_file = agenda_path or os.path.join(ROOT, "agenda.yaml")
     pending_file = pending_path or os.path.join(ROOT, "AMAN_PENDING.md")
 
@@ -78,6 +79,13 @@ def register(app, vdb: Callable[[], Awaitable[Any]], cos: dict, credit_guard: di
                 out["credits"] = st.get("line", "")
             except Exception:
                 out["credits"] = ""
+        # daily broker logins: status per account and the one link that logs in (HDFC needs a fresh OTP every day, so it stays a tap)
+        out["logins"] = {"accounts": [], "login_url": "", "error": ""}
+        if logins:
+            try:
+                out["logins"] = await asyncio.to_thread(logins)
+            except Exception as e:
+                out["logins"]["error"] = str(e)[:120]
         # tenders and volume
         out["tenders"] = []
         if await _table(db, "vwlr_tender_pipeline"):
