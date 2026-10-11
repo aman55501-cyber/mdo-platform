@@ -30,6 +30,8 @@ def parse_pending(md: str) -> list[dict]:
         cells = [c.strip() for c in ln.strip().strip("|").split("|")]
         if len(cells) < 4 or not re.fullmatch(r"A\d+", cells[0]):
             continue
+        if re.match(r"(WITHDRAWN|ANSWERED|DONE|CLOSED|SUPERSEDED)\b", cells[1]):     # closed rows stay in the file but are not "waiting on you"
+            continue
         out.append({"id": cells[0], "item": cells[1], "why": cells[2], "since": cells[3]})
     return out
 

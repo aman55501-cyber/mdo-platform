@@ -17,8 +17,9 @@ def test_pending_table_is_parsed_from_the_real_file():
     md = open(os.path.join(ROOT, "AMAN_PENDING.md"), encoding="utf-8").read()
     rows = mt.parse_pending(md)
     ids = [r["id"] for r in rows]
-    assert len(ids) == len(set(ids)) >= 10 and "A27" in ids and all(r["item"] for r in rows)
+    assert len(ids) == len(set(ids)) >= 10 and "A30" in ids and "A12" not in ids and all(r["item"] for r in rows)
     assert mt.parse_pending("| # | Item |\n|---|---|\n| A1 | x | y | z |\nnot a row") == [{"id": "A1", "item": "x", "why": "y", "since": "z"}]
+    assert mt.parse_pending("| A2 | WITHDRAWN by Aman | y | z |\n| A3 | ANSWERED 2026 | y | z |") == []     # closed rows are not "waiting on you"
     assert mt.parse_pending("") == []
 
 

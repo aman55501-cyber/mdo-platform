@@ -103,7 +103,7 @@ def short_objectives(agenda: dict, limit: int = 12) -> list[str]:
             continue
         na = (o.get("next_action") or "").strip()
         bl = (o.get("blocker") or "").strip()
-        line = f"• {o['id']}: " + (na[:110] if na else "no next action set") + (f" — blocked: {bl[:70]}" if bl else "")
+        line = f"• {o['id']}: " + (na[:110] if na else (o.get("title") or "").strip()[:110]) + (f" — blocked: {bl[:70]}" if bl else "")
         out.append(line)
     return out[:limit]
 
