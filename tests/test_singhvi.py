@@ -202,7 +202,7 @@ def test_singhvi_is_wired_in_dispatch_fleet_agenda_and_cron():
     agenda = yaml.safe_load(open(os.path.join(ROOT, "agenda.yaml"), encoding="utf-8"))
     live = {o["id"]: o for o in agenda["objectives"] if o.get("confirmed") is True}
     assert {"vwlr-dispatch", "tenders-washing-rcr", "hotel-renovation-contract", "capital-rules", "battery-plant"} <= set(live)
-    assert all(o["source"] == "Aman, chat 2026-10-09" for o in live.values())
+    assert all(o["source"].startswith(("Aman, chat 2026-10-09", "Aman, chat 2026-10-11")) for o in live.values())   # his words only
     assert len(agenda["candidates"]) == 8                      # nothing removed
     # every objective a bot serves exists in the agenda
     known = set(live) | {"all"}

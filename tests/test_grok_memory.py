@@ -116,13 +116,13 @@ def test_build_context_has_every_section_and_only_confirmed_objectives():
     assert "Fri 09 Oct 2026 09:00 IST" in text
     # objectives: Aman's words, confirmed only — nothing from the candidates list, no amounts added
     live = [o for o in agenda["objectives"] if o.get("confirmed") is True]
-    assert len(live) == 5
+    assert len(live) == 10                       # 5 of 2026-10-09 + 5 more stated by Aman on 2026-10-11
     for o in live:
         assert f"- {o['id']}: " in text and o["title"][:60] in text
     for c in agenda["candidates"]:
         assert c["title"] not in text and c["id"] not in text
     assert "₹" not in text.split("## Objectives")[1].split("## Entities")[0]
-    assert "battery-plant" in text and "[exploratory]" in text
+    assert "battery-plant" in text and "algo-trading" in text and "curcumin-boswellia" in text
     # entities straight from the register
     for name, _ in wai.ENTITIES:
         assert name in text

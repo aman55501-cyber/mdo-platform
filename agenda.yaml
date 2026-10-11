@@ -42,6 +42,8 @@ objectives:
     next_action: null
     blocker: null
     click_needed: "bid decision (CHIEF_OF_STAFF.md §1.4)"
+    notes:
+      - "Aman, chat 2026-10-11: scope is tenders for ROM coal and washed coal, both RCR and supply. Previously (2026-10-09): washing and RCR only. The 'win ONE washing + ONE RCR contract' goal above is unchanged."
   - id: hotel-renovation-contract
     title: "Hotel ANS International: only two agenda points — renovation, and closing the management contract with Guptasons (Sameer). Operations and sales are no longer the fleet's concern."
     owner: Aman
@@ -66,15 +68,66 @@ objectives:
       - "Patient: average a position only if there is scope to exit later"
       - "Trade suggestions only at >80% conviction"
       - "Crude and major global factors are the prime market drivers to watch"
-  - id: battery-plant
-    title: "Battery plant: exploratory, meeting on 2026-10-09; no objective yet"
+    notes:
+      - "Aman, chat 2026-10-11: a capital GROWTH and capital PROTECTION agent that is up 24x7 (growth = proposals under these rules; protection = alerts on any breach). Executing orders stays Aman's click unless he sets a standing mandate with hard limits (decision pending, see algo-trading)."
+  - id: algo-trading
+    title: "Set up and trade in the Indian share market via algorithm (algo trading), built secure"
     owner: Aman
-    status: exploratory           # Aman: "no objective yet" — listed so nothing is invented around it
+    status: live
     confirmed: true
-    source: "Aman, chat 2026-10-09"
-    next_action: "Meeting on 2026-10-09 (Aman, chat 2026-10-09)"
-    blocker: null
+    source: "Aman, chat 2026-10-11"
+    next_action: "Decision for Aman: the autonomy rule says money moves need his click. Algo orders are money moves. Either (a) the algo proposes and he clicks each order, or (b) he sets a written standing mandate with hard limits (max order value, max daily loss, instruments, hours, kill switch) and the CoS builds to it. Also: HDFC API keys (A30) and a broker that permits API trading, and SEBI's retail-algo rules must be checked before any live order."
+    blocker: "HDFC API keys not yet in .env (A30); decision (a)/(b)"
+    click_needed: "every order, until Aman sets a standing mandate"
+    rules:
+      - "Secure: keys only in .env on the VPS, IP-restricted where the broker allows, read-only first, paper trading before any live order, kill switch, every order logged"
+      - "Capital rules above apply: never book a loss, >80% conviction, no fixed targets"
+  - id: battery-plant
+    title: "Solar viability report, and a solar-battery assembling plant: a contact is a partner of a Chinese company that can supply the cells. Analyse viability and set it up step by step."
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11 (previously, 2026-10-09: 'exploratory, meeting on 2026-10-09; no objective yet')"
+    next_action: "Aman learns the partner's name on 2026-10-22 and provides the information then; the CoS starts the desk check and the solar viability report on that date. Prepared: briefs/BATTERY_PLANT_MEETING_2026-10-09.md, briefs/BATTERY_CHINA_SOURCING_AND_SOLAR_2026-10-10.md"
+    blocker: "partner name and information, due 2026-10-22"
     click_needed: false
+  - id: curcumin-boswellia
+    title: "Viability and feasibility report for curcumin and Boswellia: analyse all internal and external costs, guide Aman from step 1. Samples and rates arrive in the week of 2026-10-12."
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11"
+    next_action: "Step 1 guide and cost framework drafted once Aman confirms the open questions (product form, scale, target market); fill in with the samples and rates when they arrive"
+    blocker: "samples and rates due the week of 2026-10-12"
+    click_needed: false
+  - id: washery-sales
+    title: "Set up sales for the upcoming washery so there are orders; reach out to potential customers, officials and other important people in the domain"
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11"
+    next_action: "Build the target list (customers, officials, domain contacts) and draft outreach; emails are drafts only, Aman sends"
+    blocker: "washery capacity, grades and commissioning date needed to quote"
+    click_needed: "every outreach message that goes out (drafts only; Aman sends)"
+  - id: mis-hire
+    title: "Hire an MIS person so Aman does not have to do this work all the time"
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11"
+    next_action: "Draft the job description, the daily/weekly MIS reports the hire would own, a screening test and an interview plan; sourcing channels"
+    blocker: null
+    click_needed: "posting the job, any offer, any salary commitment"
+  - id: cos-operating-mandate
+    title: "Set up every not-live and running-but-weak agent. The CoS is Aman's primary source of communication to all agents. WhatsApp is the constant channel: constant progress updates, and help clearing roadblocks online and in the real world. Models: Sonnet by default (Fable is not used). Laptop stays on."
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11"
+    next_action: "Close the routing loop WhatsApp -> CoS -> agents -> WhatsApp; fix tender scraper, corporate actions, broker data; report each agent's state"
+    blocker: "HDFC keys (A30); decisions on the weak agents"
+    click_needed: false
+# vwlr-dispatch and hotel-renovation-contract were not restated on 2026-10-11 and stand as stated on 2026-10-09.
 
 candidates:                    # from Aman's files; unconfirmed; CoS lists these once, never acts
   - id: hdfc-oauth

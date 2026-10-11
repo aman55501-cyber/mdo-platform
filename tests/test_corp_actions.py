@@ -220,7 +220,8 @@ def test_run_when_nse_is_down_invents_nothing(monkeypatch):
     c, sent, asked = _setup(monkeypatch, canned=None)
     r = c.post("/api/corp-actions/run", json={"now": NOW.isoformat()}).json()
     assert r["nse_ok"] is False and r["new"] == 0 and r["pushed"] == 0 and r["status"] == "warning" and sent.texts == []
-    assert r["line"] == "corp-actions: 3 tickers checked, 0 new (0 results, 0 dividends, 0 other) — NSE unavailable (3 of 3 tickers unanswered)"
+    assert r["line"] == ("corp-actions: 3 tickers checked, 0 new (0 results, 0 dividends, 0 other) — NSE unavailable (3 of 3 tickers unanswered)"
+                         " · first error: INFY: URLError: NSE timed out")                  # the reason is named, not just 'unavailable'
     assert len(asked) == 6                                                     # stopped after UNAVAILABLE_AFTER tickers, no hammering
     db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
     assert db.execute("SELECT COUNT(*) FROM corp_actions").fetchone()[0] == 0
@@ -267,3 +268,13 @@ def test_fleet_cron_and_morning_card_wiring():
     assert "held_text" in page.split("function CorpActionsCard()")[1]                 # the holder column
     api_ts = open(os.path.join(ROOT, "mdo-app", "lib", "api.ts"), encoding="utf-8").read()
     assert "/api/corp-actions/upcoming?days=" in api_ts
+
+
+def test_probe_shows_the_nse_answer_or_the_reason(monkeypatch):
+    c, sent, asked = _setup(monkeypatch)
+    r = c.get("/api/corp-actions/probe", params={"symbol": "tcs"}).json()
+    assert r["symbol"] == "TCS" and r["announcements"]["ok"] and r["actions"]["ok"] and r["actions"]["items"] is not None
+    c, sent, asked = _setup(monkeypatch, canned=None)
+    r = c.get("/api/corp-actions/probe", params={"symbol": "TCS"}).json()
+    assert r["announcements"]["ok"] is False and "NSE timed out" in r["announcements"]["error"]
+    _wipe()

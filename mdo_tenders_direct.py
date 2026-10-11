@@ -797,16 +797,22 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         return await stats()
 
     @app.get("/api/tenders/direct/probe")
-    async def tenders_direct_probe(site: str, links: int = 40):
+    async def tenders_direct_probe(site: str, links: int = 40, path: str = ""):
         """What this server actually receives from one listed site: status, title, the tables' first rows and the
         first links. For fixing a parser against the real page; keyed like every other /api route, public pages only."""
         match = [x for x in SITES if x["key"] == site.strip().lower()]
         if not match:
             raise HTTPException(404, f"unknown site; one of: {', '.join(x['key'] for x in SITES)}")
-        got = await asyncio.to_thread(fetch_page, match[0]["url"])
+        url = match[0]["url"]
+        if path:                                              # another page of the SAME site only (path or ?query), never another host
+            from urllib.parse import urljoin, urlsplit
+            url = urljoin(url, path)
+            if urlsplit(url).netloc != urlsplit(match[0]["url"]).netloc:
+                raise HTTPException(400, "path must stay on the site's own host")
+        got = await asyncio.to_thread(fetch_page, url)
         if not got["ok"]:
-            return {"site": site, "url": match[0]["url"], "ok": False, "status": got["status"], "reason": got["reason"]}
-        return probe_summary(got["html"], match[0]["url"], max(0, min(int(links), 200)))
+            return {"site": site, "url": url, "ok": False, "status": got["status"], "reason": got["reason"]}
+        return probe_summary(got["html"], url, max(0, min(int(links), 200)))
 
     @app.post("/api/tenders/direct/run")
     async def tenders_direct_run(body: dict | None = None):

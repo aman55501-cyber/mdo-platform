@@ -36,6 +36,7 @@ SHORT_SHA="unknown"
 DEPLOYED_FILE=/var/lib/mdo/deployed_sha   # commit the running containers were built from
 FAILED_FILE=/var/lib/mdo/failed_sha       # commit whose gate failed; not retried until HEAD moves
 SERVICES_UP="none"
+DISK_NOTE=""
 CRON_RESULT="skipped"
 ALERT_RESULT="skipped"
 TOKEN=""
@@ -263,6 +264,32 @@ step_up() {
     say "up: ${SERVICES_UP}"
 }
 
+# ── i. disk housekeeping (Aman, chat 2026-10-11: keep more than 70% of the disk free) ─────────────────────────
+# Every rebuild leaves the previous image dangling and fills the build cache; stopped containers and journals
+# pile up too. Removes ONLY: dangling images, build cache older than 48 h, stopped containers, journald above
+# 200 MB, apt caches. Never volumes, never a tagged image, never a running container. Failures never fail a deploy.
+disk_free_mb() { df -BM --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9'; }
+disk_total_mb() { df -BM --output=size / 2>/dev/null | tail -1 | tr -dc '0-9'; }
+step_disk() {
+    step "i. disk housekeeping"
+    local before after total pct docker_df
+    before="$(disk_free_mb)"; total="$(disk_total_mb)"
+    docker_df="$(docker system df --format '{{.Type}} {{.Size}} ({{.Reclaimable}} reclaimable)' 2>/dev/null | tr '\n' ';' || true)"
+    say "docker before: ${docker_df:-unavailable}"
+    docker image prune -f >/dev/null 2>&1 || true
+    docker builder prune -f --filter "until=48h" >/dev/null 2>&1 || true
+    docker container prune -f >/dev/null 2>&1 || true
+    journalctl --vacuum-size=200M >/dev/null 2>&1 || true
+    apt-get clean >/dev/null 2>&1 || true
+    after="$(disk_free_mb)"
+    if [[ -n "$after" && -n "$total" && "$total" -gt 0 ]]; then
+        pct=$(( after * 100 / total ))
+        DISK_NOTE=" · disk ${pct}% free (${after} MB, $(( after - ${before:-$after} )) MB reclaimed)"
+        say "disk: ${pct}% free, reclaimed $(( after - ${before:-$after} )) MB; docker after: $(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | tr '\n' ';' || true)"
+        if (( pct < 70 )); then DISK_NOTE+=" · BELOW 70% free — largest dirs: $(du -xsm /var/lib/docker/* /var/log /root /docker 2>/dev/null | sort -rn | head -4 | tr '\t\n' ' ,')"; fi
+    fi
+}
+
 # ── e+f. cron ────────────────────────────────────────────────────────────────
 render_cron() {              # the §8 block of DEPLOY_HOSTINGER.md, $MDO expanded, + self-update line
     local block mdo="" line comment m h dom mon dow cmd
@@ -442,7 +469,8 @@ main() {
     step_env
     step_tests
     step_up
-    STATUS="clean"; SUMMARY="deployed ${SHORT_SHA} — tests passed"
+    step_disk || true
+    STATUS="clean"; SUMMARY="deployed ${SHORT_SHA} — tests passed${DISK_NOTE}"
     if [[ "$AUTO" == 0 ]]; then
         step_cron
         step_alert

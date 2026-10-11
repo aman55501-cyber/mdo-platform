@@ -23,6 +23,8 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A29 | Google Calendar → Other calendars → From URL → paste the calendar feed URL printed by deploy (DEPLOY_HOSTINGER §8b) | compliance, expiries, Vegas on the phone | 2026-10-09 |
 | A30 | HDFC API keys for 4 accounts via Cowork prompt (chat 2026-10-09) | ends CSV uploads | 2026-10-09 |
 | A32 | Reply **yes** so the fix also lands on the branch the VPS tracks (`claude/chief-of-staff-bot-4i2jyz`); this session may push only to `claude/nifty-darwin-j8xylv`. Until then nothing built since 2026-10-09 evening is live | unblocks A27 with zero VPS clicks: self-deploy picks it up in 10 min | 2026-10-10 |
+| A34 | Decisions for the new objectives (answers in chat 2026-10-11): algo orders — you click each, or a written standing mandate with hard limits; curcumin/Boswellia — product form, scale, market; washery — capacity, grades, start date; MIS — location, budget, reporting lines | each objective needs one fact only you have | 2026-10-11 |
+| A35 | Partner name for the solar-battery plant: due 2026-10-22 (Aman) | desk check + viability report start that day | 2026-10-11 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.

@@ -358,6 +358,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         line = heartbeat_line(len(syms) if nse_ok else checked, new_rows, nse_ok, failed)
         if nse_ok and failed:
             line += f" · {failed} tickers unanswered"
+        if errors:
+            line += f" · first error: {errors[0][:140]}"      # the reason, not just 'unavailable' (2026-10-11)
         if new_rows and not sent:
             line += " · push NOT delivered"
         db = await vdb()
@@ -415,6 +417,17 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
     async def corp_actions_tickers():
         t = await tickers()
         return {"tickers": t, "count": len(t)}
+
+    @app.get("/api/corp-actions/probe")
+    async def corp_actions_probe(symbol: str = "TCS"):
+        """One live NSE round trip for one symbol, both feeds: what came back or why not. For diagnosing 'NSE unavailable'."""
+        fetch = hooks["make_fetcher"]()
+        out: dict[str, Any] = {"symbol": symbol.upper()}
+        for kind in ("announcements", "actions"):
+            data, err = await asyncio.to_thread(fetch, kind, symbol)
+            out[kind] = {"ok": data is not None, "error": err,
+                         "items": len(data) if isinstance(data, list) else None, "sample": json.dumps(data)[:300] if data is not None else ""}
+        return out
 
     @app.post("/api/corp-actions/run")
     async def corp_actions_run(body: dict | None = None):
