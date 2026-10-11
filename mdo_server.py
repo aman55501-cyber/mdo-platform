@@ -3354,7 +3354,9 @@ _compliance = mdo_compliance.register(app, vdb, lambda text: _cos["send_cos"](te
 # WhatsApp line only for the actionable ones (tender result, bank statement, broker holding statement). Zero LLM
 # spend; run by mdo_agent.py mail-reader. bidsnrfp results also go through the tender door's in-process body.
 import mdo_mail
-_mail = mdo_mail.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos["tender_ingest"])
+import mdo_t247
+_t247 = mdo_t247.register(app, vdb)
+_mail = mdo_mail.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos["tender_ingest"], _t247["ingest"])
 
 # corp-actions: NSE corporate announcements + corporate actions for every held (all holders) or watched ticker,
 # corp_actions + corp_actions_runs, /api/corp-actions/*. One push per run, NEW rows only, holder column on every

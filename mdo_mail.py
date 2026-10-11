@@ -433,6 +433,13 @@ def describe(parsed: dict, category: str) -> dict:
         tenders = parse_tender_html("<p>" + "</p><p>".join(body_text.splitlines()) + "</p>")
     if category == "tender-result" and html_text:
         body_text = html_text                                  # the summary fallback reads the real body
+    t247_text = ""
+    if category == "tender-result" and "participation" in str(parsed["subject"]).lower() and "fresh results" in (html_text or body_text).lower():
+        # Tender247 competitor analysis: one row per result with winner and bidders goes to mdo_t247, not into the pipeline
+        from mdo_t247 import parse_results
+        t247_text = html_text or body_text
+        t247_rows = parse_results(t247_text)
+        tenders = []
     if category == "grok-tender":
         tenders = parse_grok_tenders(html_text or body_text)
     alert_total = 0
@@ -440,6 +447,10 @@ def describe(parsed: dict, category: str) -> dict:
         tenders, alert_total = parse_tender247_alert(html_text or body_text)
     if locked_names:
         summary = LOCKED_SUMMARY + (f" · {', '.join(locked_names)}" if len(locked_names) <= 3 else f" · {len(locked_names)} files")
+    elif t247_text:
+        rel = [r for r in t247_rows if r["relevant"]]
+        summary = (f"Tender247 competitor results: {len(t247_rows)} new, {len(rel)} coal/washery/RCR"
+                   + (": " + "; ".join(f"{r['winner']} won {r['brief'][:45]} ({r['value_text']})" for r in rel[:3]) if rel else ""))
     elif category == "tender-result":
         summary = tender_summary(tenders, body_text)
     elif category == "tender-alert":
@@ -455,7 +466,8 @@ def describe(parsed: dict, category: str) -> dict:
         summary = " ".join(body_text.split())[:200]
     return {"category": category, "entity_hint": hint, "attachment_names": names, "locked": bool(locked_names),
             "locked_names": locked_names, "summary": summary[:SUMMARY_MAX], "tenders": tenders,
-            "actionable": (bool(tenders) if category == "grok-tender" else
+            "t247_text": t247_text,
+            "actionable": (any(r["relevant"] for r in t247_rows) if t247_text else bool(tenders) if category == "grok-tender" else
                            any(_t247_match(t) for t in tenders) if category == "tender-alert" else
                            is_actionable(category, parsed["subject"]))}
 
@@ -475,6 +487,8 @@ def push_text(rows: list[dict]) -> str:
             parts.append(f"{n} Tender247 alert{'s' if n != 1 else ''} with matching tenders")
         elif cat == "grok-tender":
             parts.append(f"{n} Grok tender list{'s' if n != 1 else ''}")
+        elif cat == "tender-result" and all(str(r.get("summary", "")).startswith("Tender247 competitor") for r in rs):
+            parts.append(f"{n} Tender247 competitor-results mail{'s' if n != 1 else ''} with coal/washery/RCR wins")
         elif cat == "tender-result":
             parts.append(f"{n} tender result{'s' if n != 1 else ''} ({label})")
         elif cat == "bank-statement":
@@ -633,7 +647,8 @@ def _parse_now(v: Any) -> datetime:
 # Registration — tables, endpoints, the run the bot triggers
 # ═════════════════════════════════════════════════════════════════════════════
 def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], dict],
-             tender_ingest: Callable[..., Awaitable[dict]] | None = None) -> dict:
+             tender_ingest: Callable[..., Awaitable[dict]] | None = None,
+             t247_ingest: Callable[..., Awaitable[dict]] | None = None) -> dict:
     """Mount /api/mail/*. `send_cos` is the same function POST /api/cos/send wraps; `tender_ingest` is the tender
     door's body (mdo_cos_api.register()['tender_ingest']) so bidsnrfp results also land in the pipeline."""
     import asyncio
@@ -701,6 +716,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         row = _row(rows[0]) if rows else None
         if row is not None:
             row["tenders"] = info["tenders"]
+            row["t247_text"] = info.get("t247_text", "")
         return row
 
     async def run(now_v: Any = None) -> dict:
@@ -781,6 +797,16 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
                     t247_posted += int(r.get("added") or 0)
                 except Exception as e:
                     out["note"] = (out["note"] + " · " if out["note"] else "") + f"tender door failed: {redact(e, cfg)[:80]}"
+        t247_added = t247_rel = 0
+        for row in new_rows:                                 # Tender247 competitor results → mdo_t247 tables
+            if not row.get("t247_text") or t247_ingest is None:
+                continue
+            try:
+                r = await t247_ingest(row["t247_text"], str(row.get("received_at") or "")[:10] or now.strftime("%Y-%m-%d"))
+                t247_added += int(r.get("added") or 0)
+                t247_rel += len(r.get("relevant_new") or [])
+            except Exception as e:
+                out["note"] = (out["note"] + " · " if out["note"] else "") + f"competitor tables failed: {redact(e, cfg)[:80]}"
         grok_posted = 0
         for row in new_rows:                                 # Grok's [GROK-TENDER] table → the pipeline, source "grok"
             if row["category"] != "grok-tender" or not row.get("tenders"):
@@ -825,6 +851,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             line += " · 1 line pushed" if out["pushed"] else " · push NOT delivered"
         if posted:
             line += f" · {posted} tender result{'s' if posted != 1 else ''} → pipeline"
+        if t247_added or t247_rel:
+            line += f" · Tender247 competitors: +{t247_added} results ({t247_rel} coal/washery/RCR)"
         if counts.get("tender-alert"):
             line += f" · Tender247: {t247_posted} new of {t247_seen} listed → pipeline"
         if counts.get("grok-tender"):
