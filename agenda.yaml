@@ -125,6 +125,15 @@ objectives:
     next_action: "Draft the job description, the daily/weekly MIS reports the hire would own, a screening test and an interview plan; sourcing channels"
     blocker: null
     click_needed: "posting the job, any offer, any salary commitment"
+  - id: hire-three-roles
+    title: "Fill three openings immediately: Tender Specialist, Lead Accountant, Civil Engineer"
+    owner: Aman
+    status: live
+    confirmed: true
+    source: "Aman, chat 2026-10-11"
+    next_action: "Aman sends the five facts per role (location and joining date, salary range, full-time or contract, who interviews, disqualifiers); the CoS finalises the three job ads, drafts outreach and the practical tests (briefs/HIRING_3_ROLES_FAST.md). Target: offers by 2026-10-17."
+    blocker: "the five facts per role"
+    click_needed: "posting the ads, every message to a candidate, every offer (drafts only; Aman sends and signs)"
   - id: cos-operating-mandate
     title: "Set up every not-live and running-but-weak agent. The CoS is Aman's primary source of communication to all agents. WhatsApp is the constant channel: constant progress updates, and help clearing roadblocks online and in the real world. Models: Sonnet by default (Fable is not used). Laptop stays on."
     owner: Aman
