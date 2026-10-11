@@ -140,7 +140,7 @@ step_repo() {
         SHORT_SHA="$(git rev-parse --short HEAD)"
         if [[ "$live" == "$head" ]]; then
             cron_sync_auto || true
-            disk_maybe || true; step_retire || true
+            disk_maybe || true; step_retire || true; step_retire_waha || true
             DISK_NOTE+=" · disk now $(( $(disk_free_mb) * 100 / $(disk_total_mb) ))% free; images: $(docker images --format '{{.Size}} {{.Repository}}' 2>/dev/null | sed 's/GB/G/;s/MB/M/;s/kB/K/;s/ B/ /' | sort -h -r | head -4 | sed 's# [^ ]*/# #' | tr '\n' ';')"
             STATUS="clean"; SUMMARY="up to date${CRON_NOTE}${DISK_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
@@ -418,6 +418,31 @@ step_retire() {
     (( ok )) && printf '%s' "$RETIRE_NOTE" > "$RETIRE_MARK"
     say "retire:${RETIRE_NOTE}"
     DISK_NOTE+="${RETIRE_NOTE}"
+    return 0
+}
+
+# ── j2. waha image survived the first pass; retry once with the reason captured (Aman: "remove waha and its data completely") ──
+WAHA_MARK=/var/lib/mdo/retired_waha_retry
+step_retire_waha() {
+    if [[ -e "$WAHA_MARK" ]]; then
+        DISK_NOTE+=" · waha retry:$(head -c 300 "$WAHA_MARK" 2>/dev/null)"; return 0
+    fi
+    local imgs ids vols note="" n=0 out
+    imgs="$(docker images --format '{{.Repository}} {{.ID}}' 2>/dev/null | awk '$1 ~ /waha/ {print $2}' | sort -u)"
+    [[ -z "$imgs" ]] && { printf '%s' "no waha image left" > "$WAHA_MARK"; return 0; }
+    ids="$(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' 2>/dev/null | awk '$2 ~ /waha/ || $3 ~ /waha/ {print $1}')"
+    note+=" containers ${ids:+found}${ids:-none}"
+    if [[ -n "$ids" ]]; then
+        vols="$(for c in $ids; do docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}} {{end}}{{end}}' "$c" 2>/dev/null; done | tr ' ' '\n' | sort -u | grep -v '^$' || true)"
+        # shellcheck disable=SC2086
+        docker rm -f $ids >/dev/null 2>&1 || true
+        for v in $vols; do docker volume rm "$v" >/dev/null 2>&1 && n=$((n+1)); done
+    fi
+    # shellcheck disable=SC2086
+    out="$(docker rmi -f $imgs 2>&1 | tr '\n' ' ' | cut -c1-160)"
+    note+="; volumes ${n}; rmi: ${out}"
+    printf '%s' "$note" > "$WAHA_MARK"
+    DISK_NOTE+=" · waha retry:${note}"
     return 0
 }
 
