@@ -41,3 +41,17 @@ Only 5 real NY/NJ leads were found; New York is the thinnest state.
 - Mandalay Bay, Las Vegas. Education 26-30 Oct; **expo hall 28, 29, 30 Oct** (official listing; one article says 27-30, treat as outdated). New three-day expo format.
 - Sources: wholefoodsmagazine.com/articles/17696-supplyside-global-announces-new-format-dates-for-2026; supplysideglobal.com.
 - Not found: registration price, exhibitor list for botanical extracts [UNVERIFIED]. Get both from the official site before deciding.
+
+## Verification pass 1 (2026-10-11, Parallel Search fetch of each company's own site + Vibe Prospecting match; no credits spent)
+| Lead | Result | Source |
+|---|---|---|
+| Supplement Manufacturing Partner (SMP Nutra) | VERIFIED: private label, "GMP certified, FDA registered, USA made"; (833) 810-9896; free-quote form smpnutra.com/quote. Address not on the page. | smpnutra.com |
+| Health Genesis | VERIFIED: 4131 SW 47th Ave Suite 1404, Davie FL 33314; (305) 861-0898; meeting-request form on site. | healthgenesis.com |
+| Eva Nutra | VERIFIED: contract maker, USP-certified lab, Las Vegas NV; 1-888-828-7732; quote@evanutra.com (link target service@evanutra.com - use the form first). | evanutra.com |
+| GIH Life Sciences | VERIFIED: contract maker; info@gihlifesciences.com ("reply in 1-2 business days"); pricing-sheet page /sales/. Address not on the page. | gihlifesciences.com |
+| US Pharmatech | VERIFIED: 7210 W Post Rd STE 100, Las Vegas NV 89113 (also Cerritos CA); info@uspharmatech.com; tel 725-373-7540; OEM/private label. | uspharmatech.com |
+| Aligen | Site confirms capsule manufacturing and private label; no contact details in the page text fetched. Contact: [UNVERIFIED]. | aligen.com |
+| Neugen Labs (FL) | NOT found in Vibe; no website known. Still [UNVERIFIED]. | - |
+| NutraScience Labs (NY) | **CORRECTION: the domain nutrascience.com is NutriScience, a brand buyer in Manhattan Beach, CA - not the Farmingdale NY contract maker.** The NY lead stays [UNVERIFIED]; its real site is not yet found. Previously listed with that domain; corrected 2026-10-11. | nutrascience.com |
+Vibe matched 5 of the 8 (SMP, Aligen, Health Genesis, Eva Nutra, US Pharmatech); no credits used. Deeper profiles (size, revenue, staff) need credits - cost to be estimated before any spend.
+None of these sites says anything about curcumin or boswellia buying; that comes from the first-pass search summaries and needs a call or email to confirm.
