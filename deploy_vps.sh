@@ -295,10 +295,9 @@ step_disk() {
         DISK_NOTE=" · disk ${pct}% free (${after} MB, $(( after - ${before:-$after} )) MB reclaimed)"
         say "disk: ${pct}% free, reclaimed $(( after - ${before:-$after} )) MB; docker after: $(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | tr '\n' ';' || true)"
         if (( pct < 70 )); then
-            DISK_NOTE+=" · BELOW 70% free — biggest top-level dirs (MB): $(du -xm -d1 / 2>/dev/null | sort -rn | sed -n '2,7p' | awk '{printf "%s %s, ", $1, $2}')"
-            DISK_NOTE+="docker images/volumes: $(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | tr '\n' ';')"
-            DISK_NOTE+=" swap: $(ls -lh /swap.img /swapfile 2>/dev/null | awk '{print $5}' | tr '\n' ' ')"
-            DISK_NOTE+=" images: $(docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' 2>/dev/null | sort -k2 -h -r | head -8 | tr '\n' ';')"
+            # short, most useful first: the heartbeat keeps only 1000 characters
+            DISK_NOTE+=" · BELOW 70% — images: $(docker images --format '{{.Size}} {{.Repository}}' 2>/dev/null | sed 's/GB/G/;s/MB/M/;s/kB/K/;s/ B/ /' | sort -h -r | head -7 | sed 's# [^ ]*/# #' | tr '\n' ';')"
+            DISK_NOTE+=" in-use: $(docker ps --format '{{.Image}}' 2>/dev/null | sed 's#.*/##' | sort -u | tr '\n' ',')"
             DISK_NOTE+=" /var: $(du -xm -d2 /var 2>/dev/null | sort -rn | sed -n '2,5p' | awk '{printf "%s %s, ", $1, $2}')"
         fi
     fi
