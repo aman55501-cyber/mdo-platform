@@ -232,6 +232,10 @@ fixes the number for chats). The 2026-10-09 "pause everything except the watchli
 2026-10-11 by the operating mandate (agenda: cos-operating-mandate): every not-live or weak agent is to be set up and reported on.
 Models: Sonnet by default, Fable only when Aman asks (2026-10-11).
 
+## Directive 26 — Risk and reward before every ask (Aman, chat 2026-10-11)
+"Always present risk and reward of anything you ask me to do." Every ask or recommendation to Aman carries two lines: what he gains,
+and what can go wrong (including what a delete or change touches). A decision with no risk line is not ready to be asked.
+
 ### Rules found in the older session that are not yet clear (ask, do not assume)
 - "open in laptop only" (2026-10-09 06:22) and "and not on ohine. here only" (09:24): which thing, and why — unknown.
 - "does not involve capital upfront" (09:07, about the Mausaji share sweep): taken to mean the sweep proposes and never commits capital.

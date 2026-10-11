@@ -217,11 +217,13 @@ def test_run_pushes_new_rows_only_with_holder_column(monkeypatch):
 
 
 def test_run_when_nse_is_down_invents_nothing(monkeypatch):
+    import mdo_server
     c, sent, asked = _setup(monkeypatch, canned=None)
+    monkeypatch.setitem(mdo_server._corp["hooks"], "yahoo_fetch", lambda sym: (None, "URLError: offline"))
     r = c.post("/api/corp-actions/run", json={"now": NOW.isoformat()}).json()
     assert r["nse_ok"] is False and r["new"] == 0 and r["pushed"] == 0 and r["status"] == "warning" and sent.texts == []
     assert r["line"] == ("corp-actions: 3 tickers checked, 0 new (0 results, 0 dividends, 0 other) — NSE unavailable (3 of 3 tickers unanswered)"
-                         " · first error: INFY: URLError: NSE timed out")                  # the reason is named, not just 'unavailable'
+                         " · Yahoo fallback: +0 dividends/splits (no results dates) · first error: INFY: URLError: NSE timed out")
     assert len(asked) == 6                                                     # stopped after UNAVAILABLE_AFTER tickers, no hammering
     db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
     assert db.execute("SELECT COUNT(*) FROM corp_actions").fetchone()[0] == 0
@@ -285,4 +287,20 @@ def test_market_source_probe_only_reaches_public_market_hosts(monkeypatch):
     assert c.get("/api/market-sources/probe", params={"url": "https://evil.example/x"}).status_code == 400
     assert c.get("/api/market-sources/probe", params={"url": "http://nsearchives.nseindia.com/a.csv"}).status_code == 400   # https only
     assert c.get("/api/market-sources/probe", params={"url": "https://nseindia.com.evil.example/a"}).status_code == 400      # not a suffix trick
+    _wipe()
+
+
+def test_yahoo_rows_and_fallback_when_nse_is_down(monkeypatch):
+    import mdo_corp_actions as ca
+    ts = int(datetime(2026, 10, 5, 5, 0, tzinfo=IST).timestamp())
+    data = {"chart": {"result": [{"events": {"dividends": {str(ts): {"amount": 7.5, "date": ts}},
+                                              "splits": {str(ts): {"date": ts, "numerator": 5, "denominator": 1, "splitRatio": "5:1"}}}}]}}
+    rows = ca.rows_from_yahoo("INFY", data)
+    assert {r["kind"] for r in rows} == {"dividend", "split"} and rows[0]["ex_date"] == "2026-10-05"
+    assert ca.rows_from_yahoo("INFY", None) == [] and ca.rows_from_yahoo("INFY", {"chart": {"result": None}}) == []
+    import mdo_server
+    c, sent, asked = _setup(monkeypatch, canned=None)
+    monkeypatch.setitem(mdo_server._corp["hooks"], "yahoo_fetch", lambda sym: (data, ""))
+    r = c.post("/api/corp-actions/run", json={"now": NOW.isoformat()}).json()
+    assert r["nse_ok"] is False and r["new"] >= 2 and r["status"] == "clean" and "Yahoo fallback" in r["line"]
     _wipe()

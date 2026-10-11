@@ -168,6 +168,42 @@ def rows_from_actions(ticker: str, data: Any) -> list[dict]:
     return out
 
 
+YAHOO_EVENTS = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}.NS?range=3mo&interval=1d&events=div%2Csplit"
+
+
+def rows_from_yahoo(ticker: str, data: Any) -> list[dict]:
+    """Yahoo chart JSON (events=div,split) → dividend and split rows. Yahoo has no results dates, no board meetings (2026-10-11)."""
+    out = []
+    try:
+        ev = data["chart"]["result"][0].get("events") or {}
+    except (KeyError, IndexError, TypeError):
+        return out
+    for it in (ev.get("dividends") or {}).values():
+        try:
+            d = datetime.fromtimestamp(int(it["date"]), IST).date().isoformat()
+            out.append({"ticker": ticker, "kind": "dividend", "subject": f"Dividend - Rs {float(it['amount']):g} per share (Yahoo)",
+                        "ex_date": d, "record_date": "", "announced_at": d + "T00:00:00+05:30", "url": "", "source": "yahoo", "company": ""})
+        except (KeyError, TypeError, ValueError):
+            continue
+    for it in (ev.get("splits") or {}).values():
+        try:
+            d = datetime.fromtimestamp(int(it["date"]), IST).date().isoformat()
+            out.append({"ticker": ticker, "kind": "split", "subject": f"Split {it.get('splitRatio') or '%s:%s' % (it['numerator'], it['denominator'])} (Yahoo)",
+                        "ex_date": d, "record_date": "", "announced_at": d + "T00:00:00+05:30", "url": "", "source": "yahoo", "company": ""})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def yahoo_fetch(symbol: str, timeout: float = 12.0) -> tuple[Any, str]:
+    try:
+        req = urllib.request.Request(YAHOO_EVENTS.format(symbol=urllib.parse.quote(symbol.upper())), headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"null"), ""
+    except Exception as e:
+        return None, f"{type(e).__name__}: {str(e)[:120]}"
+
+
 def fmt_day(d: str) -> str:
     try:
         x = date.fromisoformat(str(d)[:10])
@@ -259,7 +295,7 @@ def make_fetcher(sleep: Callable[[float], None] = time.sleep, clock: Callable[[]
 def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], dict], share_master: dict | None = None) -> dict:
     import asyncio
 
-    hooks: dict[str, Any] = {"make_fetcher": make_fetcher}
+    hooks: dict[str, Any] = {"make_fetcher": make_fetcher, "yahoo_fetch": yahoo_fetch}
 
     async def ensure_schema(db=None):
         db = db if db is not None else await vdb()
@@ -342,6 +378,15 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             new_rows += await store(rows, cutoff)
         if failed and failed == checked:
             nse_ok = False
+        yahoo_n, yahoo_ans = 0, 0
+        if not nse_ok:                                  # NSE blocks this server: dividends and splits from Yahoo, results dates stay unknown
+            for sym in syms:
+                data, _e = await asyncio.to_thread(hooks["yahoo_fetch"], sym)
+                if data is not None:
+                    yahoo_ans += 1
+                    got = await store(rows_from_yahoo(sym, data), cutoff)
+                    new_rows += got
+                    yahoo_n += len(got)
         held = await holders()
         text, push, sent = "", {}, False
         if new_rows:
@@ -359,6 +404,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         line = heartbeat_line(len(syms) if nse_ok else checked, new_rows, nse_ok, failed)
         if nse_ok and failed:
             line += f" · {failed} tickers unanswered"
+        if not nse_ok:
+            line += f" · Yahoo fallback: +{yahoo_n} dividends/splits (no results dates)"
         if errors:
             line += f" · first error: {errors[0][:140]}"      # the reason, not just 'unavailable' (2026-10-11)
         if new_rows and not sent:
@@ -367,7 +414,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         await db.execute("INSERT INTO corp_actions_runs (ran_at, tickers, new, failed, nse_ok, line, pushed) VALUES (?,?,?,?,?,?,?)",
                          (now.isoformat(timespec="minutes"), checked, len(new_rows), failed, 1 if nse_ok else 0, line, 1 if sent else 0))
         await db.commit()
-        status = "clean" if nse_ok and (not new_rows or sent) else "warning"
+        status = "clean" if (nse_ok or yahoo_ans) and (not new_rows or sent) else "warning"
         return {"tickers": len(syms), "checked": checked, "new": len(new_rows), "failed": failed, "nse_ok": nse_ok,
                 "items": [{k: r.get(k) for k in ("id", "ticker", "kind", "subject", "ex_date", "record_date", "announced_at", "url", "source", "company")}
                           for r in new_rows],

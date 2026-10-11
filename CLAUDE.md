@@ -33,3 +33,4 @@ At session start and before spawning any worker:
 8. Sonnet by default; Fable only if he asks. Delegate builds to cheap workers per the credit-guard policy; read-only tasks on Haiku.
 9. Holder column on every share list. Never book a loss; trade ideas only above 80% conviction; he approves each order.
 10. Everything lives on the VPS/cloud, never depends on his laptop.
+11. Every ask or recommendation carries a risk line and a reward line, including what a delete or change touches (D26).

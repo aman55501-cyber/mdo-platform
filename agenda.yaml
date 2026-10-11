@@ -112,13 +112,13 @@ objectives:
     status: live
     confirmed: true
     source: "Aman, chat 2026-10-11"
-    next_action: "Step 1 guide, cost framework and USA buyer list (briefs/CURCUMIN_BOSWELLIA_STEP1.md); fill in with the samples and rates when they arrive. USA outreach deadline 2026-10-30; Aman flies out about 2026-11-10 and is back by 2026-11-20 (wedding); Las Vegas visit in that window for the Sanitary and Janitorial expo (Shivam ji has work there)."
+    next_action: "Step 1 guide, cost framework and USA buyer list (briefs/CURCUMIN_BOSWELLIA_STEP1.md); fill in with the samples and rates when they arrive. Samples come from Ayush (friend), with prices, in the week of 2026-10-12; Aman may carry samples to the US. Target states for buyers: New York, Florida, Nevada (both products). USA outreach deadline 2026-10-30; Aman flies out about 2026-11-10 and is back by 2026-11-20 (wedding); Las Vegas visit in that window for the Sanitary and Janitorial expo (Shivam ji has work there)."
     blocker: "samples and rates due the week of 2026-10-12"
     click_needed: "every outreach message (drafts only; Aman sends), every booking (flights, passes, hotel)"
     deadlines:
       - "2026-10-30 USA outreach done"
       - "2026-11-10 fly out (about)"
-      - "2026-11-20 back (wedding)"
+      - "2026-11-19 to 21 the wedding (Aman, 2026-10-11) - the expo (16-19 Nov) overlaps it, so the return flight leaves Las Vegas by about 17 Nov; to settle"
   - id: washery-sales
     title: "Set up sales for the upcoming washery so there are orders; reach out to potential customers, officials and other important people in the domain"
     owner: Aman
