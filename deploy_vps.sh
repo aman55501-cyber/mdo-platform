@@ -142,6 +142,7 @@ step_repo() {
             cron_sync_auto || true
             disk_maybe || true; step_retire || true; step_retire_waha || true
             DISK_NOTE=" · waha: $(docker ps -a --format '{{.ID}}' 2>/dev/null | while read -r c; do docker inspect -f '{{.Config.Image}} {{.State.Status}} proj={{index .Config.Labels "com.docker.compose.project"}} dir={{index .Config.Labels "com.docker.compose.project.working_dir"}} restart={{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null; done | grep -i waha | cut -c1-200 | tr '\n' ';')${DISK_NOTE}"
+            DISK_NOTE+=" · /docker/wa: $(ls /docker/wa 2>/dev/null | head -12 | tr '\n' ' ') · cron/restarters: $(grep -rls '/docker/wa\|waha' /etc/cron.d /etc/crontab /var/spool/cron 2>/dev/null | head -3 | tr '\n' ' ')$(systemctl list-units --all 2>/dev/null | grep -i 'waha\|docker/wa' | head -2 | cut -c1-80 | tr '\n' ' ')"
             DISK_NOTE+=" · disk now $(( $(disk_free_mb) * 100 / $(disk_total_mb) ))% free; images: $(docker images --format '{{.Size}} {{.Repository}}' 2>/dev/null | sed 's/GB/G/;s/MB/M/;s/kB/K/;s/ B/ /' | sort -h -r | head -4 | sed 's# [^ ]*/# #' | tr '\n' ';')"
             STATUS="clean"; SUMMARY="up to date${CRON_NOTE}${DISK_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
