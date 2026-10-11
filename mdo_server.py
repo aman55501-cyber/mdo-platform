@@ -3405,6 +3405,10 @@ import mdo_credit_guard
 _credit_guard = mdo_credit_guard.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp),
                                           _cos["spend"])
 
+# today: one JSON for the phone page (/today in the app)
+import mdo_today
+_today = mdo_today.register(app, vdb, _cos, _credit_guard)
+
 @app.post("/api/brain/ask")
 async def brain_ask_endpoint(body: dict):
     """Ask the MDO Brain / Chief of Staff — an LLM with live tool access to the

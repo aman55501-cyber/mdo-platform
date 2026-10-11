@@ -22,6 +22,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <title>AMAN</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#080808" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="h-full flex" style={{ background: "var(--bg)", color: "var(--text)" }}>
         <QueryClientProvider client={qc}>

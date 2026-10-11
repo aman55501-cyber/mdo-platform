@@ -25,6 +25,8 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A32 | Reply **yes** so the fix also lands on the branch the VPS tracks (`claude/chief-of-staff-bot-4i2jyz`); this session may push only to `claude/nifty-darwin-j8xylv`. Until then nothing built since 2026-10-09 evening is live | unblocks A27 with zero VPS clicks: self-deploy picks it up in 10 min | 2026-10-10 |
 | A34 | Decisions for the new objectives (answers in chat 2026-10-11): algo orders — you click each, or a written standing mandate with hard limits; curcumin/Boswellia — product form, scale, market; washery — capacity, grades, start date; MIS — location, budget, reporting lines | each objective needs one fact only you have | 2026-10-11 |
 | A35 | Partner name for the solar-battery plant: due 2026-10-22 (Aman) | desk check + viability report start that day | 2026-10-11 |
+| A36 | Three hires: send 5 facts per role (location and joining date, salary, full-time or contract, who interviews, disqualifiers) for Tender Specialist, Lead Accountant, Civil Engineer; then post the ads. briefs/HIRING_3_ROLES_FAST.md | offers by 17 Oct | 2026-10-11 |
+| A37 | Phone: open https://amanagrawal.cloud/today in Chrome on your Android, enter your access key once, then ⋮ → Add to Home screen | the Today page becomes an app icon | 2026-10-11 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
 
 A22 Mausaji chat name — answered "Bantu Mausaji", Aman 2026-10-09; wired as default.

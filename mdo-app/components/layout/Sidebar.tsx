@@ -15,6 +15,7 @@ const NAV_SECTIONS = [
   {
     label: "Command",
     items: [
+      { href: "/today",      icon: Sun,             label: "Today (phone)"    },
       { href: "/",           icon: LayoutDashboard, label: "Dashboard"        },
       { href: "/feed",       icon: Inbox,           label: "Decision Feed"    },
       { href: "/fleet",      icon: Bot,             label: "Fleet & Memory"   },
