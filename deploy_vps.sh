@@ -288,7 +288,11 @@ step_disk() {
         pct=$(( after * 100 / total ))
         DISK_NOTE=" · disk ${pct}% free (${after} MB, $(( after - ${before:-$after} )) MB reclaimed)"
         say "disk: ${pct}% free, reclaimed $(( after - ${before:-$after} )) MB; docker after: $(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | tr '\n' ';' || true)"
-        if (( pct < 70 )); then DISK_NOTE+=" · BELOW 70% free — largest dirs: $(du -xsm /var/lib/docker/* /var/log /root /docker 2>/dev/null | sort -rn | head -4 | tr '\t\n' ' ,')"; fi
+        if (( pct < 70 )); then
+            DISK_NOTE+=" · BELOW 70% free — biggest top-level dirs (MB): $(du -xm -d1 / 2>/dev/null | sort -rn | sed -n '2,7p' | awk '{printf "%s %s, ", $1, $2}')"
+            DISK_NOTE+="docker images/volumes: $(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | tr '\n' ';')"
+            DISK_NOTE+=" swap: $(ls -lh /swap.img /swapfile 2>/dev/null | awk '{print $5}' | tr '\n' ' ')"
+        fi
     fi
 }
 

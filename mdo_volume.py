@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS market_deals (
     side TEXT NOT NULL, qty REAL, price REAL, pushed_at TEXT,
     UNIQUE (day, kind, symbol, client, side, qty, price)
 );
+CREATE TABLE IF NOT EXISTS volume_detail (day TEXT PRIMARY KEY, json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS volume_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ran_at TEXT NOT NULL, day TEXT, symbols INTEGER, signals INTEGER,
     deals INTEGER, pushed INTEGER, line TEXT
@@ -164,20 +165,53 @@ def lakh(q: float | None) -> str:
     return f"{q / 1e5:.1f} L" if q >= 1e5 else f"{q:,.0f}"
 
 
+def net_deals(deals: list[dict]) -> list[dict]:
+    """Drop round trips: the same client buying and selling about the same quantity of the same share on the same day
+    (market makers) is not a position. What is left is ranked by value."""
+    by: dict[tuple, dict[str, float]] = {}
+    for x in deals:
+        d = by.setdefault((x["symbol"], x["client"], x["day"]), {"BUY": 0.0, "SELL": 0.0})
+        d[x["side"]] += x["qty"] or 0
+    out = []
+    for x in deals:
+        d = by[(x["symbol"], x["client"], x["day"])]
+        big = max(d["BUY"], d["SELL"])
+        if d["BUY"] and d["SELL"] and abs(d["BUY"] - d["SELL"]) / big < 0.05:
+            continue
+        out.append(x)
+    return sorted(out, key=lambda x: -((x["qty"] or 0) * (x["price"] or 0)))
+
+
+def select_for_push(signals: list[dict], deals: list[dict], held: dict[str, list[dict]]) -> tuple[list[dict], list[dict], dict]:
+    """What is worth Aman's attention: protection on held shares first, then opportunity, then a couple of calm-at-buy
+    and accumulation reads on held shares, then the biggest real (non-round-trip) deals. Everything else stays on the dashboard."""
+    h = lambda s: bool(held.get(s["symbol"]))
+    protect = sorted([s for s in signals if s["kind"] in ("distribution", "heavy-at-buy") and h(s)], key=lambda s: -s["rvol"])
+    opp = sorted([s for s in signals if s["kind"] in ("breakout", "strength")], key=lambda s: (0 if h(s) else 1, -s["rvol"]))
+    calm = sorted([s for s in signals if s["kind"] == "quiet-at-buy" and h(s)], key=lambda s: s["rvol"])
+    accu = sorted([s for s in signals if s["kind"] == "accumulation" and h(s)], key=lambda s: -s["rvol"])
+    real = net_deals(deals)
+    real = sorted(real, key=lambda x: (0 if held.get(x["symbol"]) else 1))
+    picked = protect[:4] + opp[:3] + calm[:2] + accu[:1]
+    counts = {"protect": len(protect), "opportunity": len(opp), "calm": len(calm), "accumulation": len(accu),
+              "deals": len(real), "deals_dropped": len(deals) - len(real), "all_signals": len(signals)}
+    return picked, real[:3], counts
+
+
 def push_text(day: str, signals: list[dict], deals: list[dict], held: dict[str, list[dict]]) -> str:
     d = datetime.strptime(day, "%Y-%m-%d")
-    rank = {"distribution": 0, "heavy-at-buy": 1, "quiet-at-buy": 2, "breakout": 3, "strength": 4, "accumulation": 5}
-    sig = sorted(signals, key=lambda s: (0 if held.get(s["symbol"]) else 1, rank.get(s["kind"], 9), -s["rvol"]))
-    lines = [f"Volume · {d:%a %d %b} · {len(signals)} signal{'s' if len(signals) != 1 else ''}, {len(deals)} bulk/block deal{'s' if len(deals) != 1 else ''}"]
-    room = PUSH_MAX
-    for s in sig[:room]:
+    picked, real, c = select_for_push(signals, deals, held)
+    lines = [f"Volume · {d:%a %d %b} · protect {c['protect']} · opportunity {c['opportunity']} · deals {c['deals']}"
+             + (f" (+{c['deals_dropped']} intraday round trips ignored)" if c["deals_dropped"] else "")]
+    for s in picked:
         lines.append(f"{ICON.get(s['kind'], '•')} {s['symbol']} {s['text']} (held: {held_text(held.get(s['symbol']))})")
-    room = max(0, PUSH_MAX - min(len(sig), PUSH_MAX)) + 2
-    for x in sorted(deals, key=lambda x: -(x["qty"] or 0))[:room]:
+    for x in real:
         lines.append(f"🏦 {x['kind']} {x['symbol']}: {x['client'][:34]} {'bought' if x['side'] == 'BUY' else 'sold'} {lakh(x['qty'])} @ ₹{x['price'] or 0:,.2f} (held: {held_text(held.get(x['symbol']))})")
-    extra = len(sig) - PUSH_MAX + len(deals) - room
-    if extra > 0:
-        lines.append(f"+{extra} more on the dashboard")
+    rest = c["all_signals"] - len(picked) + max(0, c["deals"] - len(real))
+    if rest > 0:
+        lines.append(f"+{rest} more on the dashboard (/api/volume/latest)")
+    if len(lines) == 1:
+        lines.append("Nothing on your held shares needs attention today.")
     return "\n".join(lines)
 
 
@@ -314,8 +348,15 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         await db.commit()
         out["signals"], out["deals"] = sigs, deals
         already = await db.execute_fetchall("SELECT 1 FROM volume_runs WHERE day=? AND pushed=1 LIMIT 1", (target,))
+        import json as _json
+        for s_ in sigs:
+            s_["held_text"] = held_text(held.get(s_["symbol"]))
+        await db.execute("INSERT OR REPLACE INTO volume_detail (day, json) VALUES (?,?)",
+                         (target, _json.dumps({"signals": sigs[:400], "deals": deals[:100]})))
+        await db.commit()
+        picked, real, _c = select_for_push(sigs, deals, held)
         text = ""
-        if (sigs or deals) and not already:
+        if (picked or real) and not already:
             text = push_text(target, sigs, deals, held)
             out["text"] = text
             try:
@@ -330,7 +371,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         prot = sum(1 for s in sigs if s["kind"] in ("distribution", "heavy-at-buy") and held.get(s["symbol"]))
         line = (f"{BOT_ID}: {target} · {len(wanted)} shares watched, {len(sigs)} signal{'s' if len(sigs) != 1 else ''}"
                 f" ({prot} on held shares to protect), {len(deals)} new bulk/block deal{'s' if len(deals) != 1 else ''}"
-                + (" · 1 message pushed" if out["pushed"] else (" · push NOT delivered" if out["push_failed"] else (" · already pushed today" if already and (sigs or deals) else " · nothing to push")))
+                + (" · 1 message pushed" if out["pushed"] else (" · push NOT delivered" if out["push_failed"] else (" · already pushed today" if already and (picked or real) else " · nothing worth a message")))
                 + (f" · {out['errors'][0]}" if out["errors"] else "") + (" · first run: 30-day history loaded" if first else ""))
         out["line"] = line
         await db.execute("INSERT INTO volume_runs (ran_at, day, symbols, signals, deals, pushed, line) VALUES (?,?,?,?,?,?,?)",
@@ -353,7 +394,9 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
         await ensure_schema(db)
         r = await db.execute_fetchall("SELECT * FROM volume_runs ORDER BY id DESC LIMIT 1")
         deals = [dict(x) for x in await db.execute_fetchall("SELECT * FROM market_deals ORDER BY day DESC, id DESC LIMIT 40")]
-        return {"last_run": dict(r[0]) if r else None, "deals": deals}
+        import json as _json
+        det = await db.execute_fetchall("SELECT json FROM volume_detail ORDER BY day DESC LIMIT 1")
+        return {"last_run": dict(r[0]) if r else None, "deals": deals, "detail": _json.loads(det[0][0]) if det else None}
 
     async def symbol_history(sym: str, days: int = 30) -> dict:
         db = await vdb()

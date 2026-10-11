@@ -96,6 +96,13 @@ def _setup(monkeypatch, *, down=False):
     db.commit(); db.close()
     for t, b in (("TCS", 3000), ("INFY", 1460), ("WIPRO", None)):
         c.post("/api/levels", json={"ticker": t, "buy_level": b} if b else {"ticker": t, "sell_level": 900})
+    db = sqlite3.connect(os.environ["VEGA_DB_PATH"])
+    try:
+        db.execute("INSERT INTO share_master_holdings (holder, ticker, qty) VALUES ('Aman','TCS',500)")
+        db.execute("INSERT INTO share_master_holdings (holder, ticker, qty) VALUES ('Ashok','INFY',200)")
+        db.commit()
+    finally:
+        db.close()
     sent = _Sent()
     monkeypatch.setitem(mdo_server._cos, "send_cos", sent)
     calls = []
@@ -123,9 +130,10 @@ def test_first_run_backfills_pushes_once_and_reports_every_run(monkeypatch):
     kinds = sorted((s["symbol"], s["kind"]) for s in r["signals"])
     assert kinds == [("INFY", "quiet-at-buy"), ("TCS", "distribution"), ("WIPRO", "accumulation"), ("WIPRO", "breakout"), ("WIPRO", "strength")]
     assert len(r["deals"]) == 1 and r["deals"][0]["symbol"] == "TCS"                       # the unwatched ZZZ deal is dropped
-    assert len(sent.texts) == 1 and sent.texts[0].startswith("Volume · Fri 09 Oct · 5 signals, 1 bulk/block deal")
+    assert len(sent.texts) == 1 and sent.texts[0].startswith("Volume · Fri 09 Oct · protect 1 · opportunity 2 · deals 1")
     assert "⚠️ TCS ↓3.1% on 3.0× volume — heavy selling (held:" in sent.texts[0] and "🏦 bulk TCS: SOME FUND LLP sold 23.6 L @ ₹3,490.50" in sent.texts[0]
-    assert "held: nobody" in sent.texts[0] or "held:" in sent.texts[0]                      # the holder column is on every line
+    assert "(held: Aman 500)" in sent.texts[0] and "🟢 INFY" in sent.texts[0]                 # the holder column is on every line
+    assert all("(held:" in ln for ln in sent.texts[0].splitlines()[1:] if ln[:1] in "⚠️📈🚀🟢🟠🧲🏦")
     assert r["line"].startswith("volume-watch: 2026-10-09 · 3 shares watched, 5 signals") and "1 message pushed" in r["line"] and "first run" in r["line"]
     assert sum(1 for u in calls if "sec_bhavdata_full_" in u) <= 25
     # second run, same day: nothing re-pushed, the heartbeat still says so
@@ -159,3 +167,17 @@ def test_runner_fleet_and_cron_wiring():
     agenda = yaml.safe_load(open(os.path.join(ROOT, "agenda.yaml"), encoding="utf-8"))
     assert set(bots["volume-watch"]["serves"]) <= {o["id"] for o in agenda["objectives"]}
     assert "mdo_agent.py volume-watch" in open(os.path.join(ROOT, "DEPLOY_HOSTINGER.md"), encoding="utf-8").read()
+
+
+def test_round_trip_deals_and_the_selection_keep_the_message_short():
+    rt = [dict(day="2026-10-09", kind="bulk", symbol="PCJEWELLER", client="JUMP TRADING", side="BUY", qty=58690000, price=14.59),
+          dict(day="2026-10-09", kind="bulk", symbol="PCJEWELLER", client="JUMP TRADING", side="SELL", qty=58690000, price=14.53),
+          dict(day="2026-10-09", kind="bulk", symbol="TCS", client="REAL FUND", side="BUY", qty=2000000, price=3490.0)]
+    assert [x["client"] for x in mv.net_deals(rt)] == ["REAL FUND"]                       # market-maker round trip is not a position
+    held = {"TCS": [{"holder": "Aman", "qty": 5}], "SOLD": [{"holder": "Ashok", "qty": 9}]}
+    sigs = [dict(symbol=f"S{i}", kind="quiet-at-buy", rvol=0.5, chg=0, text="x") for i in range(40)]
+    sigs += [dict(symbol="TCS", kind="distribution", rvol=3.0, chg=-3, text="↓3.0% on 3.0× volume — heavy selling")]
+    sigs += [dict(symbol="NOTMINE", kind="distribution", rvol=9.0, chg=-5, text="x")]       # not held: not a protection alert
+    text = mv.push_text("2026-10-09", sigs, rt, held)
+    assert text.splitlines()[0] == "Volume · Fri 09 Oct · protect 1 · opportunity 0 · deals 1 (+2 intraday round trips ignored)"
+    assert len(text.splitlines()) <= 8 and "TCS" in text.splitlines()[1] and "NOTMINE" not in text
