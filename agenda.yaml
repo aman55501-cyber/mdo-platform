@@ -21,6 +21,18 @@ cap:
 # Objectives below were stated by Aman in chat on 2026-10-09 ("Aman, chat 2026-10-09").
 # They are not yet on the Objectives sheet (the CoS comments on the sheet, never edits it).
 # A sheet refresh must not drop them until Aman adds them to the sheet himself.
+# Focus set by Aman, chat 2026-10-11: "all tasks include share market tips, Bantu Mausaji calls, algo trading setup (initialise, then hand
+# over to the algo after 15-20 days with small sizes and amounts), hiring, US venture, solar viability and expo. He has further tasks;
+# focus on these first, then add and remove by priority." Order is for the CoS to propose, Aman to change.
+focus_now:
+  - "Share market tips (capital-rules; volume-watch, levels-alert)"
+  - "Bantu Mausaji calls (wa-sweep, share-master-daily)"
+  - "Algo trading setup: paper first, then 15-20 days live at small size and small amounts, every order approved by Aman; handover to the algo only after that, on a written standing limit"
+  - "Hiring: Tender Specialist, Lead Accountant, Civil Engineer (hire-three-roles) and the siding and MIS roles"
+  - "US venture: curcumin and Boswellia (curcumin-boswellia), outreach by 2026-10-30"
+  - "Solar viability (battery-plant), partner name 2026-10-22"
+  - "Expo: ISSA Show North America 16-19 Nov, Las Vegas, with the USA trip 10-20 Nov"
+
 objectives:
   - id: vwlr-dispatch
     title: "VWLR dispatch ≥ 15,000 MT/day minimum; resources and manpower maintained, no breakdowns while work is ongoing; no idle equipment when work exists"
@@ -80,7 +92,7 @@ objectives:
     blocker: "HDFC API keys not yet in .env (A30)"
     click_needed: "every order, until Aman sets a standing mandate"
     notes:
-      - "Aman, chat 2026-10-11: DECIDED (a): approve each order initially. After about 7-15 days of constant testing and improving, once Aman and the agent are completely aligned, write a standing limit together; Aman follows the CoS's lead on the standing rules and limits."
+      - "Aman, chat 2026-10-11: DECIDED (a): approve each order initially. Updated later the same day: run 15-20 days with small sizes and small amounts, then hand over to the algo once Aman and the agent are completely aligned; the standing limit is written together and Aman follows the CoS's lead on the rules and limits. (Previously: 7-15 days.)"
       - "Volume is an important measuring tool Aman rarely uses; build it into daily trading and investing (relative volume, price-volume confirmation, delivery %, bulk/block deals)."
     rules:
       - "Secure: keys only in .env on the VPS, IP-restricted where the broker allows, read-only first, paper trading before any live order, kill switch, every order logged"

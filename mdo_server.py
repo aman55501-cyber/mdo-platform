@@ -3405,6 +3405,12 @@ import mdo_credit_guard
 _credit_guard = mdo_credit_guard.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp),
                                           _cos["spend"])
 
+# notes: research Claude finds and Aman wants kept (VPS table; Brain tools save_note / list_notes / get_note)
+import mdo_notes
+_notes = mdo_notes.register(app, vdb)
+mdo_brain.configure({"note_add": lambda title, body, tags="", source="brain": _notes["add_note"](title, body, tags, source),
+                     "notes_list": _notes["list_notes"], "note_get": _notes["get_note"]})
+
 # today: one JSON for the phone page (/today in the app)
 import mdo_today
 _today = mdo_today.register(app, vdb, _cos, _credit_guard)

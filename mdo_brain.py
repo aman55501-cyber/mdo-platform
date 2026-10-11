@@ -76,7 +76,9 @@ surface something genuinely critical he should not lose — say so when you do.
 7. Objectives are Aman's alone: read them with get_agenda; never add, widen or reorder one.
    When a decision is his, create_job(kind="needs_click" or "needs_choice") and stop.
 8. Never send email. Never move money. Never sign. Never file. Draft, propose, report.
-9. Give an ETA whenever one can be estimated."""
+9. Give an ETA whenever one can be estimated.
+10. Research: when Aman asks you to research something (a market, a buyer, a regulation, a price), search the web, cite the source URL for every number, mark anything you could not confirm [UNVERIFIED], and offer to keep it with save_note. When he says 'save', call save_note. Never present a web figure as his own data.
+11. Aman is not technical: answer in short plain sentences; anything he must do is one action per line."""
 
 
 # ── tool registry ────────────────────────────────────────────────────────────
@@ -430,6 +432,24 @@ TOOLS: list[dict] = [
                         "AT a level now, and today's hits. Always show him every share, including those not yet at their level."),
         "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
+    {
+        "name": "save_note",
+        "description": ("Save a research finding or a decision for Aman on the VPS so he can reopen it from his phone. Use when he says "
+                        "'save this', 'keep this', or after research he asked for. Put sources (URLs) in the body; mark unverified numbers [UNVERIFIED]."),
+        "input_schema": {"type": "object", "properties": {"title": {"type": "string"}, "body": {"type": "string"},
+                                                          "tags": {"type": "string", "description": "comma-separated, e.g. curcumin,usa,buyers"}},
+                         "required": ["title", "body"], "additionalProperties": False},
+    },
+    {
+        "name": "list_notes",
+        "description": "Aman's saved research notes, newest first; pass q to search title, body and tags.",
+        "input_schema": {"type": "object", "properties": {"q": {"type": "string"}, "limit": {"type": "integer"}}, "additionalProperties": False},
+    },
+    {
+        "name": "get_note",
+        "description": "One saved note in full, by id.",
+        "input_schema": {"type": "object", "properties": {"note_id": {"type": "integer"}}, "required": ["note_id"], "additionalProperties": False},
+    },
 ]
 
 
@@ -559,12 +579,19 @@ async def _dispatch(name: str, a: dict) -> Any:
             "category": a.get("category", "general"), "entity": a.get("entity"),
             "due_date": a.get("due_date"),
         })
+    if name == "save_note":
+        return await tb["note_add"](a["title"], a["body"], a.get("tags", ""), "brain")
+    if name == "list_notes":
+        return await tb["notes_list"](a.get("q", ""), int(a.get("limit", 20)))
+    if name == "get_note":
+        return await tb["note_get"](int(a["note_id"]))
     raise ValueError(f"unknown tool: {name}")
 
 
 # ── provider: Claude (preferred) ─────────────────────────────────────────────
 MAX_TURNS = 8
 _fallbacks_supported = True  # flipped off if the account lacks the beta
+_web_search_ok = True        # flipped off if the API refuses the server-side web_search tool (research then uses only our data)
 
 async def _claude_create(client, **kwargs):
     """messages.create with server-side refusal fallback (beta) — degrades
@@ -616,16 +643,24 @@ async def _ask_claude(question: str, history: list[dict], chat_id: str | None = 
         for t in TOOLS
     ]
     trace: list[str] = []
+    global _web_search_ok
 
     for _ in range(MAX_TURNS):
-        response = await _claude_create(
-            client,
-            model=BRAIN_MODEL,
-            max_tokens=16000,
-            system=system_blocks,
-            tools=tool_defs,
-            messages=messages,
-        )
+        use_web = _web_search_ok and os.environ.get("BRAIN_WEB_SEARCH", "1") != "0"
+        try:
+            response = await _claude_create(
+                client,
+                model=BRAIN_MODEL,
+                max_tokens=16000,
+                system=system_blocks,
+                tools=tool_defs + ([{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}] if use_web else []),
+                messages=messages,
+            )
+        except anthropic.BadRequestError as e:
+            if use_web and "web_search" in str(e).lower():       # this account/model has no web search: carry on without, remember it
+                _web_search_ok = False
+                continue
+            raise
         await _record_spend(response, chat_id)
 
         if response.stop_reason == "refusal":

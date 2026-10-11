@@ -51,3 +51,18 @@ def test_phone_app_files_exist():
     assert '"start_url": "/today"' in man and '"display": "standalone"' in man
     for sz in ("192", "512"):
         assert os.path.getsize(os.path.join(ROOT, "mdo-app", "public", "icons", f"icon-{sz}.png")) > 500
+
+
+def test_notes_roundtrip_and_the_brain_has_the_tools():
+    from fastapi.testclient import TestClient
+    import mdo_server
+    import mdo_brain
+    c = TestClient(mdo_server.app)
+    n = c.post("/api/notes", json={"title": "Curcumin US buyers", "body": "SupplySide Global 26-30 Oct (source: wholefoodsmagazine.com)", "tags": "curcumin,usa"}).json()
+    assert n["id"] >= 1
+    got = c.get("/api/notes", params={"q": "curcumin"}).json()["notes"]
+    assert got and got[0]["title"] == "Curcumin US buyers" and "SupplySide" in c.get(f"/api/notes/{n['id']}").json()["body"]
+    assert c.post("/api/notes", json={"title": "", "body": "x"}).status_code == 400
+    names = {t["name"] for t in mdo_brain.TOOLS}
+    assert {"save_note", "list_notes", "get_note"} <= names
+    assert "web_search" in open(os.path.join(ROOT, "mdo_brain.py"), encoding="utf-8").read()
