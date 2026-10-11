@@ -34,3 +34,10 @@ Source: pasted by Aman in chat as examples of the calls; sender assumed Bantu Ma
 - MMWL at about 20 rupees is a penny stock; with the 80%-conviction rule it should not become a trade idea without evidence (volume, delivery, fundamentals).
 - Three message styles exist (research essay, shorthand Hinglish, formatted tips). The Mausaji parser (mdo_share_master.parse_mausaji_calls) reads model JSON, so the extraction prompt, not the code, needs these styles added.
 - The Bantu Mausaji chat has 0 stored messages on the server (2026-10-11): the WhatsApp watcher has not captured it. Confirm that the chat name matches exactly "Bantu Mausaji" in WhatsApp.
+
+## Context found on the server (2026-10-11 12:31-12:32 UTC) and a corrected reading
+- The "Bantu Mausaji" chat is not stored under that name. These lines arrived in the chat **"Core group"**, in sequence, right after a [media] item (probably a screenshot of Mausaji's chat), forwarded or pasted by Aman's own account. So the sender is Mausaji only if Aman forwarded his chat [UNVERIFIED].
+- Reading each line in the order sent: "Jsw infra 330/- by / Kitna bhi / Shelling 370/- & again by / 330/-" = JSW Infra: **buy 330, any quantity; sell at 370; buy again at 330**. So "by" = buy and "Shelling" = selling.
+- "Hind zinc by 540/- 550/-" then "Shell 590/- 620/-" = Hindustan Zinc: **buy 540-550, sell 590-620** (likely: "Shell" = sell, directly after the Hind Zinc line) [UNVERIFIED].
+- "Guj heavi chemical / Har girte bhav me sip karo 20-20 lo jyada nahi to" = Gujarat Heavy Chemicals (GHCL, to confirm): on every fall add 20 shares at a time, no more.
+- "Birlashoft by this time & waiting" = Birlasoft: buy at this time and wait; no price given.
