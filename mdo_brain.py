@@ -5,7 +5,7 @@ straight onto the backend's own endpoint functions, plus two front doors:
 
   1. brain_ask()      — agentic loop for the in-app chat (/api/brain/ask) and
                         for WhatsApp (/api/cos/inbound). Uses Claude
-                        (BRAIN_MODEL, default claude-fable-5-1) with server-side
+                        (BRAIN_MODEL, default claude-sonnet-5-5; Fable only with BRAIN_ALLOW_FABLE=1) with server-side
                         refusal fallback; falls back to Grok (GROK_API_KEY).
   2. build_mcp_manager() — the same tools exposed as an MCP server, mounted by
                         mdo_server under a secret path so the Claude app
@@ -29,7 +29,16 @@ def configure(toolbox: dict[str, Callable[..., Awaitable[Any]]]) -> None:
     _toolbox.update(toolbox)
 
 
-BRAIN_MODEL = os.environ.get("BRAIN_MODEL", "claude-fable-5-1")
+def _brain_model() -> str:
+    """Sonnet by default. Aman, chat 2026-10-11: "Fable uses more credits. I'll stick with Sonnet." A Fable value left in
+    .env (the old .env.example default) is clamped to Sonnet unless BRAIN_ALLOW_FABLE=1 is set on purpose."""
+    m = os.environ.get("BRAIN_MODEL", "").strip() or "claude-sonnet-5-5"
+    if "fable" in m.lower() and os.environ.get("BRAIN_ALLOW_FABLE", "") != "1":
+        return "claude-sonnet-5-5"
+    return m
+
+
+BRAIN_MODEL = _brain_model()
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 
 

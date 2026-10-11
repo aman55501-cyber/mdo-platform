@@ -129,3 +129,15 @@ def test_fleet_entry_and_cron_line_exist():
     assert "credit-guard" in ag.CUSTOM_BOTS
     doc = open(os.path.join(ROOT, "DEPLOY_HOSTINGER.md"), encoding="utf-8").read()
     assert "mdo_agent.py credit-guard" in doc
+
+
+def test_the_whatsapp_brain_never_runs_on_fable_unless_allowed(monkeypatch):
+    import importlib
+    import mdo_brain
+    for env, allow, want in (("claude-fable-5-1", "", "claude-sonnet-5-5"), ("", "", "claude-sonnet-5-5"),
+                             ("claude-haiku-4-5", "", "claude-haiku-4-5"), ("claude-fable-5-1", "1", "claude-fable-5-1")):
+        monkeypatch.setenv("BRAIN_MODEL", env)
+        monkeypatch.setenv("BRAIN_ALLOW_FABLE", allow)
+        assert mdo_brain._brain_model() == want
+    fleet = open(os.path.join(ROOT, "fleet.yaml"), encoding="utf-8").read()
+    assert "fable" not in fleet.lower()                      # Aman, 2026-10-11: Sonnet only

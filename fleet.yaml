@@ -6,7 +6,7 @@ cos:
   name: Chief of Staff
   runs_on: claude-code-routine
   cadence: daily 06:22 IST + on demand
-  model: claude-fable-5-1
+  model: claude-sonnet-5-5
   reports_via: POST /api/agent/report cadence=cos
   command: Claude Code Routine 'Chief of Staff morning run' — CRON_TZ=Asia/Kolkata 22 6 * * * (fresh cloud session
     each fire)
@@ -27,7 +27,7 @@ cos:
       heartbeat, comes back with one line per event and a morning roll-up.
     thinks: Reads the Objectives sheet first, then the ledger. What is confirmed, what moved, what is blocked, who
       is dead, what needs Aman. Proposes; never decides for him.
-    works: 'Fresh cloud session daily 06:22 IST (Routine) + on demand via WhatsApp/app/MCP. Model claude-fable-5-1.
+    works: 'Fresh cloud session daily 06:22 IST (Routine) + on demand via WhatsApp/app/MCP. Model claude-sonnet-5-5.
       Reads: sheet, agenda, fleet, /api/* ledger, Gmail + Calendar when attached. Writes: agenda mirror, jobs, intel,
       drafts (never sends), repo fixes.'
     limits: Cannot touch VPS cron (files a stuck job instead). Cannot read the sheet without the Claude Docs connector
@@ -849,7 +849,7 @@ bots:
   runs_on: cloud-routine
   reports_to: push
   cadence: weekly Sun 08:00 IST
-  model: claude-fable-5-1
+  model: claude-sonnet-5-5
   serves:
   - all
   enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
@@ -958,7 +958,7 @@ bots:
   name: Grok inbox relay (emails → tender door + Morning Setup)
   runs_on: cloud-routine
   cadence: daily 09:25 IST Mon-Sat
-  model: claude-fable-5-1
+  model: claude-sonnet-5-5
   heartbeat: every run posts one line via /api/agent/report, including "Grok sent nothing today"
   serves: [tenders-washing-rcr, capital-rules]
   enabled: false   # paused by Aman 2026-10-09 — only levels-alert + capital-watcher run
