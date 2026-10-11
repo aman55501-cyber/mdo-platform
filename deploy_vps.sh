@@ -391,7 +391,10 @@ retire_images() {
     RETIRE_NOTE+=" · ${label}: containers $(echo "$ids" | grep -c . || true), volumes removed ${n}"
 }
 step_retire() {
-    [[ -e "$RETIRE_MARK" ]] && return 0
+    if [[ -e "$RETIRE_MARK" ]]; then          # say what happened in every report until Aman has seen it
+        DISK_NOTE+=" · retired waha+scanner $(stat -c %y "$RETIRE_MARK" 2>/dev/null | cut -c1-16):$(head -c 400 "$RETIRE_MARK" 2>/dev/null)"
+        return 0
+    fi
     step "j. retire waha and the tender scanner (one time)"
     local img wd tmp out=/var/backups/vwlr-scanner-code ok=1
     img="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -i 'vwlr.*scanner' | head -1 || true)"
@@ -411,7 +414,7 @@ step_retire() {
     fi
     retire_images 'waha' "waha"
     docker image prune -f >/dev/null 2>&1 || true
-    (( ok )) && touch "$RETIRE_MARK"
+    (( ok )) && printf '%s' "$RETIRE_NOTE" > "$RETIRE_MARK"
     say "retire:${RETIRE_NOTE}"
     DISK_NOTE+="${RETIRE_NOTE}"
     return 0
