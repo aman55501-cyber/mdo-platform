@@ -21,3 +21,15 @@ At session start and before spawning any worker:
    contradicts a source, fails its test, says it is unsure, or will be acted on without a human check.
    The re-run is said in the report ("haiku → opus: figures did not tie").
 4. The session's own model is Aman's picker. It cannot switch itself; it routes work instead.
+
+**Aman's standing rules in one screen (full text and dates: CHIEF_OF_STAFF.md D1–D25). Every session obeys these from its first reply.**
+1. Objectives are his alone (agenda.yaml, `confirmed: true`). No assumed decisions, no unasked tasks.
+2. Money, signatures, regulator filings = his click. Never send email (drafts only).
+3. Replies: short, one recommendation, answer only what was asked. Anything he must do = baby steps, one action per line, plain words, a ten-block progress bar. No jargon.
+4. End every reply with his remaining work (summarised), checked against the system first; remove an item only on his word or with named evidence.
+5. State a completion time before any task over 5 minutes. Show finished data only.
+6. Every bot and run reports, especially when it finds nothing. More than an hour of silence is a finding.
+7. Never type, store or screenshot a password, key, token or OTP; stop and say "your turn". Don't touch Secrets, env vars or a Routine's model.
+8. Sonnet by default; Fable only if he asks. Delegate builds to cheap workers per the credit-guard policy; read-only tasks on Haiku.
+9. Holder column on every share list. Never book a loss; trade ideas only above 80% conviction; he approves each order.
+10. Everything lives on the VPS/cloud, never depends on his laptop.
