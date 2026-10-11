@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS t247_competitors (
 );
 """
 
+COAL_WORDS = re.compile(r"\b(coal|coalfields?|lignite|washery|washeries|beneficiation|rcr|road[- ]cum[- ]rail|rakes?|sidings?|coal handling)\b", re.I)
 _ID_LINE = re.compile(r"^(\d{6,10}) \| ")
 _DATE = re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$")
 
@@ -89,11 +90,12 @@ def parse_results(text: str) -> list[dict]:
         except ValueError:
             iso = ""
         c = classify({"title": brief, "org": dept, "value_text": ""})
-        coalish = bool(re.search(r"\bcoal\b|washery|\brcr\b|siding|rake", f"{brief} {dept}", re.I))
+        # whole words only: "washing" alone (hospital kits) and "siding" inside other words are not our work
+        coalish = bool(COAL_WORDS.search(f"{brief} {dept}"))
         out.append({"result_id": rid, "brief": brief[:600], "dept": dept[:160], "stage": stage[:20], "winner": winner[:160],
                     "participants": participants[:40], "n_participants": len(participants), "value_text": value[:40],
                     "value_cr": value_to_cr(value), "city": city.strip()[:80], "state": (state or city).strip()[:60], "contract_date": iso,
-                    "relevant": 1 if (c["matched"] or coalish) else 0, "keywords": ", ".join(c["keywords"])})
+                    "relevant": 1 if coalish else 0, "keywords": ", ".join(c["keywords"])})
     return out
 
 
@@ -144,6 +146,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]]) -> dict:
                 added += 1
                 if r["relevant"]:
                     new_rel.append(r)
+            else:        # a rebuild re-applies the current relevance rule to rows stored earlier
+                await db.execute("UPDATE t247_results SET relevant=?, keywords=? WHERE result_id=?", (r["relevant"], r["keywords"], r["result_id"]))
         for c in comps:
             await db.execute("INSERT OR REPLACE INTO t247_competitors (day, bidder, participated, awarded, lost, financial, technical) VALUES (?,?,?,?,?,?,?)",
                              (day, c["bidder"], c["participated"], c["awarded"], c["lost"], c["financial"], c["technical"]))
