@@ -1291,7 +1291,19 @@ def run_credit_guard(bot: dict, model: str, cadence_key: str, now: datetime | No
     return 0
 
 
-CUSTOM_BOTS = {**WA_BOTS, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
+# ── daily-plan: morning objectives + evening planned-vs-actual — rule-based, zero LLM (Aman, chat 2026-10-11) ──
+def run_daily_plan(bot: dict, model: str, cadence_key: str, now: datetime | None = None, mode: str | None = None) -> int:
+    now = now or datetime.now(IST)
+    mode = str(mode or (RUN_ARGS[0] if RUN_ARGS else "") or "morning").strip().lower()
+    if mode not in ("morning", "evening"):
+        heartbeat("daily-plan", cadence_key, "error", f"daily-plan: unknown mode '{mode}' — use morning | evening")
+        return 2
+    res = api("/api/plan/run", "POST", {"mode": mode, "now": now.isoformat()}, timeout=120)
+    heartbeat("daily-plan", cadence_key, str(res.get("status") or "clean"), str(res.get("line") or f"daily-plan {mode}: no line"))
+    return 0
+
+
+CUSTOM_BOTS = {**WA_BOTS, "daily-plan": run_daily_plan, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
                "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader,
                "corp-actions": run_corp_actions, "tenders-direct": run_tenders_direct, "voice": run_voice}

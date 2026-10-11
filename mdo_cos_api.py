@@ -34,6 +34,7 @@ FLEET_PATH = Path(os.environ.get("FLEET_PATH", ROOT / "fleet.yaml"))
 AGENDA_PATH = Path(os.environ.get("AGENDA_PATH", ROOT / "agenda.yaml"))
 CONSTITUTION_PATH = ROOT / "CHIEF_OF_STAFF.md"
 
+INBOUND_HOOKS: list = []   # async (sender_digits, text) -> reply | None; other modules (mdo_plan) claim their own commands first
 COS_PREFIX = "CoS ·"   # every outbound line starts with this; the bridge ignores inbound text that does, so a self-chat never loops
 
 SCHEMA = """
@@ -438,6 +439,13 @@ def register(app, vdb: Callable[[], Awaitable[Any]], legacy_send: Callable[[str]
         if not text or text.startswith(COS_PREFIX):
             return {"handled": False, "reason": "empty or own message"}
         source = f"{channel}:{message_id or 'reply'}"
+        for hook in INBOUND_HOOKS:
+            claimed = await hook(sender_digits, text)
+            if claimed:
+                send_cos(claimed, to=sender, legacy_send=legacy_send)
+                await chat_save(sender_digits, "user", text)
+                await chat_save(sender_digits, "assistant", claimed)
+                return {"handled": True, "reply": claimed}
         parsed = parse_reply(text)
         if parsed:
             job_id = parsed["job"]

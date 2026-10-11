@@ -278,3 +278,11 @@ def test_probe_shows_the_nse_answer_or_the_reason(monkeypatch):
     r = c.get("/api/corp-actions/probe", params={"symbol": "TCS"}).json()
     assert r["announcements"]["ok"] is False and "NSE timed out" in r["announcements"]["error"]
     _wipe()
+
+
+def test_market_source_probe_only_reaches_public_market_hosts(monkeypatch):
+    c, sent, asked = _setup(monkeypatch)
+    assert c.get("/api/market-sources/probe", params={"url": "https://evil.example/x"}).status_code == 400
+    assert c.get("/api/market-sources/probe", params={"url": "http://nsearchives.nseindia.com/a.csv"}).status_code == 400   # https only
+    assert c.get("/api/market-sources/probe", params={"url": "https://nseindia.com.evil.example/a"}).status_code == 400      # not a suffix trick
+    _wipe()

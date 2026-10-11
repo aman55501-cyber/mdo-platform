@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -428,6 +429,31 @@ def register(app, vdb: Callable[[], Awaitable[Any]], send_cos: Callable[[str], d
             out[kind] = {"ok": data is not None, "error": err,
                          "items": len(data) if isinstance(data, list) else None, "sample": json.dumps(data)[:300] if data is not None else ""}
         return out
+
+    PROBE_HOSTS = ("nseindia.com", "bseindia.com", "finance.yahoo.com", "yahoo.com", "amfiindia.com", "sebi.gov.in")
+
+    @app.get("/api/market-sources/probe")
+    async def market_sources_probe(url: str, head: int = 400):
+        """What this server receives from one public market-data URL (NSE/BSE archives, Yahoo, AMFI, SEBI): status,
+        size, type, and the first bytes. For choosing the source for bulk/block deals, delivery volume and corporate
+        actions without guessing. Only these hosts; keyed like every other /api route."""
+        from urllib.parse import urlsplit
+        host = (urlsplit(url).hostname or "").lower()
+        if urlsplit(url).scheme != "https" or not any(host == h or host.endswith("." + h) for h in PROBE_HOSTS):
+            raise HTTPException(400, "https URL on one of: " + ", ".join(PROBE_HOSTS))
+        hdr = {"User-Agent": UA, "Accept": "*/*", "Accept-Language": "en-US,en;q=0.9", "Referer": f"https://{host}/"}
+
+        def _get():
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=20) as r:
+                    raw = r.read(2_000_000)
+                    return {"ok": True, "status": r.status, "type": r.headers.get("Content-Type", ""), "bytes": len(raw),
+                            "head": raw[:max(0, min(int(head), 2000))].decode("utf-8", "replace")}
+            except urllib.error.HTTPError as e:
+                return {"ok": False, "status": e.code, "error": f"HTTP {e.code}"}
+            except Exception as e:
+                return {"ok": False, "status": 0, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        return {"url": url, **(await asyncio.to_thread(_get))}
 
     @app.post("/api/corp-actions/run")
     async def corp_actions_run(body: dict | None = None):

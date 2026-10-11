@@ -3385,6 +3385,12 @@ _tenders_direct = mdo_tenders_direct.register(app, vdb, lambda text: _cos["send_
 import mdo_voice
 _voice = mdo_voice.register(app, vdb, _wa["ingest"])
 
+# daily-plan: today's objectives each morning, planned-vs-actual each evening, the faults of the day; commands by
+# WhatsApp ("plan washery: ...", "done 3", "miss 4 material"). Zero LLM.
+import mdo_plan
+_plan = mdo_plan.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos,
+                          mdo_cos_api.INBOUND_HOOKS)
+
 # credit-guard: the claude.ai plan window (rate_limit_info posted by every Claude session) + the fleet API cap
 # (pace-based economy switch in mdo_cos.pace_mode) → one policy the sessions obey (GET /api/credits), one
 # WhatsApp line per state change, a heartbeat every run. Zero LLM.

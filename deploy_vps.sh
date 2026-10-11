@@ -37,6 +37,7 @@ DEPLOYED_FILE=/var/lib/mdo/deployed_sha   # commit the running containers were b
 FAILED_FILE=/var/lib/mdo/failed_sha       # commit whose gate failed; not retried until HEAD moves
 SERVICES_UP="none"
 DISK_NOTE=""
+CRON_NOTE=""
 CRON_RESULT="skipped"
 ALERT_RESULT="skipped"
 TOKEN=""
@@ -138,7 +139,8 @@ step_repo() {
     if [[ "$AUTO" == 1 && "$behind" == 0 ]]; then
         SHORT_SHA="$(git rev-parse --short HEAD)"
         if [[ "$live" == "$head" ]]; then
-            STATUS="clean"; SUMMARY="up to date"
+            cron_sync_auto || true
+            STATUS="clean"; SUMMARY="up to date${CRON_NOTE}"
             say "up to date at ${SHORT_SHA} — nothing to do"
             exit 0
         fi
@@ -355,6 +357,19 @@ step_cron() {
     done
 }
 
+# Auto-runs keep the job schedule in step with the repo (Aman, 2026-10-11: no more "re-run deploy_vps.sh" clicks).
+# Only rewrites /etc/cron.d/mdo-fleet when the rendered schedule differs; never touches anyone's crontab.
+cron_sync_auto() {
+    local tmp
+    tmp="$(mktemp)"
+    if ( render_cron > "$tmp" ) 2>/dev/null && [[ -s "$tmp" ]] && ! { [[ -f "$CRON_FILE" ]] && cmp -s "$tmp" "$CRON_FILE"; }; then
+        install -o root -g root -m 0644 "$tmp" "$CRON_FILE"
+        CRON_NOTE=" · cron refreshed ($(grep -c '^[0-9*]' "$CRON_FILE") jobs)"
+        say "cron refreshed from the repo: ${CRON_NOTE}"
+    fi
+    rm -f "$tmp"
+}
+
 # ── g. prove the alert channel ───────────────────────────────────────────────
 wait_backend() {
     local i
@@ -476,6 +491,8 @@ main() {
         step_alert
         step_summary
     else
+        cron_sync_auto || true
+        SUMMARY="${SUMMARY}${CRON_NOTE}"
         say "auto: deployed ${SHORT_SHA} — tests passed"
     fi
 }

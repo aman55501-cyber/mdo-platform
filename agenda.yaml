@@ -50,7 +50,7 @@ objectives:
     status: live
     confirmed: true
     source: "Aman, chat 2026-10-09"
-    next_action: "Open item: floor layout of the entire hotel in PDF and CAD — owner Shashank Nashine (son of lead architect Sukumar Nashine)"
+    next_action: "Open item: floor layout of the entire hotel in PDF and CAD — owner Shashank Nashine (son of lead architect Sukumar Nashine). Guptasons' concerned person is Sameer; he visits after 2026-10-20 (Aman, chat 2026-10-11): prepare the contract points and renovation status for that visit."
     blocker: null
     click_needed: "management-contract signature (CHIEF_OF_STAFF.md §1.4)"
   - id: capital-rules
@@ -77,8 +77,11 @@ objectives:
     confirmed: true
     source: "Aman, chat 2026-10-11"
     next_action: "Decision for Aman: the autonomy rule says money moves need his click. Algo orders are money moves. Either (a) the algo proposes and he clicks each order, or (b) he sets a written standing mandate with hard limits (max order value, max daily loss, instruments, hours, kill switch) and the CoS builds to it. Also: HDFC API keys (A30) and a broker that permits API trading, and SEBI's retail-algo rules must be checked before any live order."
-    blocker: "HDFC API keys not yet in .env (A30); decision (a)/(b)"
+    blocker: "HDFC API keys not yet in .env (A30)"
     click_needed: "every order, until Aman sets a standing mandate"
+    notes:
+      - "Aman, chat 2026-10-11: DECIDED (a): approve each order initially. After about 7-15 days of constant testing and improving, once Aman and the agent are completely aligned, write a standing limit together; Aman follows the CoS's lead on the standing rules and limits."
+      - "Volume is an important measuring tool Aman rarely uses; build it into daily trading and investing (relative volume, price-volume confirmation, delivery %, bulk/block deals)."
     rules:
       - "Secure: keys only in .env on the VPS, IP-restricted where the broker allows, read-only first, paper trading before any live order, kill switch, every order logged"
       - "Capital rules above apply: never book a loss, >80% conviction, no fixed targets"
@@ -92,22 +95,26 @@ objectives:
     blocker: "partner name and information, due 2026-10-22"
     click_needed: false
   - id: curcumin-boswellia
-    title: "Viability and feasibility report for curcumin and Boswellia: analyse all internal and external costs, guide Aman from step 1. Samples and rates arrive in the week of 2026-10-12."
+    title: "Viability and feasibility report for curcumin and Boswellia: analyse all internal and external costs, guide Aman from step 1. Samples and rates arrive in the week of 2026-10-12. Product: extract POWDER (samples are of the extract powder); eventually long-term buyers in the USA."
     owner: Aman
     status: live
     confirmed: true
     source: "Aman, chat 2026-10-11"
-    next_action: "Step 1 guide and cost framework drafted once Aman confirms the open questions (product form, scale, target market); fill in with the samples and rates when they arrive"
+    next_action: "Step 1 guide, cost framework and USA buyer list (briefs/CURCUMIN_BOSWELLIA_STEP1.md); fill in with the samples and rates when they arrive. USA outreach deadline 2026-10-30; Aman flies out about 2026-11-10 and is back by 2026-11-20 (wedding); Las Vegas visit in that window for the Sanitary and Janitorial expo (Shivam ji has work there)."
     blocker: "samples and rates due the week of 2026-10-12"
-    click_needed: false
+    click_needed: "every outreach message (drafts only; Aman sends), every booking (flights, passes, hotel)"
+    deadlines:
+      - "2026-10-30 USA outreach done"
+      - "2026-11-10 fly out (about)"
+      - "2026-11-20 back (wedding)"
   - id: washery-sales
     title: "Set up sales for the upcoming washery so there are orders; reach out to potential customers, officials and other important people in the domain"
     owner: Aman
     status: live
     confirmed: true
     source: "Aman, chat 2026-10-11"
-    next_action: "Build the target list (customers, officials, domain contacts) and draft outreach; emails are drafts only, Aman sends"
-    blocker: "washery capacity, grades and commissioning date needed to quote"
+    next_action: "Relationship-first outreach, not offers: Aman does not want to present offers directly. The washery starts in about a month (from 2026-10-11). Build the target list (customers, officials, domain contacts) and draft introductions; emails are drafts only, Aman sends"
+    blocker: "washery capacity, grades and commissioning date, to answer when asked (not to quote)"
     click_needed: "every outreach message that goes out (drafts only; Aman sends)"
   - id: mis-hire
     title: "Hire an MIS person so Aman does not have to do this work all the time"
@@ -124,7 +131,7 @@ objectives:
     status: live
     confirmed: true
     source: "Aman, chat 2026-10-11"
-    next_action: "Close the routing loop WhatsApp -> CoS -> agents -> WhatsApp; fix tender scraper, corporate actions, broker data; report each agent's state"
+    next_action: "WhatsApp (self-chat) is the constant channel and works two-way (confirmed by Aman 2026-10-11). Daily summary: objectives in the morning (07:30 IST), objective-vs-actual in the evening (19:30 IST), starting with the washery and hotel renovation, then every active project, later the sales of all businesses. Also: a virtual representation (digital twin) of washery, sales, hotel and real estate on the VPS, fed by information Aman provides."
     blocker: "HDFC keys (A30); decisions on the weak agents"
     click_needed: false
 # vwlr-dispatch and hotel-renovation-contract were not restated on 2026-10-11 and stand as stated on 2026-10-09.

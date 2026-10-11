@@ -766,6 +766,34 @@ bots:
     - Background workers only when policy.workers is yes, and never more than policy.max_workers
     - Readers and summarisers run on the cheapest model that can do the job, never on the CoS model
     - Every run reports, especially an empty one (Directive 5)
+- id: daily-plan
+  name: Daily plan — today's objectives each morning, planned-vs-actual each evening, where the fault lay
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py daily-plan morning
+  command_evening: docker compose exec -T backend python mdo_agent.py daily-plan evening
+  cadence: daily 07:30 IST (morning) + daily 19:30 IST (evening)
+  model: none
+  heartbeat: 'every run: "daily-plan morning: N items planned, K carried over" / "daily-plan evening: D/N done, M missed, O not reported"'
+  checks: []
+  serves: [cos-operating-mandate, vwlr-dispatch, hotel-renovation-contract]
+  enabled: true
+  objective: Aman sees each morning what today must deliver and each evening what did not, with the reason and the owner
+  charter:
+    purpose: Show Aman daily where the fault lay when work that could finish today did not finish today (Aman, chat 2026-10-11).
+    thinks: Rules only. A plan item is open until someone closes it as done or missed with a reason code. An item nobody reports
+      on is closed next morning as missed, fault "unreported", and carried over — never silently dropped.
+    works: 'Morning 07:30 IST: live objectives (next action / blocker) from agenda.yaml, each project''s plan for today with carried-over
+      items marked, fleet health, Aman''s open jobs. Evening 19:30 IST: planned vs done vs missed, the day''s stall reasons, the
+      exact reply to close what is still open. WhatsApp grammar: plan <project>: item @owner; item · done 3 · miss 3 material [by name].
+      Sheet and fault tally: GET /api/plan/sheet, /api/plan/faults; Morning page card.'
+    limits: Actuals are only as good as the replies (v1 is manual). Reading the site groups to infer actuals is the next step.
+      Does not message site staff; only Aman's own chat.
+    minimum_output: Two heartbeat lines a day, also when nothing is planned ("0 items planned").
+    rules:
+    - Never contacts anyone but Aman
+    - An unreported item is a finding about the process, not about a person, until Aman names one
+    - No LLM call, ever (Directive 15)
 - id: vegas-tracker
   name: Las Vegas trip price tracker (temporary, ends 2026-11-09)
   runs_on: cloud-routine
