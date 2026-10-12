@@ -3,7 +3,7 @@
 Tree: see LIFE_LLM_TREE.md (Business OS / Wealth OS / Life OS / System OS). Sessions are filed by module and layer (layers from LIFE_LLM_MAP.md). Source: session titles, outcomes and branches as of the 12 Oct sweep. Layer = my reading, edit freely [UNVERIFIED].
 
 | Module | Feeds | Layer | Session | Work | Status |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | life-os | — | 0/1 | 01LMy8je | Life OS extraction; subfolder or own repo? | open |
 | wealth-os | — | 4 | 01PTkXPV | Life LLM progress; memory design; 5 answers pending | open |
 | system-os | all | 6 | 01Pp8H5D | Life LLM system map; VPN routes pending | open |
