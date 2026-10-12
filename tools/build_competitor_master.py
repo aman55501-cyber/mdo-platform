@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import mdo_freight  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROAD_QUOTE = 5.0   # Rs per tonne-km, Aman 2026-10-12
 
 
 def read(path):
@@ -41,7 +42,7 @@ def main(dist_path, export_path, out_path):
     st = wb.create_sheet("Settings")
     rows = [
         ("Setting", "Value", "Note"),
-        ("Road quote Rs per tonne-km (YOUR NUMBER)", None, "Type your tipper rate. Leave blank to use the illustrative rate."),
+        ("Road quote Rs per tonne-km (YOUR NUMBER)", ROAD_QUOTE, "Aman, chat 2026-10-12: approx Rs 5 per tonne per km (approximate, not a written quote). Clear the cell to fall back to the illustrative rate."),
         ("Illustrative road Rs per tonne-km", 2.75, "Midpoint of an indicative Rs 2.0-3.5 range from general truck rates. NOT a coal quote."),
         ("Road rate used", '=IF(ISNUMBER(B3),B3,B4)', None),
         ("Rate status", '=IF(ISNUMBER(B3),"Your quote","ILLUSTRATIVE - replace with your quote")', None),
