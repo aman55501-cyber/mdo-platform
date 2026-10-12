@@ -25,13 +25,14 @@ cap:
 # over to the algo after 15-20 days with small sizes and amounts), hiring, US venture, solar viability and expo. He has further tasks;
 # focus on these first, then add and remove by priority." Order is for the CoS to propose, Aman to change.
 focus_now:
-  - "Share market tips (capital-rules; volume-watch, levels-alert)"
-  - "Bantu Mausaji calls (wa-sweep, share-master-daily)"
-  - "Algo trading setup: paper first, then 15-20 days live at small size and small amounts, every order approved by Aman; handover to the algo only after that, on a written standing limit"
-  - "Hiring: Tender Specialist, Lead Accountant, Civil Engineer (hire-three-roles) and the siding and MIS roles"
-  - "US venture: curcumin and Boswellia (curcumin-boswellia), outreach by 2026-10-30"
-  - "Solar viability (battery-plant), partner name 2026-10-22"
-  - "Expo: ISSA Show North America 16-19 Nov, Las Vegas, with the USA trip 10-20 Nov"
+  # Aman, chat 2026-10-12: "my updated task list for this week based on priority". Order = priority. Replaces the 2026-10-11 list (share tips, Bantu Mausaji calls, algo setup, hiring, US venture, solar viability, expo), which is kept in git history.
+  - "1. Hire MIS and Lead Accountant"
+  - "2. Book tickets and hotel for the Delhi expo on 22/23/24 Oct (booking is Aman's click: money)"
+  - "3. Research solar + BESS viability and prepare the list of questions to consider"
+  - "4. US trip viability: quotes from Ayush, supply chain worked out, a few prospective-client meetings lined up"
+  - "5. Fundamental + technical analysis of shares from market sentiment and Aman's long- and short-term capital allocation (share-analysis bot, Share Master tabs)"
+  - "6. Finalise and set up the solar unit at Vedanta Washery to offset the electricity bill of internal washery consumption; Aman proposes 5 MW because about 500,000 units/month are needed on 1 MW of load"
+  - "7. Daily operations, sales, maintenance, ongoing-project tracking and share-market analysis during market hours"
 
 objectives:
   - id: vwlr-dispatch
