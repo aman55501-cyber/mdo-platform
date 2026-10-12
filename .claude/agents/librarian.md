@@ -56,7 +56,7 @@ Exactly this, nothing else:
 
 ```
 LIBRARIAN <date> · scanned N · tagged N · dups N · unresolved N (misc/unreachable)
-New: <area> — <title> (one line each, max 10)
+New: <module> — <title> (one line each, max 10)
 Dups: <id> → <id>
 Needs you: <only items requiring a decision, else "none">
 ```
