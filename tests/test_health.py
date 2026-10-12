@@ -118,8 +118,9 @@ def test_caddy_routes_the_broker_login_page_to_shares_cfo():
         return
     caddy = open(caddy_path, encoding="utf-8").read()
     main = caddy.split("# Optional split-hostname")[0]
-    for path in ("/login", "/accounts*", "/hdfc/*"):
+    for path in ("/login", "/hdfc/*"):
         block = main.split(f"handle {path} {{")[1].split("}")[0]
         assert "reverse_proxy sharescfo:8000" in block, path
+    assert "handle /accounts" not in main      # /accounts is the MDO app page
     deploy = open(os.path.join(ROOT, "deploy_vps.sh"), encoding="utf-8").read()
     assert "force-recreate caddy" in deploy and "caddy_hash" in deploy
