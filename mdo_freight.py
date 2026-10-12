@@ -21,6 +21,26 @@ from mdo_cos import IST
 
 ILLUSTRATIVE = {"road_rate_per_t_km": 3.0, "rail_rate_per_t": 900.0, "loading_per_t": 35.0, "unloading_per_t": 25.0, "sampling_per_t": 5.0,
                 "transit_loss_pct": 0.5, "gst_freight_pct": 5.0, "min_margin_pct": 4.0}
+# Indian Railways coal, train load, class 145A: (from_km, to_km, Rs per tonne). Source: FOIS Freight Rates page
+# https://www.fois.indianrail.gov.in/FOISWebPortal/FWP_FrgtRateDtls?RateClss=145A, read 2026-10-12. Base tariff only: no busy-season
+# surcharge, development surcharge, terminal/siding charges, rebates or GST. Confirm the class for the specific coal and the lane with FOIS.
+RAIL_145A = [(1, 100, 216.0), (101, 125, 389.6), (126, 150, 448.9), (151, 175, 488.7), (176, 200, 532.2), (201, 275, 672.5), (276, 350, 797.2),
+             (351, 425, 926.0), (426, 500, 1054.7), (501, 600, 1228.0), (601, 700, 1398.7), (701, 730, 1435.6), (731, 760, 1484.0),
+             (761, 790, 1537.9), (791, 820, 1586.7), (821, 850, 1640.3), (851, 880, 1688.6), (881, 910, 1737.0), (911, 940, 1790.2),
+             (941, 970, 1838.6), (971, 1000, 1891.8)]
+RAIL_145A_SOURCE = "FOIS rate class 145A train load, base tariff, read 2026-10-12"
+
+
+def rail_rate_for_km(km: float | None) -> float | None:
+    """Base railway coal rate (Rs/t) for a distance, from the FOIS 145A slabs above (up to 1000 km); None when out of range."""
+    if km is None:
+        return None
+    for lo, hi, rate in RAIL_145A:
+        if lo <= km <= hi:
+            return rate
+    return None
+
+
 ILLUSTRATIVE_NOTE = "ILLUSTRATIVE ASSUMPTIONS, not facts: replace every one with your quote before acting"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS freight_lanes (
@@ -93,9 +113,12 @@ def landed_cost(inputs: dict) -> dict:
     with coal_cost_per_t then meaning ROM cost per tonne of feed. Returns per-mode costs, the cheaper mode, a verdict and what is missing."""
     p: dict[str, Any] = {k: _f(inputs.get(k)) for k in (
         "coal_cost_per_t", "road_km", "road_rate_per_t_km", "road_rate_per_t", "road_min_per_t", "rail_rate_per_t", "rail_siding_per_t", "loading_per_t", "unloading_per_t",
-        "sampling_per_t", "transit_loss_pct", "gst_freight_pct", "ceiling_price_per_t", "min_margin_pct", "tonnage")}
+        "sampling_per_t", "transit_loss_pct", "gst_freight_pct", "ceiling_price_per_t", "min_margin_pct", "tonnage", "rail_km")}
     p["gst_credit"] = bool(inputs.get("gst_credit"))
     assumptions: dict[str, float] = {}
+    if p.get("rail_rate_per_t") is None and rail_rate_for_km(p.get("rail_km")) is not None:
+        p["rail_rate_per_t"] = rail_rate_for_km(p["rail_km"])
+        assumptions["rail_rate_per_t"] = p["rail_rate_per_t"]   # reported: base tariff from FOIS 145A, see RAIL_145A_SOURCE
     if inputs.get("illustrative"):
         for k, v in ILLUSTRATIVE.items():
             if p.get(k) is None:

@@ -71,3 +71,11 @@ def test_the_brain_has_the_freight_tools():
     import mdo_brain
     names = {t["name"] for t in mdo_brain.TOOLS}
     assert {"landed_cost", "save_freight_lane"} <= names
+
+
+def test_rail_rate_from_fois_slab():
+    import mdo_freight as f
+    assert f.rail_rate_for_km(100) == 216.0 and f.rail_rate_for_km(101) == 389.6 and f.rail_rate_for_km(300) == 797.2
+    assert f.rail_rate_for_km(1500) is None
+    r = f.landed_cost({"coal_cost_per_t": 3000, "rail_km": 180, "modes": ["rail"]})
+    assert r["modes"][0]["freight_per_t"] == 532.2
