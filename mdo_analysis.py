@@ -160,7 +160,11 @@ def support_below(ind: dict) -> float | None:
     return max(below) if below else None
 
 
-def assess(ind: dict, zone: tuple[float | None, float | None], holders: list[dict], source: str = "") -> dict:
+# Aman, chat 2026-10-12: "dont sell hindustan zinc". Never flagged as a sell candidate.
+NO_SELL = {"HINDZINC": "Aman, 2026-10-12: do not sell Hindustan Zinc"}
+
+
+def assess(ind: dict, zone: tuple[float | None, float | None], holders: list[dict], source: str = "", ticker: str = "") -> dict:
     """Status, suggested entry band, invalidation and sell-zone flag for one share. holders = [{holder, qty, avg}] (avg 0/None = cost unknown).
     No targets: the sell side is a ZONE (near resistance / stretched), reported only for holders in profit."""
     last = ind["last"]
@@ -200,7 +204,9 @@ def assess(ind: dict, zone: tuple[float | None, float | None], holders: list[dic
     unknown = [h for h in holders if not (h.get("avg") or 0) > 0]
     stretched = bool((rsi_ is not None and rsi_ >= 70) or (ind.get("pos52") is not None and ind["pos52"] >= 90)
                      or (ind.get("swing_high60") and last >= ind["swing_high60"] * 0.97))
-    if not holders:
+    if ticker.upper() in NO_SELL:
+        sell = "HOLD (no-sell rule: " + NO_SELL[ticker.upper()] + ")"
+    elif not holders:
         sell = ""
     elif prof and stretched:
         sell = "NEAR SELL ZONE (profit holders: " + ", ".join(h["holder"] for h in prof) + ")"
@@ -323,7 +329,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], sm: dict, send_cos: Callabl
                 payload = {"ticker": t, "error": err or "not enough price history", "tags": sorted(u["tags"]), "source": u["source"]}
             else:
                 ok += 1
-                a = assess(ind, u["zone"], u["holders"], u["source"])
+                a = assess(ind, u["zone"], u["holders"], u["source"], t)
                 in_zone += a["status"] == "IN BUY ZONE"
                 near_buy += a["status"] == "NEAR BUY ZONE"
                 near_sell += a["sell"].startswith("NEAR SELL")

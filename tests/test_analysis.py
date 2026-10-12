@@ -127,3 +127,11 @@ def test_fleet_cron_and_runner_exist(monkeypatch):
     monkeypatch.setattr(ag, "heartbeat", lambda *a, **k: beats.append(a))
     assert ag.run_share_analysis({"id": "share-analysis"}, "none", "daily", now=datetime(2026, 10, 12, 8, 40, tzinfo=IST)) == 0
     assert beats[0][0] == "share-analysis" and "analysed" in beats[0][3]
+
+
+def test_hindustan_zinc_is_never_a_sell_candidate():
+    import mdo_analysis as m
+    ind = {"last": 600.0, "atr": 10, "rsi": 80, "pos52": 95, "sma20": 580, "sma50": 560, "swing_low20": 570, "swing_high60": 610, "rvol": 1.0}
+    h = [{"holder": "Aditi", "qty": 100, "avg": 400}]
+    assert m.assess(ind, (540, 550), h, "x", "HINDZINC")["sell"].startswith("HOLD (no-sell rule")
+    assert m.assess(ind, (540, 550), h, "x", "OTHER")["sell"].startswith("NEAR SELL")

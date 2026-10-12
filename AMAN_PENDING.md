@@ -19,7 +19,6 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A35 | Partner name for the solar-battery plant: due 2026-10-22 (Aman) | desk check + viability report start that day | 2026-10-11 |
 | A36 | Three hires: send 5 facts per role (location and joining date, salary, full-time or contract, who interviews, disqualifiers) for Tender Specialist, Lead Accountant, Civil Engineer; then post the ads. briefs/HIRING_3_ROLES_FAST.md | offers by 17 Oct | 2026-10-11 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
-| A39 | Mausaji list confirmed by Aman 2026-10-12 (128 stocks). Open: confirm "Shell 590/620" = Hindustan Zinc sell 590-620 ("Shell" = sell, typo) (briefs/MAUSAJI_CALL_EXAMPLES.md) | Mausaji calls | 2026-10-11 |
 | A40 | 5 voice notes to WhatsApp "Message yourself" (plan, site update with numbers, share instruction, task for me, tender question) | voice test | 2026-10-11 |
 | A41 | Washery civil drawings from the WhatsApp group; reminder 12 Oct 1 pm | business twin | 2026-10-11 |
 | A42 | Answers: share tips scope and time; algo broker, max per order, max daily loss; buyer type; trip travellers | focus tasks | 2026-10-11 |
