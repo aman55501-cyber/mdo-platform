@@ -3,19 +3,20 @@
 ```
 LIFE LLM  (Aman)
 │
-├── BUSINESS OS ── operating income
-│   ├── VWLR ── Operations · Sales · Tenders
-│   ├── Hotel ANS ── Renovation · Hotel management contract
-│   ├── Real estate ── Dadu Developers · Dadu Builders · Raigarh Land Venture · Rukmani
-│   └── Compliance (business entities)
+├── BUSINESS OS ── operating income         (each unit carries its own Compliance)
+│   ├── VWLR ── Operations · Sales · Tenders · Compliance
+│   ├── Hotel ANS ── Renovation · Hotel management contract · Compliance
+│   └── Real estate ── Dadu Developers · Dadu Builders · Raigarh Land Venture · Rukmani
+│                      (each entity: Compliance)
 │
 ├── WEALTH OS ── money and capital
 │   ├── Capital · Banking
 │   ├── Investments ── Share Master · Mausaji list · demats · F&O · trade ideas
-│   ├── Aditi Investments
-│   └── Compliance (personal + investment)
+│   └── Aditi Investments ── Compliance
 │
 ├── LIFE OS ── Family · Legacy · Personal and health
+│   └── Family ── per person: Aman · Ashok · Sudha · Aditi · Jahnavi
+│                 (each person: Personal compliance — ITR, PAN, DIN)
 │
 └── SYSTEM OS ── every system; each one FEEDS a domain, none owns one
     ├── feeds BUSINESS OS: tender pipeline (Tender247, NIT eligibility, tender-radar) · VWLR daily report ·
@@ -24,13 +25,14 @@ LIFE LLM  (Aman)
     │                      Share Master daily bot · Yahoo prices · Mausaji parser
     ├── feeds LIFE OS:     Life OS extraction · memory (Notion, reminders, calendar)
     └── feeds ALL:         MDO app + Decision Feed · agents (chief-of-staff, orchestrator) · MCP connectors ·
-                           compliance calendar · librarian (session index) · memory folder
+                           compliance calendar (one engine, filings keyed by entity or person) ·
+                           librarian (session index) · memory folder
 ```
 
 Rules
 - A system has exactly one home in SYSTEM OS and names the domain(s) it feeds.
 - A domain never imports data directly; it reads what its feeds deliver.
-- Compliance follows the entity: business filings under BUSINESS OS, personal/investment under WEALTH OS.
+- Compliance is not a box. It sits under every company and every person it concerns. One engine (compliance calendar) in SYSTEM OS feeds them all.
 - Every feed reports every run, including "0 new".
 
 Source for system names: LIFE_LLM_MAP.md, repo directories, 12 Oct session sweep. Items not yet verified live: [UNVERIFIED].
