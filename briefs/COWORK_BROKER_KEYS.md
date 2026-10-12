@@ -1,7 +1,7 @@
 # Cowork prompt — add the HDFC and Angel One accounts (2026-10-12)
 
 Paste everything inside the code block into a new Cowork session. You type every key yourself; Cowork never sees or types them.
-Where the keys go: the Shares CFO "Add account" box (opened from the Daily logins card on your Today page). It stores them on your server and never shows them again. You do NOT need to edit the server's .env file for this.
+Where the keys go: the "Add an account" card on https://amanagrawal.cloud/accounts (also reached from the Daily logins card on your Today page). It stores them on your server and never shows them again. You do NOT need to edit the server's .env file for this.
 
 ```
 You are helping Aman Agrawal connect his broker accounts in his own Shares CFO page. Go slowly, say what you see before each action.
@@ -13,15 +13,15 @@ HARD RULES
 - After each account write one line: "ACCOUNT <name>: CONNECTED / LOGGED IN / BLOCKED because ...". At the end give a table of all accounts and nothing else.
 
 STEPS
-1. Open https://amanagrawal.cloud/today . If it asks for an access key: "your turn: access key". Wait for "done".
-2. Find the card "Daily logins". Tell me which accounts it lists and whether each says logged in, not logged in or needs keys.
-3. Tap "Log in to all accounts". A page titled "Shares CFO - accounts & login" opens. Tell me what is listed.
-4. Scroll to the "Add account" box. For each account I name, one at a time:
-   a) Ask me for the account name (examples: HDFC1, HDFC2, HDFC3, HDFC4, ANGEL1) and which family member it belongs to. Type only the account name into the name field.
-   b) For each remaining field (API key, API secret, client code; for Angel One also authenticator secret and PIN): say "your turn: <field>". Wait for "done". Do not look at the field.
-   c) Click Connect. Read me only the message shown (for example "connected"). If it shows an error, read me the error text, not any field.
-5. After all accounts are added, go back to the list. For each HDFC account click "Log in". HDFC opens its own login: say "your turn: HDFC login and code" and wait for "done". Angel One logs in by itself; tell me what it shows.
-6. Reload the Today page and read me the Daily logins card: how many accounts are in.
+1. Open https://amanagrawal.cloud/accounts . If it asks for an access key: "your turn: access key". Wait for "done".
+2. The page is titled "Broker accounts". Read me the accounts listed and each one's status (needs keys / not logged in / logged in today).
+3. In the card "Add an account", for each account I name, one at a time:
+   a) Click the broker button I choose: "HDFC Securities" or "Angel One".
+   b) In the "Account name" box, type the account name I give you (for example HDFC2 or ANGEL1) or leave it empty.
+   c) For every field marked "(secret: type it yourself)" and for "Client code": say "your turn: <field name>" and wait for "done". Do not look at the field, do not click inside it.
+   d) Click "Connect". Read me only the green or red message shown under the button. The fields clear themselves after sending.
+4. After all accounts are added, for each HDFC account click "Log in". HDFC opens its own login page: say "your turn: HDFC login and code" and wait for "done".
+5. Return to https://amanagrawal.cloud/accounts and read me each account's status. Angel One logs in by itself and may show "not logged in" until the next refresh; tell me what it shows.
 ```
 
 ## What you need in hand before starting

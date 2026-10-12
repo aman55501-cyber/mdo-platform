@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import {
+  KeyRound,
   LayoutDashboard, Brain, TrendingUp, MessageSquare, ShieldAlert,
   Building2, Rss, CheckSquare, Landmark, ExternalLink, Sun, Network,
   Menu, X, Sparkles, FileText, Bot, Inbox, Radar,
@@ -16,6 +17,7 @@ const NAV_SECTIONS = [
     label: "Command",
     items: [
       { href: "/today",      icon: Sun,             label: "Today (phone)"    },
+      { href: "/accounts",   icon: KeyRound,             label: "Broker accounts"  },
       { href: "/",           icon: LayoutDashboard, label: "Dashboard"        },
       { href: "/feed",       icon: Inbox,           label: "Decision Feed"    },
       { href: "/fleet",      icon: Bot,             label: "Fleet & Memory"   },

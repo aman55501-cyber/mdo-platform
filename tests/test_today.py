@@ -76,7 +76,40 @@ def test_logins_card_lists_accounts_and_the_login_link(monkeypatch):
         {"key": "HDFC1", "label": "Aman", "broker": "hdfc", "logged_in": True, "client_code": "x"},
         {"key": "ANGEL1", "label": "Aditi", "broker": "angel", "logged_in": False, "client_code": "y"}]})
     monkeypatch.setattr(mdo_server, "CFO_TOKEN", "tok")
-    monkeypatch.setenv("CFO_PUBLIC_URL", "https://cfo.example")
     d = TestClient(mdo_server.app).get("/api/today").json()["logins"]
     assert [(a["key"], a["logged_in"]) for a in d["accounts"]] == [("HDFC1", True), ("ANGEL1", False)] and "client_code" not in d["accounts"][0]
-    assert d["login_url"] == "https://cfo.example/login?token=tok" and d["error"] == ""
+    assert d["login_url"] == "/accounts" and "tok" not in str(d) and d["error"] == ""
+
+
+def test_broker_accounts_page_endpoints_never_return_or_log_a_key(monkeypatch, capsys):
+    from fastapi.testclient import TestClient
+    import mdo_server
+    sent = {}
+    monkeypatch.setattr(mdo_server, "_cfo_get", lambda path, timeout=25: {"accounts": [
+        {"key": "HDFC1", "label": "Aman", "broker": "hdfc", "client_code": "C1", "logged_in": False, "needs_setup": True, "source": "env", "secret": "x"}]})
+
+    def fake_post(path, body, timeout=40):
+        sent["path"], sent["body"] = path, body
+        return 200, {"connected": True, "account": body["creds_key"], "broker": "hdfc", "stored_fields": ["api_key"], "next": "Now log in."}
+    monkeypatch.setattr(mdo_server, "_cfo_post", fake_post)
+    monkeypatch.setattr(mdo_server, "CFO_TOKEN", "cfo-tok")
+    c = TestClient(mdo_server.app)
+    a = c.get("/api/broker/accounts").json()
+    assert a["accounts"][0]["key"] == "HDFC1" and "secret" not in a["accounts"][0]
+    r = c.post("/api/broker/accounts/add", json={"account": "hdfc2", "api_key": "KEY123", "api_secret": "SEC456", "client_code": "ZZ", "junk": "no"})
+    assert r.status_code == 200 and r.json() == {"connected": True, "account": "HDFC2", "broker": "hdfc", "next": "Now log in."}
+    assert sent["path"] == "/accounts/add" and sent["body"] == {"creds_key": "HDFC2", "api_key": "KEY123", "api_secret": "SEC456", "client_code": "ZZ"}
+    assert "KEY123" not in r.text and "SEC456" not in r.text and "KEY123" not in capsys.readouterr().out
+    assert c.post("/api/broker/accounts/add", json={"account": "ZERODHA1", "api_key": "k"}).status_code == 400
+    u = c.get("/api/broker/hdfc-login-url?key=HDFC2").json()["url"]
+    assert u.endswith("/hdfc/login?key=HDFC2&token=cfo-tok") and c.get("/api/broker/hdfc-login-url?key=ANGEL1").status_code == 400
+    monkeypatch.setattr(mdo_server, "_cfo_post", lambda *a, **k: (400, {"detail": "HDFC needs both API key and API secret."}))
+    bad = c.post("/api/broker/accounts/add", json={"account": "HDFC3", "api_key": "k"})
+    assert bad.status_code == 400 and "HDFC needs both" in bad.text
+
+
+def test_accounts_page_files_exist():
+    p = os.path.join(ROOT, "mdo-app", "app", "accounts", "page.tsx")
+    src = open(p, encoding="utf-8").read()
+    assert 'type={f.secret ? "password" : "text"}' in src and "aria-label" in src and "Cowork" in src
+    assert "/api/broker/accounts/add" in src and "setVals({})" in src                 # the keys are cleared after sending

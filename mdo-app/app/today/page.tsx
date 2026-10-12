@@ -90,7 +90,7 @@ export default function TodayPage() {
               <span style={{ color: a.logged_in ? "var(--green)" : "var(--text2)" }}>{a.needs_setup ? "needs keys" : a.logged_in ? "● logged in" : "○ not logged in"}</span>
             </div>
           ))}
-          {d.logins?.login_url && <a href={d.logins.login_url} style={{ ...btn, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 10, textDecoration: "none" }}>Log in to all accounts →</a>}
+          {d.logins?.login_url && <a href={d.logins.login_url} style={{ ...btn, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 10, textDecoration: "none" }}>Manage broker logins →</a>}
           <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 6 }}>HDFC needs a fresh code from your phone each day. I never see or store it.</div>
         </div>
 

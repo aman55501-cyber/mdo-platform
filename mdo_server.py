@@ -16,6 +16,7 @@ import os
 import re
 import sqlite3
 import urllib.request
+import urllib.error
 import urllib.parse
 import json as _json
 from contextlib import asynccontextmanager
@@ -861,6 +862,23 @@ def _cfo_get(path: str, timeout: int = 25) -> dict:
     except Exception as e:
         return {"error": str(e)[:200]}
 
+def _cfo_post(path: str, body: dict, timeout: int = 40) -> tuple[int, dict]:
+    """POST to Shares CFO with the server-side token. Returns (status, json). The body is never logged and never echoed."""
+    if not CFO_URL or not CFO_TOKEN:
+        return 503, {"detail": "CFO_API_URL / CFO_API_TOKEN not configured"}
+    try:
+        url = f"{CFO_URL}{path}?token={urllib.parse.quote(CFO_TOKEN)}"
+        req = urllib.request.Request(url, data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, _json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, _json.loads(e.read() or b"{}")
+        except Exception:
+            return e.code, {"detail": f"HTTP {e.code}"}
+    except Exception as e:
+        return 502, {"detail": str(e)[:160]}
+
 def _stale_hours(as_of: str | None) -> float | None:
     if not as_of:
         return None
@@ -950,6 +968,45 @@ async def capital_summary():
 @app.get("/api/capital/accounts")
 async def capital_accounts():
     return _cfo_get("/accounts")
+
+
+# ── Broker accounts page (/accounts in the app): list, add, log in. Keys are typed by Aman into this page, forwarded to Shares CFO
+# server-side, never stored here, never logged, never returned. Aman, chat 2026-10-12: "rebuild frontend especially login page".
+_BROKER_FIELDS = ("api_key", "api_secret", "client_code", "totp_secret", "mpin")
+
+
+@app.get("/api/broker/accounts")
+async def broker_accounts():
+    r = _cfo_get("/accounts")
+    if r.get("error"):
+        return {"accounts": [], "error": r["error"]}
+    return {"accounts": [{k: a.get(k) for k in ("key", "label", "broker", "client_code", "logged_in", "needs_setup", "source")} for a in r.get("accounts", [])],
+            "error": ""}
+
+
+@app.post("/api/broker/accounts/add")
+async def broker_accounts_add(body: dict):
+    key = str(body.get("account", "")).strip().upper()
+    if not re.fullmatch(r"(HDFC|ANGEL)[A-Z0-9]{0,6}", key):
+        raise HTTPException(400, "Account name must start with HDFC or ANGEL, for example HDFC2 or ANGEL1")
+    payload = {"creds_key": key, **{f: str(body.get(f, "")).strip() for f in _BROKER_FIELDS if str(body.get(f, "")).strip()}}
+    status, res = _cfo_post("/accounts/add", payload)
+    if status != 200:
+        raise HTTPException(400 if status < 500 else 502, str(res.get("detail") or "Shares CFO refused the account")[:200])
+    return {"connected": True, "account": res.get("account") or key, "broker": res.get("broker"), "next": str(res.get("next") or "")[:200]}
+
+
+@app.get("/api/broker/hdfc-login-url")
+async def broker_hdfc_login_url(request: Request, key: str = "HDFC1"):
+    """The URL that starts HDFC's 2FA login for one account. Built on the host the page is open on; carries the CFO token, so it is
+    only returned to a keyed caller and used immediately by the page."""
+    if not CFO_TOKEN:
+        raise HTTPException(503, "CFO_API_TOKEN not configured")
+    k = re.sub(r"[^A-Za-z0-9]", "", key).upper()
+    if not k.startswith("HDFC"):
+        raise HTTPException(400, "Only HDFC accounts log in this way; Angel One logs in by itself")
+    base = str(request.base_url).rstrip("/")
+    return {"url": f"{base}/hdfc/login?key={k}&token={urllib.parse.quote(CFO_TOKEN)}"}
 
 # ── Checks registry ─────────────────────────────────────────────────────────
 @app.get("/api/checks")
@@ -3417,14 +3474,12 @@ mdo_brain.configure({"note_add": lambda title, body, tags="", source="brain": _n
 # today: one JSON for the phone page (/today in the app)
 import mdo_today
 def _logins_payload() -> dict:
-    """Broker accounts and whether each is logged in today. The login link carries the CFO token, so it only leaves through the keyed /api."""
+    """Broker accounts and whether each is logged in today. The button opens the app's own /accounts page (no token in any link)."""
     r = _cfo_get("/accounts")
     if r.get("error"):
         return {"accounts": [], "login_url": "", "error": r["error"]}
-    pub = os.environ.get("CFO_PUBLIC_URL", "").strip().rstrip("/")
-    url = f"{pub}/login?token={urllib.parse.quote(CFO_TOKEN)}" if pub and CFO_TOKEN else ""
     return {"accounts": [{k: a.get(k) for k in ("key", "label", "broker", "logged_in", "needs_setup")} for a in r.get("accounts", [])],
-            "login_url": url, "error": ""}
+            "login_url": "/accounts", "error": ""}
 
 
 _today = mdo_today.register(app, vdb, _cos, _credit_guard, logins=_logins_payload)
