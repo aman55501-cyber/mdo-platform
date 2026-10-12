@@ -820,6 +820,31 @@ bots:
     - Holder column on every list (Directive 18)
     - Nifty 25000 CE: sell only above 222 (Aman, 2026-10-12)
     - No LLM call (Directive 15)
+- id: tender-radar
+  name: Tender radar — coal tender filters, deadline reminders (T-7/T-3/T-1/T-0) and closed-without-a-decision findings
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py tender-radar
+  cadence: daily 08:00 IST and 14:00 IST
+  model: none
+  heartbeat: 'every run: "tender-radar: A tier-A and B tier-B tenders open · R reminders sent|due: none · N new A today · C closed undecided"'
+  checks: []
+  serves: [tenders-washing-rcr]
+  enabled: true
+  objective: never again miss a coal tender (Aman, chat 2026-10-12, after the Tender247 Missed Opportunities export)
+  charter:
+    purpose: Classify every open tender in the pipeline, remind Aman before the ones that matter close, and say so when one closed with no decision.
+    thinks: 'Rules only. Tier A = coal supply, RCR / siding, washery / beneficiation, loading / handling / crushing; tier B = mining services, coal transport by road;
+      X = exclusion words (civil, construction, biomass, repair) or not coal. Reminders at T-7, T-3, T-1, T-0 for A and T-3, T-0 for B, each once. Preferred states and 42 rival
+      names are flagged, not used to hide a tender.'
+    works: 'Reads vwlr_tender_pipeline (statuses evaluating, active, bidding) filled by the mail-reader and the other tender doors. One WhatsApp message a run, at most 12 lines.
+      Commands: "tenders", "bid 42", "skip 42" (marks the row only; filing a bid is Aman''s click on the portal). GET /api/tender-radar/open.'
+    limits: Only sees tenders that reached the pipeline. Tender247 alert e-mails carry 5 tenders and say view all (N), so the portal alerts and the daily full export still matter.
+    minimum_output: One heartbeat per run, also "0 reminders due".
+    rules:
+    - Never files, pays or bids (money, signature = Aman's click)
+    - No LLM call (Directive 15)
+    - Every run reports, also when nothing is due
 - id: daily-plan
   name: Daily plan — today's objectives each morning, planned-vs-actual each evening, where the fault lay
   runs_on: vps-cron

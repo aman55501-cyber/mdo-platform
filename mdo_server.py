@@ -3453,6 +3453,11 @@ import mdo_plan
 _plan = mdo_plan.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), _cos,
                           mdo_cos_api.INBOUND_HOOKS)
 
+# tender-radar: filters, deadline reminders (T-7/T-3/T-1/T-0) and closed-without-a-decision findings for the coal tenders; commands "tenders", "bid 42", "skip 42".
+# Born from the Tender247 Missed Opportunities export (no alert set; reminders only looked at status 'active' while ingested tenders are 'evaluating').
+import mdo_tender_radar
+_radar = mdo_tender_radar.register(app, vdb, lambda text: _cos["send_cos"](text, legacy_send=_send_whatsapp), mdo_cos_api.INBOUND_HOOKS)
+
 # volume-watch: NSE archive files (bhavcopy with volume + delivery %, bulk/block deals) for the shares held or on the
 # levels list; relative volume, distribution/strength/breakout/buy-zone/accumulation signals; one WhatsApp message a day.
 import mdo_volume

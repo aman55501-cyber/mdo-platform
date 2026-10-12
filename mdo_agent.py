@@ -1318,7 +1318,14 @@ def run_share_analysis(bot: dict, model: str, cadence_key: str, now: datetime | 
     return 0
 
 
-CUSTOM_BOTS = {**WA_BOTS, "share-analysis": run_share_analysis, "volume-watch": run_volume_watch, "daily-plan": run_daily_plan, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
+def run_tender_radar(bot: dict, model: str, cadence_key: str, now: datetime | None = None) -> int:
+    now = now or datetime.now(IST)
+    res = api("/api/tender-radar/run", "POST", {"now": now.isoformat()}, timeout=120)
+    heartbeat("tender-radar", cadence_key, str(res.get("status") or "clean"), str(res.get("line") or "tender-radar: no line"))
+    return 0
+
+
+CUSTOM_BOTS = {**WA_BOTS, "tender-radar": run_tender_radar, "share-analysis": run_share_analysis, "volume-watch": run_volume_watch, "daily-plan": run_daily_plan, "credit-guard": run_credit_guard, "singhvi": run_singhvi, "levels-alert": run_levels_alert,
                "share-master-daily": run_share_master, "wa-sweep": run_wa_sweep,
                "compliance-reminder": run_compliance_reminder, "mail-reader": run_mail_reader,
                "corp-actions": run_corp_actions, "tenders-direct": run_tenders_direct, "voice": run_voice}
