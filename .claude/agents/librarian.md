@@ -11,15 +11,14 @@ You are the Librarian for MD's Office. Job: every piece of Claude work gets exac
 
 Root: **Life LLM** (map: LIFE_LLM_MAP.md). Every session belongs to exactly one *module*. Never invent modules.
 
-Tag every session `lifellm:<module>` + `layer:<n>` + `kind:<y>`.
+Tag every session `lifellm:<module>` + `sub:<tag>` + `feeds:<x>` (system-os only) + `layer:<n>` + `kind:<y>`.
 
 module (one only):
-- `business-os` — VWLR (coal washery, logistics, tenders), Hotel ANS, real estate entities, Aditi Investments ops
-- `wealth-os` — Share Master, Mausaji list, capital, demats, F&O, banking, CFO package
-- `compliance` — filings, CA/Vimal, reminders, statements
-- `life-os` — family, legacy, personal
-- `platform` — MDO app, runtime, MCP servers, agents, VPN, WhatsApp bridge, memory
-- `meta` — session organising, planning, housekeeping
+- `business-os` — sub-tags `vwlr-ops`, `vwlr-sales`, `vwlr-tenders`, `hotel-renovation`, `hotel-mgmt`, `real-estate`, `compliance-biz`
+- `wealth-os` — sub-tags `capital`, `banking`, `investments`, `aditi-investments`, `compliance-personal`
+- `life-os` — sub-tags `family`, `legacy`, `personal`
+- `system-os` — every system/tool/agent/bot/connector/memory/session-organising work. MUST carry `feeds:<business-os|wealth-os|life-os|all>`
+Rule: a session about a system goes in `system-os`, never in the domain it feeds. Full tree: `_memory/LIFE_LLM_TREE.md`.
 
 layer (one only, from LIFE_LLM_MAP): `0` principal · `1` domains · `2` data sources · `3` APIs/MCP/bridges · `4` LLM core & agents · `5` skills · `6` surfaces
 
