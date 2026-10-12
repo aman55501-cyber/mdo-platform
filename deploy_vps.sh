@@ -396,7 +396,6 @@ retire_images() {
 }
 step_retire() {
     if [[ -e "$RETIRE_MARK" ]]; then          # say what happened in every report until Aman has seen it
-        DISK_NOTE+=" · retired waha+scanner $(stat -c %y "$RETIRE_MARK" 2>/dev/null | cut -c1-16):$(head -c 400 "$RETIRE_MARK" 2>/dev/null)"
         return 0
     fi
     step "j. retire waha and the tender scanner (one time)"
@@ -428,7 +427,7 @@ step_retire() {
 WAHA_MARK=/var/lib/mdo/retired_waha_retry
 step_retire_waha() {
     if [[ -e "$WAHA_MARK" ]]; then
-        DISK_NOTE+=" · waha retry:$(head -c 300 "$WAHA_MARK" 2>/dev/null)"; return 0
+        return 0
     fi
     local imgs ids vols note="" n=0 out
     imgs="$(docker images --format '{{.Repository}} {{.ID}}' 2>/dev/null | awk '$1 ~ /waha/ {print $2}' | sort -u)"
