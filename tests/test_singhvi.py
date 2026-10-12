@@ -186,7 +186,7 @@ def test_singhvi_is_wired_in_dispatch_fleet_agenda_and_cron():
     bot = ag.find_bot(fleet, "singhvi")
     assert bot["runs_on"] == "vps-cron" and bot["provider"] == "grok"   # enabled flag is Aman's switch
     assert bot["command"] == "docker compose exec -T backend python mdo_agent.py singhvi"
-    assert bot["cadence"] == "weekdays 08:05 IST" and bot["model"] == "grok-4" and "capital-rules" in bot["serves"]
+    assert bot["cadence"] == "weekdays 07:45, 08:15, 08:45 and 09:15 IST" and bot["model"] == "grok-4" and "capital-rules" in bot["serves"]
     assert {"purpose", "thinks", "works", "limits", "minimum_output", "rules"} <= set(bot["charter"])
     hotel = ag.find_bot(fleet, "hotel-daily")
     assert hotel["cadence"] == "daily 20:00 IST" and "hotel_daily" not in hotel["checks"]
@@ -196,7 +196,7 @@ def test_singhvi_is_wired_in_dispatch_fleet_agenda_and_cron():
     block = doc[doc.index("# MDO fleet — one line per bot"):]
     block = block[:block.index("```")]
     lines = [ln for ln in block.splitlines() if "mdo_agent.py singhvi" in ln]
-    assert len(lines) == 1 and lines[0].split()[:5] == ["35", "2", "*", "*", "1-5"]
+    assert len(lines) == 1 and lines[0].split()[:5] == ["15,45", "2-3", "*", "*", "1-5"]
     hotel_lines = [ln for ln in block.splitlines() if "mdo_agent.py hotel-daily" in ln]
     assert len(hotel_lines) == 1 and hotel_lines[0].split()[:5] == ["30", "14", "*", "*", "*"]   # 20:00 IST
     agenda = yaml.safe_load(open(os.path.join(ROOT, "agenda.yaml"), encoding="utf-8"))

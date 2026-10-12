@@ -191,7 +191,7 @@ MDO=cd /docker/sharecfo/mdo-platform && docker compose exec -T backend
 30 2    * * *   $MDO python mdo_agent.py tender-go-no-go     >> /var/log/mdo-agent.log 2>&1   # 08:00 IST
 35 3-10 * * 1-5 $MDO python mdo_agent.py capital-watcher     >> /var/log/mdo-agent.log 2>&1   # 09:05-15:35 IST Mon-Fri
 */15 3-10 * * 1-5 $MDO python mdo_agent.py levels-alert >> /var/log/mdo-agent.log 2>&1   # every 15 min, 08:30–15:45 IST window; bot self-checks market hours
-35 2    * * 1-5 $MDO python mdo_agent.py singhvi             >> /var/log/mdo-agent.log 2>&1   # 08:05 IST Mon-Fri: Singhvi calls → Morning Setup proposals
+15,45 2-3 * * 1-5 $MDO python mdo_agent.py singhvi          >> /var/log/mdo-agent.log 2>&1   # 07:45, 08:15, 08:45, 09:15 IST Mon-Fri: Singhvi calls → Morning Setup proposals
 15 10   * * 1-5 $MDO python mdo_agent.py share-master-daily  >> /var/log/mdo-agent.log 2>&1   # 15:45 IST Mon-Fri: Share Master post-close refresh → vault finance/Share_Master.xlsx
 15 3    * * 1-5 $MDO python mdo_agent.py share-master-daily  >> /var/log/mdo-agent.log 2>&1   # 08:45 IST Mon-Fri: Share Master pre-open refresh (Mausaji overnight calls)
 */15 3-10 * * 1-5 $MDO python mdo_agent.py wa-sweep mausaji >> /var/log/mdo-agent.log 2>&1   # every 15 min, 08:30–16:15 IST window Mon-Fri: Mausaji chat → share lines at once; option check self-checks market hours

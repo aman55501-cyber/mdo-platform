@@ -140,7 +140,7 @@ step_repo() {
         SHORT_SHA="$(git rev-parse --short HEAD)"
         if [[ "$live" == "$head" ]]; then
             cron_sync_auto || true
-            disk_maybe || true; step_retire || true; step_retire_waha || true
+            disk_maybe || true; step_retire || true; step_retire_waha || true; step_retire_wa_dir || true
             step_retention || true
             DISK_NOTE=" · waha: $(docker ps -a --format '{{.ID}}' 2>/dev/null | while read -r c; do docker inspect -f '{{.Config.Image}} {{.State.Status}} proj={{index .Config.Labels "com.docker.compose.project"}} dir={{index .Config.Labels "com.docker.compose.project.working_dir"}} restart={{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null; done | grep -i waha | cut -c1-200 | tr '\n' ';')${DISK_NOTE}"
             DISK_NOTE+=" · /docker/wa: $(ls /docker/wa 2>/dev/null | head -12 | tr '\n' ' ') · cron/restarters: $(grep -rls '/docker/wa\|waha' /etc/cron.d /etc/crontab /var/spool/cron 2>/dev/null | head -3 | tr '\n' ' ')$(systemctl list-units --all 2>/dev/null | grep -i 'waha\|docker/wa' | head -2 | cut -c1-80 | tr '\n' ' ')"
@@ -455,6 +455,35 @@ step_retire_waha() {
     note+="; volumes ${n}; rmi: ${out}"
     printf '%s' "$note" > "$WAHA_MARK"
     DISK_NOTE+=" · waha retry:${note}"
+    return 0
+}
+
+# ── j3. /docker/wa (old WhatsApp/waha install). Aman, chat 2026-10-12: "docker wa is old - delete". One-time, exactly that directory. ──
+WA_DIR=/docker/wa
+WA_DIR_MARK=/var/lib/mdo/retired_docker_wa
+step_retire_wa_dir() {
+    [[ -e "$WA_DIR_MARK" ]] && return 0
+    local note="" listing
+    if [[ ! -d "$WA_DIR" || -L "$WA_DIR" ]]; then
+        printf '%s' "no /docker/wa directory" > "$WA_DIR_MARK"; DISK_NOTE+=" · docker/wa: not present"; return 0
+    fi
+    listing="$(ls -A "$WA_DIR" 2>/dev/null | head -20 | tr '\n' ' ')"
+    # refuse if it looks like this stack (never delete the live system)
+    if grep -rqsE 'mdo_server|sharescfo|amanagrawal|MDO_AUTH_TOKEN' "$WA_DIR" 2>/dev/null; then
+        printf '%s' "refused: /docker/wa mentions the MDO stack ($listing)" > "$WA_DIR_MARK"
+        DISK_NOTE+=" · docker/wa REFUSED (looks like MDO): ${listing}"; return 0
+    fi
+    if [[ -n "$(ls "$WA_DIR"/docker-compose*.y*ml "$WA_DIR"/compose*.y*ml 2>/dev/null | head -1)" ]]; then
+        (cd "$WA_DIR" && docker compose -p wa down -v --rmi all >/dev/null 2>&1) || true
+    fi
+    local ids; ids="$(docker ps -a --filter 'label=com.docker.compose.project=wa' --format '{{.ID}}' 2>/dev/null)"
+    # shellcheck disable=SC2086
+    [[ -n "$ids" ]] && docker rm -f $ids >/dev/null 2>&1 || true
+    rm -rf --one-file-system "$WA_DIR" 2>/dev/null || true
+    if [[ -d "$WA_DIR" ]]; then note="could not remove all of /docker/wa"; else note="removed /docker/wa (was: ${listing})"; fi
+    printf '%s' "$note" > "$WA_DIR_MARK"
+    DISK_NOTE+=" · ${note}"
+    say "retire: ${note}"
     return 0
 }
 
