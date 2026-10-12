@@ -1104,7 +1104,8 @@ def summarise(rows: list[dict], calls: list[dict], levels: list[dict], accounts:
 
 def build_workbook(rows: list[dict], calls: list[dict], levels: list[dict], as_of: str | datetime,
                    accounts: list[dict] | None = None, summary: dict | None = None,
-                   positions: list[dict] | None = None, holders: dict[str, list[dict]] | None = None) -> bytes:
+                   positions: list[dict] | None = None, holders: dict[str, list[dict]] | None = None,
+                   analysis: dict | None = None) -> bytes:
     """The .xlsx Aman opens: Portfolio (grouped by holder, subtotals, Holder filter), Mausaji Calls,
     Positions (F&O/MTF/collateral), Levels, Summary. Frozen headers, Indian number formats, colours
     on flags and outcomes. Every cell is a value, never a formula that needs recalculation."""
@@ -1324,6 +1325,62 @@ def build_workbook(rows: list[dict], calls: list[dict], levels: list[dict], as_o
             fill(ws.cell(row=r, column=8), "hit_target" if status == "AT BUY" else "hit_stop")
     widths(ws, [14, 11, 11, 11, 14, 10, 10, 10, 26, 40, 8])
 
+
+    # ── share-analysis tabs (mdo_analysis.py): Entry Plan, Zones, Portfolio Check, Nifty 25000CE ──
+    an = analysis or {}
+    arows = an.get("rows") or []
+    run_line = (an.get("run") or {}).get("ran_at") or "no analysis run yet (POST /api/analysis/run)"
+    order = {"IN BUY ZONE": 0, "NEAR BUY ZONE": 1, "WAIT (above zone)": 2, "BELOW ZONE": 3}
+
+    def _hold_txt(r):
+        return ", ".join(f"{h['holder']} {int(h['qty'])}" + (f" @{round(h['avg'])}" if h.get("avg") else " @cost?") for h in (r.get("holders") or [])) or "-"
+
+    def _tab(title, cols, widths_, data, note):
+        w = wb.create_sheet(title)
+        w["A1"] = f"{title} - analysis run {run_line} - {note}"
+        w["A1"].font = Font(bold=True, size=12)
+        header(w, cols, 3)
+        w.freeze_panes = w.cell(row=4, column=1)
+        rr = 3
+        for vals in data:
+            rr += 1
+            for i, v in enumerate(vals, start=1):
+                c = w.cell(row=rr, column=i, value=v)
+                if isinstance(v, float):
+                    c.number_format = NUM
+        widths(w, widths_)
+        return w
+
+    def _ind(r, k):
+        return (r.get("ind") or {}).get(k)
+
+    good = [r for r in arows if r.get("ind")]
+    entry = sorted((r for r in good if not r.get("holders") and "mausaji" in (r.get("tags") or []) or (not r.get("holders") and r.get("zone") and r["zone"][1])),
+                   key=lambda r: (order.get(r.get("status"), 9), r["ticker"]))
+    _tab("Entry Plan", ["Ticker", "Source", "Status", "Last", "Zone low", "Zone high", "Entry from", "Entry to", "Invalidation (below)", "Trend", "RSI", "52w pos %", "Rel. volume",
+                        "Checks /5", "Why", "Fundamentals"], [12, 16, 18, 10, 10, 10, 10, 10, 12, 34, 7, 9, 9, 8, 46, 40],
+         [[r["ticker"], r.get("source") or "", r.get("status"), _ind(r, "last"), (r.get("zone") or [None, None])[0], (r.get("zone") or [None, None])[1],
+           r.get("entry_low"), r.get("entry_high"), r.get("invalidation"), r.get("trend"), _ind(r, "rsi"), _ind(r, "pos52"), _ind(r, "rvol"), r.get("checks"),
+           r.get("why"), r.get("fundamentals")] for r in entry],
+         "shares you do not hold; suggested entry band, no targets (capital-rules); a proposal, never an order")
+    near_buy = [r for r in good if r.get("status") in ("IN BUY ZONE", "NEAR BUY ZONE")]
+    near_sell = [r for r in good if str(r.get("sell", "")).startswith("NEAR SELL")]
+    zrows = [["NEAR BUY", r["ticker"], r.get("status"), _ind(r, "last"), r.get("entry_low"), r.get("entry_high"), _hold_txt(r), r.get("why")]
+             for r in sorted(near_buy, key=lambda r: (order.get(r.get("status"), 9), r["ticker"]))]
+    zrows += [["NEAR SELL", r["ticker"], r.get("sell"), _ind(r, "last"), None, None, _hold_txt(r), f"RSI {_ind(r, 'rsi')}, 52w pos {_ind(r, 'pos52')}%"] for r in near_sell]
+    _tab("Zones", ["Side", "Ticker", "Status", "Last", "Entry from", "Entry to", "Holder (qty @cost)", "Why"], [11, 12, 52, 10, 10, 10, 50, 50], zrows,
+         "near buy zone and near sell zone across portfolio and Mausaji list; sell zone only where a holder is in profit")
+    held = sorted((r for r in good if r.get("holders")), key=lambda r: r["ticker"])
+    _tab("Portfolio Check", ["Ticker", "Holder (qty @cost)", "Last", "Status vs zone", "Sell side", "Trend", "RSI", "52w pos %", "Rel. volume", "Add band from", "Add band to", "Fundamentals"],
+         [12, 54, 10, 22, 52, 34, 7, 9, 9, 10, 10, 40],
+         [[r["ticker"], _hold_txt(r), _ind(r, "last"), r.get("status"), r.get("sell"), r.get("trend"), _ind(r, "rsi"), _ind(r, "pos52"), _ind(r, "rvol"),
+           r.get("entry_low"), r.get("entry_high"), r.get("fundamentals")] for r in held],
+         "every share you hold; HOLD below cost, never book a loss; cost @0 means cost unknown")
+    nrows = an.get("nifty") or []
+    w = _tab("Nifty 25000CE", ["Day", "Nifty", "India VIX", "Recorded option LTP", "Recorded as of", "Model LTP (VIX as IV)", "Status", "Line"], [12, 10, 9, 14, 18, 14, 40, 120],
+             [[n.get("day"), n.get("spot"), n.get("vix"), n.get("recorded_ltp"), n.get("recorded_asof"), n.get("model_ltp"), n.get("status"), n.get("line")] for n in nrows],
+             "29-Dec-26 25000 CE, 29,250 qty bought at 222; Aman sells only above his buy price (222)")
+
     # ── Summary ──
     ws = wb.create_sheet("Summary")
     ws["A1"] = "Share Master — summary"
@@ -1445,6 +1502,8 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
     """Mount /api/share-master*, /api/levels/import. `levels` is mdo_levels.register()'s dict
     (levels_list + levels_set); without it the Levels tab is empty and import is refused."""
     import asyncio
+
+    hooks: dict[str, Any] = {"analysis_latest": None}
 
     async def ensure_schema(db=None):
         db = db if db is not None else await vdb()
@@ -1765,7 +1824,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
                   "ltp_missing_other": sorted(t for t in tickers if _num(ltps.get(t)) is None and t not in {h["ticker"] for h in holdings}), **st}
         if build:
             data = build_workbook(st["portfolio"]["rows"], st["calls"], lvls, now, st["portfolio"]["accounts"], st["summary"],
-                                  st["positions"], st["holders"])
+                                  st["positions"], st["holders"], await _analysis())
             db = await vdb()
             try:
                 path = await asyncio.to_thread(vault_write, data)
@@ -1790,6 +1849,13 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
                 "max_id": max((r["id"] for r in rows), default=int(since_id)),
                 "chat_total": int(dict(total[0])["n"]) if total else 0}
 
+    async def _analysis():
+        fn = hooks.get("analysis_latest")
+        try:
+            return await fn() if fn else None
+        except Exception:
+            return None
+
     # ── routes ──
     @app.get("/api/share-master")
     async def share_master_get():
@@ -1801,7 +1867,7 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
         now = datetime.now(IST)
         st = await state(None, now)
         data = build_workbook(st["portfolio"]["rows"], st["calls"], st["levels"], now, st["portfolio"]["accounts"], st["summary"],
-                              st["positions"], st["holders"])
+                              st["positions"], st["holders"], await _analysis())
         return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         headers={"Content-Disposition": f'attachment; filename="Share_Master_{now:%Y-%m-%d}.xlsx"'})
 
@@ -1981,6 +2047,6 @@ def register(app, vdb: Callable[[], Awaitable[Any]], levels: dict | None = None)
         return {"upserted": upserted, "errors": errors, "skipped": parsed["skipped"], "columns": parsed["columns"],
                 "count": len(upserted)}
 
-    return {"ensure_schema": ensure_schema, "state": state, "refresh": refresh, "calls_insert": calls_insert,
+    return {"hooks": hooks, "ensure_schema": ensure_schema, "state": state, "refresh": refresh, "calls_insert": calls_insert,
             "mausaji_messages": mausaji_messages, "outcomes_update": outcomes_update, "holdings_store": holdings_store,
             "positions_store": positions_store, "holders_map": holders_map}

@@ -3329,6 +3329,9 @@ mdo_brain.configure({"levels_list": _levels["levels_list"], "levels_set": _level
 # it is share-master-daily in mdo_agent.py; the workbook lands in the vault at finance/Share_Master.xlsx.
 import mdo_share_master
 _share_master = mdo_share_master.register(app, vdb, _levels)
+import mdo_analysis
+_analysis = mdo_analysis.register(app, vdb, _share_master)
+_share_master["hooks"]["analysis_latest"] = _analysis["latest"]
 
 # wa-sweep (Aman, chat 2026-10-09): rule-based sweep of the Mausaji chat and the site groups — reads the
 # message store above, keeps wa_sweep_state / wa_sweep_flags / wa_sweep_runs, /api/wa/sweep/*. Pushes go

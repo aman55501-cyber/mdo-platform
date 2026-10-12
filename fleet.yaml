@@ -793,6 +793,33 @@ bots:
     - Never trade or suggest a loss-booking exit (capital-rules)
     - Holder column on every line (Directive 18)
     - No LLM call, ever (Directive 15)
+- id: share-analysis
+  name: Share analysis — entry zones, near-buy and near-sell for the portfolio, positions and Mausaji's list; Nifty 25000CE tracker
+  runs_on: vps-cron
+  provider: none
+  command: docker compose exec -T backend python mdo_agent.py share-analysis
+  cadence: Mon-Fri 08:40 IST and Saturday 10:00 IST
+  model: none
+  heartbeat: 'every run: "share-analysis: N shares analysed (ok, no data) · I in buy zone, B near buy zone, S near sell zone (profit holders only) · Nifty 25000CE: <line>"'
+  checks: []
+  serves: [capital-rules, algo-trading]
+  enabled: true
+  objective: keep the Share Master tabs Entry Plan, Zones, Portfolio Check and Nifty 25000CE current (Aman, chat 2026-10-12)
+  charter:
+    purpose: Suggest an entry band for every share Aman does not own, flag what is near a buy zone and near a sell zone, and track the Nifty 25000 CE daily.
+    thinks: 'Rules only, from one year of daily bars: 20/50/200-day averages, RSI14, ATR14, 52-week position, 20-day swing low, 60-day swing high, relative volume.
+      Buy side: Mausaji''s zone vs price (in zone, near zone within 4 percent, wait, below zone), entry band at the zone or nearest support, invalidation below the 20-day
+      swing low or 1.5 ATR. Sell side: a ZONE only, never a target, and only where a holder is in profit. Fundamentals are not computed: Yahoo refuses this server.'
+    works: 'Yahoo daily bars through the server (v8 chart), tables analysis_runs, analysis_rows, nifty_ce_log; the four tabs are written into Share_Master.xlsx at the next
+      Share Master refresh. POST /api/analysis/run, GET /api/analysis/latest.'
+    limits: Technical only. Prices are last close, not live. Sees no fundamentals, news or earnings dates. Never an order, never a target price.
+    minimum_output: One heartbeat per run, also when a market is shut.
+    rules:
+    - Never book a loss; below-cost holders are HOLD (capital-rules)
+    - No fixed targets (capital-rules)
+    - Holder column on every list (Directive 18)
+    - Nifty 25000 CE: sell only above 222 (Aman, 2026-10-12)
+    - No LLM call (Directive 15)
 - id: daily-plan
   name: Daily plan — today's objectives each morning, planned-vs-actual each evening, where the fault lay
   runs_on: vps-cron

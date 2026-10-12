@@ -334,7 +334,7 @@ def test_build_workbook_five_sheets_grouped_by_holder():
     data = sm.build_workbook(rows, _calls(), levels, FRI, acc, positions=sm.position_rows(POSITIONS, FRI),
                              holders={"TCS": [{"holder": "HDFC1", "qty": 100}]})
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Summary"]
+    assert wb.sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Entry Plan", "Zones", "Portfolio Check", "Nifty 25000CE", "Summary"]
     ws = wb["Portfolio"]
     assert ws["A1"].value == "Portfolio — as of 09 Oct 2026 15:45 IST"
     notes = [ws.cell(row=i, column=1).value for i in range(2, 6)]
@@ -373,7 +373,7 @@ def test_build_workbook_five_sheets_grouped_by_holder():
     assert "Top gainers" in vals and "Top losers" in vals and "Mausaji calls" in vals and "Positions (account)" in vals and "ALL ACCOUNTS" in vals
     # empty inputs still produce a valid file with every sheet
     wb2 = load_workbook(io.BytesIO(sm.build_workbook([], [], [], "n/a")))
-    assert wb2.sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Summary"]
+    assert wb2.sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Entry Plan", "Zones", "Portfolio Check", "Nifty 25000CE", "Summary"]
     assert "No broker account answered" in wb2["Portfolio"]["A2"].value and "No positions on file" in wb2["Positions"]["A2"].value
 
 
@@ -522,7 +522,7 @@ def test_share_master_endpoints(monkeypatch, tmp_path):
     # the download is a real workbook with every sheet
     r = c.get("/api/share-master/xlsx")
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/vnd.openxmlformats") and "Share_Master_" in r.headers["content-disposition"]
-    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Summary"]
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Portfolio", "Mausaji Calls", "Positions", "Levels", "Entry Plan", "Zones", "Portfolio Check", "Nifty 25000CE", "Summary"]
 
     # Mausaji messages: the chat by display name (any case, both accounts), his side only, after the watermark
     ids = _seed_messages()
