@@ -56,7 +56,7 @@ objectives:
     click_needed: "bid decision (CHIEF_OF_STAFF.md §1.4)"
     notes:
       - "Aman, chat 2026-10-11: scope is tenders for ROM coal and washed coal, both RCR and supply. Previously (2026-10-09): washing and RCR only. The 'win ONE washing + ONE RCR contract' goal above is unchanged."
-      - "Aman, chat 2026-10-12: focus on tenders within a 150 km radius where rail+road landed cost is competitive; road-only tenders are out unless VWLR sits geographically between the mine and the plant. [Wording as received; 'rail plus road cost in under' threshold not stated, asked 2026-10-12.]"
+      - "Aman, chat 2026-10-12: focus on tenders within a 150 km radius where rail+road landed cost is competitive; the edge is tenders where the MINE or the PLANT is within 150 km of VWLR (PFT siding, 3 rail lines). Corrected by Aman 2026-10-12: previously read as a tender-location radius with road-only excluded. Reference point Raigarh town until the siding station is named."
   - id: hotel-renovation-contract
     title: "Hotel ANS International: only two agenda points — renovation, and closing the management contract with Guptasons (Sameer). Operations and sales are no longer the fleet's concern."
     owner: Aman
