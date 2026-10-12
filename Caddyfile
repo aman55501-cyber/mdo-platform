@@ -39,6 +39,16 @@
 		reverse_proxy sharescfo:8000
 	}
 
+	# The broker login page (Shares CFO): the Today page's "Log in to all accounts" button goes to /login?token=...,
+	# and that page posts to /accounts/add and links to /hdfc/login. All need the CFO token. MDO has no /login or /accounts page.
+	# Aman, chat 2026-10-12: the link returned 404 because only /hdfc/* was routed.
+	handle /login {
+		reverse_proxy sharescfo:8000
+	}
+	handle /accounts* {
+		reverse_proxy sharescfo:8000
+	}
+
 	handle {
 		reverse_proxy frontend:3000
 	}

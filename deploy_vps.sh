@@ -265,6 +265,16 @@ step_up() {
         services+=(frontend)
     fi
     docker compose up -d --build "${services[@]}" || { git rev-parse HEAD > "$FAILED_FILE" 2>/dev/null || true; die "docker compose up failed"; }
+    # Caddy is not rebuilt, and a single-file bind mount keeps the OLD file after git rewrites it: recreate Caddy only when the Caddyfile changed
+    # (certificates live in the caddy_data volume, downtime is a couple of seconds). 2026-10-12: /login and /accounts routes for the broker login page.
+    local chash; chash="$(sha256sum Caddyfile 2>/dev/null | cut -d' ' -f1)"
+    if [[ -n "$chash" && "$chash" != "$(cat /var/lib/mdo/caddy_hash 2>/dev/null)" ]]; then
+        if docker compose up -d --force-recreate caddy >/dev/null 2>&1; then
+            printf '%s' "$chash" > /var/lib/mdo/caddy_hash; say "caddy recreated for a changed Caddyfile"
+        else
+            say "WARNING: caddy recreate failed - the old routes are still serving"
+        fi
+    fi
     git rev-parse HEAD > "$DEPLOYED_FILE"
     rm -f "$FAILED_FILE"
     SERVICES_UP="${services[*]}"

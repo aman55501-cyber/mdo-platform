@@ -109,3 +109,17 @@ def test_watchdog_wiring_caddy_middleware_and_doc():
     assert "UptimeRobot" in sec and "https://amanagrawal.cloud/api/health/public" in sec
     assert '"ok":true' in sec and "5 minutes" in sec and "aman.55501@gmail.com" in sec and "45 minutes" in sec
     assert "+91" not in sec                                                     # no phone number in the doc
+
+
+def test_caddy_routes_the_broker_login_page_to_shares_cfo():
+    """The Today page's 'Log in to all accounts' button opens /login on the main host; without these routes it was a 404 (2026-10-12)."""
+    caddy_path = os.path.join(ROOT, "Caddyfile")
+    if not os.path.exists(caddy_path):
+        return
+    caddy = open(caddy_path, encoding="utf-8").read()
+    main = caddy.split("# Optional split-hostname")[0]
+    for path in ("/login", "/accounts*", "/hdfc/*"):
+        block = main.split(f"handle {path} {{")[1].split("}")[0]
+        assert "reverse_proxy sharescfo:8000" in block, path
+    deploy = open(os.path.join(ROOT, "deploy_vps.sh"), encoding="utf-8").read()
+    assert "force-recreate caddy" in deploy and "caddy_hash" in deploy
