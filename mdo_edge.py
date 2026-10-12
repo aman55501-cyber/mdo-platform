@@ -2,14 +2,13 @@
 my geographical location, those are the only tenders I have an edge on" (VWLR has a PFT siding with 3 rail lines).
 
 Pure rules, no network. Coordinates are town centres geocoded with Open-Meteo on 2026-10-12 (verified for the towns listed with 'geo'); mine and plant
-sites are matched to the nearest listed town, which is approximate [UNVERIFIED for the exact site]. Reference point = Raigarh town until Aman names the
-siding station. Straight-line km. 150 km straight-line is already a longer road; the 150-180 band is flagged BORDERLINE."""
+sites are matched to the nearest listed town, which is approximate [UNVERIFIED for the exact site]. Reference point = Chaple (VWLR siding, station code VWLR). Straight-line km. 150 km straight-line is already a longer road; the 150-180 band is flagged BORDERLINE."""
 from __future__ import annotations
 
 import math
 import re
 
-REF = (21.89764, 83.3966, "Raigarh town (siding station not yet given)")
+REF = (21.98294, 83.19356, "Chaple, Kharsia block, Raigarh district (VWLR siding; Open-Meteo geocode 2026-10-12; Aman: Chaple is 1.2 km from the Vedanta substation)")
 EDGE_KM = 150.0
 BORDER_KM = 180.0
 

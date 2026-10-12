@@ -40,7 +40,7 @@ def main(export_path, out_path):
         ("Competitor tender master: edge, road and rail cost", True),
         ("EDGE RULE (yours): VWLR has a PFT siding with 3 rail lines. A tender is an edge only if the MINE or the PLANT is within 150 km of VWLR. Everything else is context on rivals.", False),
         ("Edge = Yes (an end within 150 km straight-line) | Borderline (150-180 km, about 150 km by road) | No (known ends all far) | Unknown (an end could not be identified from the title).", False),
-        ("Locations: mine and plant are matched from the tender title to the nearest listed town. Town coordinates were geocoded on 2026-10-12; the exact mine site is approximate [UNVERIFIED]. Reference point is Raigarh town until you name your siding's railway station (Settings).", False),
+        ("Locations: mine and plant are matched from the tender title to the nearest listed town. Town coordinates were geocoded on 2026-10-12; the exact mine site is approximate [UNVERIFIED]. Reference point is Chaple, Kharsia block (your VWLR siding).", False),
         ("Costs per tonne: ROAD = near-end km x road factor x your road rate (+GST, +handling). RAIL = FOIS class 145A base tariff for the far-end km when that end is known, plus GST. FOIS excludes surcharges and siding charges. No tonnage is in the export, so no per-contract figures.", False),
         ("Winner's own cost is unknown: this sheet shows where freight could have been your lever, not who would have won.", False),
         ("Yellow cells are inputs. Everything else is a formula.", False),
@@ -64,7 +64,7 @@ def main(export_path, out_path):
         ("Minimum road Rs per tonne", None, "Blank = no minimum."),
         ("Minimum haul km", 25, "Floor for a same-town haul [UNVERIFIED]."),
         ("Edge radius km", mdo_edge.EDGE_KM, "Your rule: 150 km."),
-        ("Reference point", mdo_edge.REF[2], "Give me your siding's railway station and I will re-run from it."),
+        ("Reference point", mdo_edge.REF[2], "Chaple, Kharsia (VWLR). Town-centre geocode; siding is within about 1-2 km of it."),
     ]
     for r, row in enumerate(rows, 2):
         for c, v in enumerate(row, 1):
