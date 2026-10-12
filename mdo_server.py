@@ -3476,6 +3476,11 @@ _notes = mdo_notes.register(app, vdb)
 mdo_brain.configure({"note_add": lambda title, body, tags="", source="brain": _notes["add_note"](title, body, tags, source),
                      "notes_list": _notes["list_notes"], "note_get": _notes["get_note"]})
 
+# freight: landed cost to the plant, rail and road, saved lanes with the rate's source and date (Brain tools landed_cost / save_freight_lane)
+import mdo_freight
+_freight = mdo_freight.register(app, vdb)
+mdo_brain.configure({"landed_cost": _freight["compute"], "freight_lane_set": _freight["lane_set"], "freight_lanes": _freight["lanes"]})
+
 # today: one JSON for the phone page (/today in the app)
 import mdo_today
 def _logins_payload() -> dict:

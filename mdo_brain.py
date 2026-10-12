@@ -441,6 +441,31 @@ TOOLS: list[dict] = [
                          "required": ["title", "body"], "additionalProperties": False},
     },
     {
+        "name": "landed_cost",
+        "description": ("Landed cost per tonne of coal delivered to a plant, rail vs road, for a tender or an offer: coal cost at the source gate + transit loss + freight + handling "
+                        "+ GST on freight; compares modes against the plant's ceiling price and says BID / THIN / SKIP. Use saved lanes (road_lane, rail_lane) when Aman has saved "
+                        "them, else his numbers from the chat. NEVER invent a rate: if one is missing the tool says which; offer illustrative=true only to show a sensitivity and say "
+                        "the figures are assumptions. Freight is the deciding factor Aman uses (2026-10-12)."),
+        "input_schema": {"type": "object", "properties": {
+            "coal_cost_per_t": {"type": "number"}, "ceiling_price_per_t": {"type": "number"}, "tonnage": {"type": "number"},
+            "modes": {"type": "array", "items": {"type": "string", "enum": ["road", "rail", "rail+road"]}},
+            "road_lane": {"type": "string"}, "rail_lane": {"type": "string"}, "road_km": {"type": "number"}, "road_rate_per_t_km": {"type": "number"},
+            "road_rate_per_t": {"type": "number"}, "rail_rate_per_t": {"type": "number"}, "rail_siding_per_t": {"type": "number"},
+            "loading_per_t": {"type": "number"}, "unloading_per_t": {"type": "number"}, "sampling_per_t": {"type": "number"},
+            "transit_loss_pct": {"type": "number"}, "gst_freight_pct": {"type": "number"}, "gst_credit": {"type": "boolean"}, "min_margin_pct": {"type": "number"},
+            "illustrative": {"type": "boolean"},
+            "washing": {"type": "object", "properties": {"yield_pct": {"type": "number"}, "wash_cost_per_t_feed": {"type": "number"}, "rejects_value_per_t_feed": {"type": "number"}}}},
+            "additionalProperties": False},
+    },
+    {
+        "name": "save_freight_lane",
+        "description": "Save a freight rate Aman gives (a lane such as 'KMKA to VWLR rail' or 'VWLR to RKM road') with its source, so landed_cost can reuse it. Only what he states.",
+        "input_schema": {"type": "object", "properties": {"lane": {"type": "string"}, "mode": {"type": "string", "enum": ["road", "rail"]}, "origin": {"type": "string"},
+                                                          "destination": {"type": "string"}, "distance_km": {"type": "number"}, "rate_per_t": {"type": "number"},
+                                                          "rate_per_t_km": {"type": "number"}, "min_per_t": {"type": "number"}, "source": {"type": "string"}},
+                         "required": ["lane", "mode"], "additionalProperties": False},
+    },
+    {
         "name": "list_notes",
         "description": "Aman's saved research notes, newest first; pass q to search title, body and tags.",
         "input_schema": {"type": "object", "properties": {"q": {"type": "string"}, "limit": {"type": "integer"}}, "additionalProperties": False},
@@ -585,6 +610,10 @@ async def _dispatch(name: str, a: dict) -> Any:
         return await tb["notes_list"](a.get("q", ""), int(a.get("limit", 20)))
     if name == "get_note":
         return await tb["note_get"](int(a["note_id"]))
+    if name == "landed_cost":
+        return await tb["landed_cost"](a)
+    if name == "save_freight_lane":
+        return await tb["freight_lane_set"](a)
     raise ValueError(f"unknown tool: {name}")
 
 
