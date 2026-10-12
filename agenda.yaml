@@ -77,6 +77,7 @@ objectives:
     rules:
       - "No fixed targets"
       - "Never book a loss"
+      - "Aman, chat 2026-10-12: sell the Nifty 29-Dec-26 25000 CE (29,250 qty, bought at 222, account AA) only when its price is above his buy price of 222. Until then no sale; reminders of this are shown with the position"
       - "Patient: average a position only if there is scope to exit later"
       - "Trade suggestions only at >80% conviction"
       - "Crude and major global factors are the prime market drivers to watch"
