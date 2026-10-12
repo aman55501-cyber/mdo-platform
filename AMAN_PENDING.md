@@ -19,8 +19,8 @@ over, and removes an item only when Aman says so. Never trimmed by housekeeping.
 | A35 | Partner name for the solar-battery plant: due 2026-10-22 (Aman) | desk check + viability report start that day | 2026-10-11 |
 | A36 | Three hires: send 5 facts per role (location and joining date, salary, full-time or contract, who interviews, disqualifiers) for Tender Specialist, Lead Accountant, Civil Engineer; then post the ads. briefs/HIRING_3_ROLES_FAST.md | offers by 17 Oct | 2026-10-11 |
 | A20 | Las Vegas trip 10–12 Nov: confirm travellers/origin/class/hotel band, check US visas, then book flight + hotel (briefs/TRIP_LAS_VEGAS_2026-11.md) | money moves = your click | 2026-10-09 |
-| A38 | Email or attach Ganga Prasad's CV (WhatsApp copy is not saved on the server); he comes tomorrow morning; scorecard in briefs/MIS_HIRE_GANGA_PRASAD.md | MIS hire | 2026-10-11 |
-| A39 | Confirm Mausaji reading: sender is Mausaji? "Shell 590/620" = sell? (briefs/MAUSAJI_CALL_EXAMPLES.md); the "Bantu Mausaji" chat is not stored by the server | Mausaji calls | 2026-10-11 |
+| A38 | Ganga Prasad's CV: it is on Aman's PC, which the CoS cannot open - attach it in the chat or email it to aman.55501@gmail.com; interview 12 Oct 11:00; scorecard in briefs/MIS_HIRE_GANGA_PRASAD.md | MIS hire | 2026-10-11 |
+| A39 | Mausaji list confirmed by Aman 2026-10-12 (128 stocks). Open: is "Shell 590/620" = sell 590-620? (briefs/MAUSAJI_CALL_EXAMPLES.md) | Mausaji calls | 2026-10-11 |
 | A40 | 5 voice notes to WhatsApp "Message yourself" (plan, site update with numbers, share instruction, task for me, tender question) | voice test | 2026-10-11 |
 | A41 | Washery civil drawings from the WhatsApp group; reminder 12 Oct 1 pm | business twin | 2026-10-11 |
 | A42 | Answers: share tips scope and time; algo broker, max per order, max daily loss; buyer type; trip travellers | focus tasks | 2026-10-11 |
