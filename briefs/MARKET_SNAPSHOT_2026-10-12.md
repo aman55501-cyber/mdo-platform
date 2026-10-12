@@ -38,7 +38,7 @@ Reading (mine, not a forecast): risk-on into the open; the US 10-year at 5.24% a
 
 ## Today's trade ideas
 Your rule: only above 80% conviction, you approve each order, never book a loss, holder column shown. I cannot certify any idea as 80% likely; what I can do is show which ones pass every check below. **Two pass all four checks. Nothing is placed.**
-Checks: (1) a dated, named zone from Mausaji's own call; (2) price inside that zone; (3) not within 30% of its 52-week high-end chase (position in the 52-week range under 70%); (4) up on the day on volume, not under heavy bulk selling.
+Checks: (1) a dated, named zone from Mausaji's own call; (2) price inside that zone; (3) not chasing (price in the lower 70% of its 52-week range); (4) up on the day on volume, not under heavy bulk selling.
 
 | # | Stock | Price | Zone | Holders now (cost) | Why it passes | Risk |
 |---|---|---|---|---|---|---|
