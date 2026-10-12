@@ -115,3 +115,10 @@ def test_accounts_page_files_exist():
     src = open(p, encoding="utf-8").read()
     assert 'type={f.secret ? "password" : "text"}' in src and "aria-label" in src and "Cowork" in src
     assert "/api/broker/accounts/add" in src and "setVals({})" in src                 # the keys are cleared after sending
+
+
+def test_hdfc_login_without_keys_is_a_clear_message_not_a_500():
+    import inspect
+    from shares_cfo import server
+    src = inspect.getsource(server.hdfc_login)
+    assert "_ConfigError" in src and "409" in src

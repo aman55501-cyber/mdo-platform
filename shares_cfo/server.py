@@ -18,7 +18,9 @@ Run (bind 0.0.0.0 so your phone can reach it):
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+from .config import ConfigError as _ConfigError
 import logging
 import os
 
@@ -2428,7 +2430,11 @@ async def hdfc_login(request: Request, key: str = "HDFC1", token: str | None = Q
     """Phone login: redirects you to HDFC's 2FA. After you approve, HDFC calls
     /hdfc/callback and the server arms itself — no PC needed. Protected by the token."""
     _check_token(request, token)
-    account = load_account(key)
+    try:
+        account = load_account(key)
+    except _ConfigError:
+        # Keys not entered yet: say so plainly instead of a bare 500 (Aman saw "internal server error", 2026-10-12).
+        return HTMLResponse(f"<h3>{html.escape(key)} has no keys yet.</h3><p>Open Broker accounts, add this account's API key and secret, then log in again.</p>", status_code=409)
     token_store.set_pending(key)  # remember which account this login is for
     return RedirectResponse(f"{account.base_url}/login?api_key={account.api_key}")
 
