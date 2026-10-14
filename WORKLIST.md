@@ -15,5 +15,7 @@ Share, investing and crypto items are excluded on purpose (Grok's lane).
 - [ ] P8 | BESS venture viability + prep for REI & Battery Expo, Greater Noida, 22-24 Oct | Claude | 22 Oct 2026 | Expo dates from Aman's note
 - [ ] P9 | Set up the civil QC engineer agent (Cowork) | Claude + Aman | - | Needs: which civil works are live (washery / hotel renovation / solar base)
 - [ ] P10 | Hire Group Finance Controller (CA, 5-7 yrs, multi-industry) | Aman | - | Needs: scope confirmation, whole group + Raipur-based. CTC range is an unverified estimate
+- [ ] P11 | Run scripts/wa_analyze.py on the VPS (needs MDO_BASE_URL + MDO_AUTH_TOKEN), review group list vs agents/ROSTER.md | Aman | - | Real group names and traffic are UNVERIFIED until this runs
+- [ ] P12 | Build virtual professionals 2-4 (accounts analyst, dispatch controller, compliance clerk) after civil QC | Claude | - | Needs P9 answers first
 
 ## Done
