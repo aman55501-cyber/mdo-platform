@@ -65,5 +65,15 @@ Concrete (grade, slump, cubes arranged) / Weather, manpower, spare vibrator, cur
 Registers: pour register (date, location, grade, m3, cube IDs), cube register with results, material receipt register with mill/test certificates, measurement book.
 Payment rule: no RA bill is released unless every line traces to a measurement and a pour card.
 
+## Washery internal infrastructure (live now)
+Work packages: CC road, CC platform, drainage, weighbridge. Final washery drawings: NOT yet received [UNVERIFIED until uploaded].
+- CC road/platform: subgrade compaction proof, WMM/granular base thickness, PQC grade and thickness as drawn, dowels/tie bars, joint spacing and timely cutting, curing, surface level/camber (IRC:58, IRC:15; check current editions). Platform for heavy loading: slab thickness and reinforcement per drawing.
+- Drainage: invert levels and gradient to outfall (check by level survey), section dimensions, cover/lining, no ponding, silt traps, discharge point approved. Washery slurry drainage: exposure class severe, sulphate-resistant cement question to the consultant.
+- Weighbridge: pit/foundation per the OEM drawing, drainage of the pit, approach slabs level, load-cell and indicator per OEM, calibration/verification and stamping under Legal Metrology before commercial use [clause UNVERIFIED], certificate on file.
+- Structural items in these packages still need the structural engineer's sign-off.
+
+## Needed from Aman
+Final washery drawings (GA/layout, structural, foundations, drainage plan, road/platform sections, weighbridge pit), BOQ with rates, geotechnical report, approved mix designs, specification/tender conditions, the contractor agreements and RA bill register, consultant names, the supervisor's name and WhatsApp group, and which packages are being poured this week.
+
 ## Reporting limits
 Every claim cites its source file and, for standards, the clause. Missing evidence is [UNVERIFIED], never assumed.

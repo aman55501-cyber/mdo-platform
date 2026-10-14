@@ -9,13 +9,19 @@ Share, investing and crypto items are excluded on purpose (Grok's lane).
 - [ ] P2 | Water sprinkling across the whole siding | site team | - | Needs an owner and a weekly report line
 - [ ] P3 | Civil structure strength testing, all phases | Aman + site | - | Cube/rebar/pour registers first; structural engineer signs off anything structural
 - [ ] P4 | List all Vedanta assets and liabilities; set weekly/monthly reconciliation | Aman -> accountant | - | Ground truth must be a file; design the template first
-- [ ] P5 | Find washery buyers, start first contact | Aman | - | Open question: offtake buyers (washed coal) or buyers for the washery itself? Needs P4 numbers
+- [ ] P5 | (DEFERRED by Aman) Washery buyers | Aman | - | Revisit after current work is sorted
 - [ ] P6 | Solar feasibility report + non-DCR panel deadline (31 Dec 2026) trail | Claude | 31 Dec 2026 | Key question: behind-the-meter only, or net-meter/export to CSPDCL? [MNRE OM details are UNVERIFIED: from a pasted note, read the OM text]
 - [ ] P7 | Prep for hotel management contract meeting with Sameer (Guptasons) | Claude | after Dussehra [date UNVERIFIED] | Needs the draft contract and your fallback positions
 - [ ] P8 | BESS venture viability + prep for REI & Battery Expo, Greater Noida, 22-24 Oct | Claude | 22 Oct 2026 | Expo dates from Aman's note
 - [ ] P9 | Set up the civil QC engineer agent (Cowork) | Claude + Aman | - | Needs: which civil works are live (washery / hotel renovation / solar base)
-- [ ] P10 | Hire Group Finance Controller (CA, 5-7 yrs, multi-industry) | Aman | - | Needs: scope confirmation, whole group + Raipur-based. CTC range is an unverified estimate
+- [ ] P10 | Hire Group Finance Controller: scope CONFIRMED (whole group, Raipur). JD, band, paid test in hiring/CONTROLLER_JD.md | Aman | - | Next: ask Vimal ji for referrals, post on ICAI portal/LinkedIn, verify band with two live offers
 - [ ] P11 | Run scripts/wa_analyze.py on the VPS (needs MDO_BASE_URL + MDO_AUTH_TOKEN), review group list vs agents/ROSTER.md | Aman | - | Real group names and traffic are UNVERIFIED until this runs
 - [ ] P12 | Build virtual professionals 2-4 (accounts analyst, dispatch controller, compliance clerk) after civil QC | Claude | - | Needs P9 answers first
+- [ ] P13 | Upload final washery drawings, BOQ, geotech report (not received yet) | Aman | - | Unblocks civil QC for CC roads, CC platform, drainage, weighbridge
+- [ ] P14 | WhatsApp front end: do setup steps 1-6 in docs/WHATSAPP_FRONTEND.md, then say "build the router" | Aman + Claude | - | Meta Business verification takes days: start now
+- [ ] P15 | Send asset registers so I can fill docs/ENTITY_PHYSICAL_MAP.md (hotel, real estate, vehicles, land) | Aman | - | Gives cash-freed ranking
+- [ ] P16 | Send 3 months HT electricity bills + connection type for solar sizing (docs/SOLAR_SIZING.md): 1 MW covers ~25% of the load | Aman | - | Decides the real plant size
+- [ ] P17 | Commit or delete tests/test_housekeeping.py (branch claude/ecstatic-mccarthy-u50za9); decide Life OS repo location; decide CFO MCP PR | Aman | - | See docs/SESSION_INDEX.md
+- [ ] P18 | Confirm 21-25 Oct travel (flight + hotel) for the Greater Noida expo is booked | Aman | 21 Oct | Last advice: book a 17:00-19:00 non-stop, up to about Rs 8,500
 
 ## Done
