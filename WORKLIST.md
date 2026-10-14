@@ -5,8 +5,8 @@ Ground truth for the open-tasks band (mod `mdo-tasks`). One line per task:
 Share, investing and crypto items are excluded on purpose (Grok's lane).
 
 ## Open
-- [ ] P1 | Sell the remaining 12 vehicles | Tushar (assigned 14 Oct) | - | Tushar to send: reg no., make/year, hypothecation/loan status, RC and insurance validity, location, asking price, buyer leads [UNVERIFIED: none on file]
-- [ ] P2 | Water sprinkling across the whole siding | Tushar (assigned 14 Oct) | - | Tushar to send: plan (tanker/hydrant/sprinkler points), equipment on hand, weekly status line
+- [ ] P1 | Sell the remaining 12 vehicles | Tushar (assigned 14 Oct) | this week | Tushar coordinates with the Hyderabad party. Tushar to send: reg no., make/year, hypothecation/loan status, RC and insurance validity, location, asking price, buyer leads [UNVERIFIED: none on file]
+- [ ] P2 | Water sprinkling across the whole siding | UNASSIGNED (Tushar cannot take it, 14 Oct) | - | New owner to send: plan (tanker/hydrant/sprinkler points), equipment on hand, weekly status line
 - [ ] P3 | Civil structure strength testing, all phases | Aman + site | - | Cube/rebar/pour registers first; structural engineer signs off anything structural
 - [ ] P4 | List all Vedanta assets and liabilities; set weekly/monthly reconciliation | Akash (assigned 14 Oct; message drafted) | - | Template: templates/VEDANTA_ASSETS_LIABILITIES_REGISTER.xlsx (Assets, Liabilities, Recon_Log). Akash returns it every Saturday
 - [ ] P5 | (DEFERRED by Aman) Washery buyers | Aman | - | Revisit after current work is sorted
