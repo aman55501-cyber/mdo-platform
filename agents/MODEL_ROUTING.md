@@ -19,3 +19,13 @@ Rules
 5. A mod cannot switch the Claude model by itself. Switching is set per session (`/model`), per subagent, and per routine (`model` field). The `mdo-rules` mod carries rule 1-3 as text.
 6. Backend: make `mdo_brain.py` read the model from an env var (default today `claude-opus-5`; set to Sonnet, escalate on request). Not changed yet; one-line edit, awaiting your yes.
 7. Check `/usage` before starting anything large. Heavy builds go in the first days after a limit reset, not the last.
+
+## Where each rule is enforced (what can and cannot be automated)
+| Product | Automatic? | How |
+|---|---|---|
+| Claude Code | YES, with the `mdo-router` mod loaded | classifies each turn (quick / routine / build / judgement), sets model and effort per request; default Sonnet, Opus only for judgement; steps back down after 2 calm turns; `/route on\|off\|status`; `!opus`, `!sonnet`, `!haiku` forces one turn. Subagents and anything you set with `/model` outside the mod are not touched. |
+| Routines (cloud, scheduled) | Set once | the routine's `model` field (default Sonnet) |
+| MDO backend brain | Set once | make `mdo_brain.py` read the model from an env var (not done yet; today it is Opus for every chat) |
+| Cowork | NO | no mod or API reaches it. Set the project's model in its model picker: Sonnet default; Opus only for contract, structural-flag or capital-allocation sessions |
+| Claude chat (claude.ai / app) | NO | same: pick the model per conversation |
+Caveat: switching model mid-conversation re-bills the cached prefix, so the router switches rarely and only steps down after 2 calm turns.

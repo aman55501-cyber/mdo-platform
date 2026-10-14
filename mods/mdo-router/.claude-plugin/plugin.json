@@ -1,0 +1,10 @@
+{
+  "name": "mdo-router",
+  "version": "0.1.0",
+  "description": "Routes each Claude Code turn to the cheapest capable model and effort; escalates only for high-stakes judgement",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "defaultModel": { "type": "string", "title": "Default model alias", "description": "Used for most work", "default": "sonnet" },
+    "heavyModel": { "type": "string", "title": "Heavy model alias", "description": "Only for judgement-heavy turns", "default": "opus" }
+  }
+}
