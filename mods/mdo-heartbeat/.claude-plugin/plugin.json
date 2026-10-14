@@ -1,0 +1,26 @@
+{
+  "name": "mdo-heartbeat",
+  "version": "0.1.0",
+  "description": "Status line + /runs: every MDO automation's last run, stale or never-run flagged, 'nothing found' shown as alive",
+  "userConfig": {
+    "baseUrl": {
+      "type": "string",
+      "title": "MDO base URL",
+      "description": "Where the MDO backend answers /api/checks, e.g. https://your-host (no trailing slash)",
+      "default": ""
+    },
+    "token": {
+      "type": "string",
+      "title": "MDO key (MDO_AUTH_TOKEN)",
+      "description": "Sent as X-MDO-Key. Leave empty if the backend has no token set.",
+      "sensitive": true,
+      "default": ""
+    },
+    "pollMinutes": {
+      "type": "number",
+      "title": "Poll every N minutes",
+      "description": "How often to re-check the registry",
+      "default": 10
+    }
+  }
+}

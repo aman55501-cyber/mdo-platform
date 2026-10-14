@@ -1,0 +1,5 @@
+{
+  "name": "mdo-rules",
+  "version": "0.1.0",
+  "description": "Adds Aman's operating rules to the system prompt of every session"
+}

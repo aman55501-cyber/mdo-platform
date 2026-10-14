@@ -1,0 +1,9 @@
+{
+  "name": "mdo-tasks",
+  "version": "0.1.0",
+  "description": "Open-tasks band under every reply, from WORKLIST.md: expand, refresh, tick done",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "file": { "type": "string", "title": "Worklist file", "description": "Path to the worklist, relative to the working directory", "default": "WORKLIST.md" }
+  }
+}

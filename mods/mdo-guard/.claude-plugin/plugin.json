@@ -1,0 +1,20 @@
+{
+  "name": "mdo-guard",
+  "version": "0.1.0",
+  "description": "Blocks outbound messages, money moves, signatures, regulator filings, secret leaks and share-lane edits until Aman types /go",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "allowHosts": {
+      "type": "string",
+      "title": "Allowed POST hosts",
+      "description": "Comma-separated hosts Bash may POST to without /go (localhost and your own MDO host are always allowed)",
+      "default": ""
+    },
+    "baseUrl": {
+      "type": "string",
+      "title": "MDO base URL",
+      "description": "Your MDO backend URL, so its host is always allowed",
+      "default": ""
+    }
+  }
+}

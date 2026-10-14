@@ -26,4 +26,5 @@ If anything you built or learned changes investable capital (cash need, EMD, cap
 - Never invent data. Every number has a source; else [UNVERIFIED].
 - Every recommendation ends with RISK and REWARD lines.
 - Silence is a failure: every scheduled job reports each run.
+- End every reply with an OPEN list: incomplete tasks from WORKLIST.md plus anything this reply left undone.
 - Indian English, ₹ in L/Cr, times in IST.

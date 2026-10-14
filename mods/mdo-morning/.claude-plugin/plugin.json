@@ -1,0 +1,10 @@
+{
+  "name": "mdo-morning",
+  "version": "0.1.0",
+  "description": "/morning: one pane with today's briefing and the automation heartbeat",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "baseUrl": { "type": "string", "title": "MDO base URL", "description": "e.g. https://your-host (no trailing slash)", "default": "" },
+    "token": { "type": "string", "title": "MDO key (MDO_AUTH_TOKEN)", "description": "Sent as X-MDO-Key", "sensitive": true, "default": "" }
+  }
+}
