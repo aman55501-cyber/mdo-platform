@@ -63,7 +63,7 @@ export function classify(tool: string, input: Input, allowed: readonly string[])
     if (/(^|[\s;&|])(cat|less|more|head|tail|grep|sed|awk|cp|scp|rsync|base64|xxd)\s[^|;&]*\.env(\s|$|["'])/.test(cmd) &&
         !/\.env\.example/.test(cmd)) return 'reading .env (secrets never printed)'
     if (/\bgit\s+add\b[^;&|]*\.env(\s|$)/.test(cmd) && !/\.env\.example/.test(cmd)) return 'staging .env'
-    if (/\b(printenv|env)\b\s*($|[|;&])/.test(cmd) || /echo\s+["']?\$\{?[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD|OTP)/.test(cmd))
+    if (/(^|[;&|]\s*)(printenv|env)\s*($|[|;&])/.test(cmd) || /echo\s+["']?\$\{?[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD|OTP)/.test(cmd))
       return 'printing environment secrets'
     if (SECRET_SHAPES.test(cmd)) return 'a secret-shaped value on the command line'
 

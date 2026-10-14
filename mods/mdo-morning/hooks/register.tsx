@@ -29,8 +29,14 @@ async function getJson($: EngineInterface, cfg: Cfg, path: string): Promise<unkn
   return JSON.parse(res.text)
 }
 
-async function refresh($: EngineInterface, cfg: Cfg): Promise<void> {
+async function refresh($: EngineInterface, opt: Cfg): Promise<void> {
   const now = await $.clock.now()
+  // Settings win; otherwise the cloud environment's MDO_BASE_URL / MDO_AUTH_TOKEN.
+  const envToken = (await $.env.get('MDO_AUTH_TOKEN')) ?? ''
+  const cfg: Cfg = {
+    base: opt.base || ((await $.env.get('MDO_BASE_URL')) ?? '').replace(/\/+$/, ''),
+    headers: Object.keys(opt.headers).length ? opt.headers : envToken ? { 'x-mdo-key': envToken } : {},
+  }
   const lines: string[] = []
   if (!cfg.base) {
     lines.push('Set baseUrl for mdo-morning in /config.')

@@ -84,7 +84,12 @@ export function report(checks: readonly Check[], now: number): string {
 type Cfg = { base: string; token: string }
 
 // Polls the registry, pins the status line, and returns the full report text.
-async function poll($: EngineInterface, cfg: Cfg): Promise<string> {
+async function poll($: EngineInterface, opt: Cfg): Promise<string> {
+  // Settings win; otherwise the cloud environment's MDO_BASE_URL / MDO_AUTH_TOKEN.
+  const cfg: Cfg = {
+    base: opt.base || ((await $.env.get('MDO_BASE_URL')) ?? '').replace(/\/+$/, ''),
+    token: opt.token || ((await $.env.get('MDO_AUTH_TOKEN')) ?? ''),
+  }
   if (!cfg.base) {
     $.ui.status('MDO heartbeat: set baseUrl in /config')
     return 'mdo-heartbeat: set baseUrl (and token) in /config.'
